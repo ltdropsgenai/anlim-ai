@@ -94,13 +94,19 @@ export function setupPrompt(instruction, names, heights = [], look = "cartoon", 
 // previous clip to start from, so the still is drawn from the shot's words alone (text to image, 16:9). The creator
 // can then cut character references out of it, and later shots continue from its clip.
 export function framePrompt(instruction, look = "cartoon", style = null, chars = []) {
+  // 2026-11-19 held-out test: the first wording ("everyone in their starting positions", "real people and places",
+  // "a wide or medium shot that shows the whole setting") made Nano Banana 2 add people who were never asked for on
+  // 9 of 20 first-time-user prompts (a family around the cat, a film crew next to the horse, four gardeners and no
+  // hummingbird). The frame now shows only what the description names, at the framing it asks for.
   const cast = chars.map(castText).join("; ");
   const looks = look === "photoreal"
-    ? "A real photograph: natural light, a real camera lens, real people and places, not drawn, not 3D, not animated."
+    ? "A real photograph: natural light, a real camera lens, not drawn, not 3D, not animated."
     : "A clean cartoon illustration with a consistent drawing style, clear shapes and readable faces.";
-  return `The opening frame of a short video shot, 16:9, a wide or medium shot that shows the whole setting. ` +
-    `${instruction.trim().replace(/\.?$/, ".")} Show the moment the shot begins: everyone in their starting positions, ` +
-    `faces and bodies fully visible, nobody cut off by the frame edge. ${looks}` +
+  return `The first frame of a short video clip, 16:9. The clip: ${instruction.trim().replace(/\.?$/, ".")} ` +
+    "Draw only the moment the clip starts, before the action happens. Show exactly the subjects the description names " +
+    "and no other people, animals or characters: if it names one subject, show only that one (background extras only " +
+    "if the description asks for a crowd or a busy place). Keep the main subject fully inside the frame. Use the framing " +
+    `the description asks for (close-up, wide shot...); if it asks for none, a medium shot of the subject. ${looks}` +
     (style ? ` Style: ${style.trim().replace(/\.?$/, ".")}` : "") +
     (cast ? ` Characters: ${cast}.` : "") + " No text, no captions, no logos, no watermark.";
 }
