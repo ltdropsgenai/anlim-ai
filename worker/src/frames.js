@@ -341,7 +341,10 @@ async function stepComposing(j) {
     const composedPath = outPath(j);
     await storage.upload(raw, composedPath, "image/png");
     await db.settleFrame(j.id, "charge");
-    const check = { verdict: "PASS", drift: [], why: "drawn from your description" };
+    // no room or cast to compare against; the one check that applies is staging (anyone floating, sitting on
+    // nothing, passing through furniture). Not a check of faces or of how well it matches the words.
+    const staging = j.instruction ? await stagingCheck(j, characters, raw, look).catch((e) => ({ verdict: "NOT CHECKED", problems: [], error: e.message })) : null;
+    const check = { verdict: staging?.verdict === "OK" ? "PASS" : "FLAG", drift: [], why: "drawn from your description", staging };
     await db.updateFrame(j.id, { status: "ready", composed_path: composedPath, check_result: JSON.stringify(check),
       locked_by: null, locked_until: null });
     return log(j, "start frame from the description ready");

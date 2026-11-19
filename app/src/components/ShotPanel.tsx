@@ -355,7 +355,7 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
       {startCandidate && (
         <View style={s.panel}>
           <Text style={s.sub}>{MODE_TEXT[startCandidate.mode]}{startCandidate.mode !== "continue" ? `: ${startCandidate.instruction}` : "."}</Text>
-          {startCandidate.mode === "prompt" && <Text style={[s.badge, { color: c.pass, borderColor: c.pass }]}>Drawn from your description. Keep it if it shows the moment the shot starts.</Text>}
+          {startCandidate.mode === "prompt" && <Text style={s.sub}>Drawn from your description. The check below only looks at staging (floating, sitting on nothing); judge the faces and whether it shows the moment the shot starts yourself.</Text>}
           {startCandidate.mode !== "continue" && startCandidate.mode !== "prompt" && (startCandidate.check_result?.verdict === "PASS"
             ? <Text style={[s.badge, { color: c.pass, borderColor: c.pass }]}>{startCandidate.check_result?.why?.startsWith("the room's layout")
                 ? "Check: the room's layout matches the location (lighting may differ slightly)" : "Check: the room is unchanged"}</Text>

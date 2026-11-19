@@ -48,7 +48,10 @@ async function fail(g, error, { release = true } = {}) {
 // characters. 2026-11-12, Phase 0 S3: three end-frame edits squeezed the shelf toys sideways and the video slid the
 // toys across the shelf (Londi's catch). END_FRAME_GATE: block (default) fails the job and returns the credits;
 // warn only logs; off skips. Returns null when the frame may be used, else the reason.
-async function endFrameGate(g, shot) {
+// 2026-11-19: a project with no characters on file (made from the home prompt) cannot tell a character from the room,
+// so every moving character looks like "something else changed". The creator approved the end frame with the
+// checker's boxes in view; for such projects the gate only logs.
+async function endFrameGate(g, shot, characters = []) {
   if (!shot.end_frame_path || config.endFrameGate === "off") return null;
   const dir = path.join(config.workDir, g.id, "end_frame");
   const start = path.join(dir, "start" + path.extname(shot.start_frame_path));
@@ -63,15 +66,17 @@ async function endFrameGate(g, shot) {
   if (!r.ok || res.verdict === "ERROR") throw new Error(`end-frame check: ${res.error || r.status}`);
   if (res.verdict === "PASS") { log(g, "end frame: only the characters change"); return null; }
   const where = (res.drift || []).slice(0, 3).map((d) => `[${d.box.map((v) => Number(v).toFixed(2)).join(",")}]`).join(" ");
-  const why = `end frame changes more than the characters (props or room moved at ${where}); ` +
-              `rebuild it with frame_check end_frame.py compose. Check image: ${path.join(dir, "end_frame_check.png")}`;
-  if (config.endFrameGate === "warn") { log(g, `WARNING ${why}`); return null; }
-  return why;
+  const detail = `end frame drift at ${where}; check image ${path.join(dir, "end_frame_check.png")}`;
+  if (config.endFrameGate === "warn") { log(g, `WARNING ${detail}`); return null; }
+  if (!characters.length) { log(g, `WARNING (no characters on file; the creator approved this end frame) ${detail}`); return null; }
+  log(g, `blocked: ${detail}`);
+  return "The end frame changes more than the characters: something in the room or a prop moved. Nothing was charged. " +
+         "Make the end frame again (or remove it) and render once more.";
 }
 
 async function stepQueued(g) {
   const { shot, characters } = await db.shotContext(g);
-  const blocked = await endFrameGate(g, shot);
+  const blocked = await endFrameGate(g, shot, characters);
   if (blocked) return fail(g, blocked);
   const startUrl = await storage.signedUrl(shot.start_frame_path);
   const endUrl = shot.end_frame_path ? await storage.signedUrl(shot.end_frame_path) : null;
