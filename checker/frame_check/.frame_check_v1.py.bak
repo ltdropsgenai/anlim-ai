@@ -1,0 +1,201 @@
+"""frame_check.py - full-size frame review for generated video. @anlim
+
+Every frame is analysed in code (small copies, fast). Frames that need human or model
+review are then exported at FULL native resolution as separate images - never tiled
+into a contact sheet - and a one-frame-at-a-time viewer (review.html) is written.
+
+Usage:
+  python frame_check.py OUTPUT.mp4 [--source SOURCE.mp4] [--roles roles.json]
+                        [--floor-fps 6] [--pad 2] [--out DIR] [--max-export 600]
+
+roles.json (optional, for character-swap checks), one entry per character, HSV ranges
+with hue in degrees 0-360 and sat/val 0-1:
+  [{"name": "ipman",  "hsv": [205, 245, 0.12, 0.55, 0.12, 0.50]},
+   {"name": "tyson",  "hsv": [32,  52,  0.45, 1.00, 0.35, 1.00]}]
+"""
+import argparse, json, os, subprocess, sys
+import numpy as np
+
+AW = 320  # analysis width (code passes only; review frames are full size)
+
+def probe(p):
+    o = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                        "stream=width,height,r_frame_rate:format=duration", "-of", "json", p],
+                       capture_output=True, text=True, check=True).stdout
+    d = json.loads(o); s = d["streams"][0]; n, m = s["r_frame_rate"].split("/")
+    return int(s["width"]), int(s["height"]), float(n) / float(m), float(d["format"]["duration"])
+
+def small_frames(p, w, h):
+    ah = int(round(AW * h / w)); ah += ah % 2
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", p, "-vf", f"scale={AW}:{ah}",
+                          "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True, check=True).stdout
+    n = len(raw) // (AW * ah * 3)
+    return np.frombuffer(raw[:n * AW * ah * 3], np.uint8).reshape(n, ah, AW, 3)
+
+def hsv(f):
+    a = f.astype(np.float32) / 255; r, g, b = a[..., 0], a[..., 1], a[..., 2]
+    mx = a.max(-1); mn = a.min(-1); d = mx - mn + 1e-6
+    hh = np.where(mx == r, ((g - b) / d) % 6, np.where(mx == g, (b - r) / d + 2, (r - g) / d + 4)) * 60
+    return hh, d / (mx + 1e-6), mx
+
+def analyse(F, fps, roles):
+    n = len(F); G = F.astype(np.float32).mean(-1)
+    flags = {i: [] for i in range(n)}
+    d1 = np.array([0.0] + [np.abs(G[i] - G[i - 1]).mean() for i in range(1, n)])
+    med = float(np.median(d1[1:])) + 1e-6
+    # a cut is a big change that PERSISTS: 3 frames later the picture is still closer to the
+    # new shot than to the old one. A glitch that snaps back is not a cut.
+    cuts = set()
+    for i in range(1, n - 3):
+        if d1[i] > 2.5 * med:
+            to_new = np.abs(G[i + 3] - G[i]).mean()
+            to_old = min(np.abs(G[i + 3] - G[j]).mean() for j in range(max(0, i - 3), i))
+            if to_new < 0.6 * to_old: cuts.add(i)
+    for i in sorted(cuts): flags[i].append(f"cut (change {d1[i]:.1f})")
+    # isolated 1-frame and 2-frame outliers: frame(s) differ from both neighbours while the
+    # neighbours match each other -> flash, smear, swap that flips back
+    for k in (1, 2):
+        for i in range(1, n - k):
+            a, b = G[i - 1], G[i + k]
+            out = min(np.abs(G[j] - a).mean() for j in range(i, i + k))
+            back = min(np.abs(G[j] - b).mean() for j in range(i, i + k))
+            base = np.abs(a - b).mean() + 1.0
+            score = min(out, back) / base
+            if score > 2.5 and min(out, back) > 6:
+                for j in range(i, i + k): flags[j].append(f"{k}-frame outlier (x{score:.1f})")
+    # lighting: corner vs centre brightness, flag sharp drops vs the clip median
+    h, w = G.shape[1:]; cy, cx = h // 4, w // 4
+    # corners compared with the clip's own corners (not with the centre, which a close-up fills)
+    ratio = np.array([np.concatenate([g[:cy, :cx].ravel(), g[:cy, -cx:].ravel(), g[-cy:, :cx].ravel(),
+                                      g[-cy:, -cx:].ravel()]).mean() for g in G])
+    rmed = float(np.median(ratio))
+    for i in range(n):
+        if ratio[i] < 0.55 * rmed and ratio[i] < 60:
+            flags[i].append(f"dark corners (corner level {ratio[i]:.0f} vs clip {rmed:.0f})")
+    # roles: centroid of each character's colours; flag short-lived position flips
+    track = {}
+    if roles:
+        for r in roles:
+            h0, h1, s0, s1, v0, v1 = r["hsv"]; pts = []
+            for f in F:
+                H, S, V = hsv(f); m = (H >= h0) & (H <= h1) & (S >= s0) & (S <= s1) & (V >= v0) & (V <= v1)
+                if m.mean() < 0.01: pts.append(None); continue   # under 1% of the frame: not a character
+                ys, xs = np.nonzero(m); pts.append((xs.mean() / w, ys.mean() / h, float(m.mean())))
+            track[r["name"]] = pts
+        names = list(track)
+        # a character whose position jumps far and returns within 6 frames, inside one shot
+        for name in names:
+            P = track[name]
+            for i in range(1, n):
+                if P[i] is None or P[i - 1] is None or i in cuts: continue
+                if abs(P[i][0] - P[i - 1][0]) + abs(P[i][1] - P[i - 1][1]) < 0.25: continue
+                for j in range(i + 1, min(n, i + 7)):
+                    if j in cuts: break
+                    if P[j] is not None and abs(P[j][0] - P[i - 1][0]) + abs(P[j][1] - P[i - 1][1]) < 0.12:
+                        for q in range(i, j): flags[q].append(f"{name} jumps and returns (frames {i}-{j - 1})")
+                        break
+        if len(names) >= 2:
+            A, B = track[names[0]], track[names[1]]
+            for axis, label in ((0, "left/right"), (1, "above/below")):
+                sign = [None if (A[i] is None or B[i] is None) else (1 if A[i][axis] < B[i][axis] else -1)
+                        for i in range(n)]
+                for i in range(n):
+                    if sign[i] is None: continue
+                    # segment = frames since the last cut
+                    lo = max([c for c in cuts if c <= i], default=0)
+                    hi = min([c for c in cuts if c > i], default=n)
+                    win = [s for s in sign[max(lo, i - 12):min(hi, i + 13)] if s is not None]
+                    if len(win) >= 4 and np.sign(sum(win)) != 0 and sign[i] != np.sign(sum(win)) \
+                            and abs(sum(win)) >= 0.5 * len(win):
+                        flags[i].append(f"role order flip {label}: {names[0]} vs {names[1]}")
+    return flags, sorted(cuts), d1, ratio, track
+
+def extract(p, idx, out_dir, prefix):
+    os.makedirs(out_dir, exist_ok=True); paths = {}
+    for c in range(0, len(idx), 60):
+        chunk = idx[c:c + 60]
+        sel = "+".join(f"eq(n\\,{i})" for i in chunk)
+        tmp = os.path.join(out_dir, f"_{prefix}_%04d.png")
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", p, "-vf", f"select='{sel}'", "-vsync", "0", tmp], check=True)
+        for k, i in enumerate(chunk):
+            src = tmp.replace("%04d", f"{k + 1:04d}"); dst = os.path.join(out_dir, f"{prefix}_f{i:05d}.png")
+            if os.path.exists(src): os.replace(src, dst); paths[i] = os.path.basename(dst)
+    return paths
+
+HTML = """<!doctype html><html><head><meta charset="utf-8"><title>Frame review</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><style>
+:root{--bg:#111;--fg:#eee;--mut:#999;--acc:#f5c518;--bad:#ff5b5b}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px system-ui,sans-serif}
+header{display:flex;gap:16px;align-items:center;padding:8px 16px;position:sticky;top:0;background:#000;z-index:2;flex-wrap:wrap}
+#imgs{display:flex;gap:8px;padding:8px;justify-content:center}
+#imgs figure{margin:0;flex:1;min-width:0} #imgs img{width:100%;height:auto;display:block;image-rendering:auto}
+body.actual #imgs{display:block;overflow:auto} body.actual #imgs img{width:auto;max-width:none}
+figcaption{color:var(--mut);padding:4px 0} .r{color:var(--acc)} .flag{color:var(--bad);font-weight:600}
+button,input{font:inherit} input{width:28em;max-width:100%} .mut{color:var(--mut)}
+</style></head><body><header>
+<b id="pos"></b><span id="time"></span><span id="why" class="r"></span><span id="mark" class="flag"></span>
+<span class="mut">&larr;/&rarr; frame &middot; F flag &middot; Z full size &middot; N next flagged-by-code</span>
+<input id="note" placeholder="note for this frame"><button id="save">Flag frame</button><button id="dl">Download flags</button>
+</header><div id="imgs"></div><script>
+const M=__MANIFEST__;let k=0,flags={};
+try{flags=JSON.parse(localStorage.getItem('fc_'+M.clip)||'{}')}catch(e){}
+function show(){const f=M.frames[k];document.getElementById('pos').textContent=`${k+1}/${M.frames.length}  frame ${f.i}`;
+document.getElementById('time').textContent=f.t.toFixed(3)+' s';document.getElementById('why').textContent=f.why.join(' | ');
+document.getElementById('mark').textContent=flags[f.i]?'FLAGGED: '+flags[f.i]:'';document.getElementById('note').value=flags[f.i]||'';
+const box=document.getElementById('imgs');box.innerHTML='';
+if(f.src){box.insertAdjacentHTML('beforeend',`<figure><img src="${f.src}"><figcaption>source</figcaption></figure>`)}
+box.insertAdjacentHTML('beforeend',`<figure><img src="${f.out}"><figcaption>output</figcaption></figure>`)}
+function save(){const f=M.frames[k];const v=document.getElementById('note').value.trim()||'flagged';flags[f.i]=v;
+try{localStorage.setItem('fc_'+M.clip,JSON.stringify(flags))}catch(e){}show()}
+document.getElementById('save').onclick=save;
+document.getElementById('dl').onclick=()=>{const a=document.createElement('a');
+a.href=URL.createObjectURL(new Blob([JSON.stringify({clip:M.clip,fps:M.fps,flags},null,1)],{type:'application/json'}));
+a.download='flags_'+M.clip.replace(/\\W+/g,'_')+'.json';a.click()};
+document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT'){if(e.key==='Enter')save();return}
+if(e.key==='ArrowRight')k=Math.min(k+1,M.frames.length-1);else if(e.key==='ArrowLeft')k=Math.max(k-1,0);
+else if(e.key==='z'||e.key==='Z')document.body.classList.toggle('actual');else if(e.key==='f'||e.key==='F')save();
+else if(e.key==='n'||e.key==='N'){for(let j=k+1;j<M.frames.length;j++){if(M.frames[j].why.some(w=>w!=='sweep')){k=j;break}}}else return;show()});
+show();</script></body></html>"""
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("output"); ap.add_argument("--source"); ap.add_argument("--roles")
+    ap.add_argument("--floor-fps", type=float, default=6.0); ap.add_argument("--pad", type=int, default=2)
+    ap.add_argument("--out"); ap.add_argument("--max-export", type=int, default=600)
+    a = ap.parse_args()
+    w, h, fps, dur = probe(a.output)
+    out = a.out or os.path.join(os.path.dirname(os.path.abspath(a.output)), "frame_check",
+                                os.path.splitext(os.path.basename(a.output))[0])
+    os.makedirs(out, exist_ok=True)
+    roles = json.load(open(a.roles)) if a.roles else None
+    F = small_frames(a.output, w, h); n = len(F)
+    flags, cuts, d1, ratio, track = analyse(F, fps, roles)
+    pick = {}
+    for i, why in flags.items():
+        if why:
+            for j in range(max(0, i - a.pad), min(n, i + a.pad + 1)): pick.setdefault(j, set())
+            pick[i].update(why)
+    step = max(1, int(round(fps / a.floor_fps)))
+    for i in range(0, n, step): pick.setdefault(i, set()).add("sweep") if not flags[i] else pick.setdefault(i, set())
+    idx = sorted(pick)[:a.max_export]
+    outp = extract(a.output, idx, out, "out")
+    srcp = {}
+    if a.source:
+        sw, sh, sfps, sdur = probe(a.source)
+        sidx = sorted(set(min(int(round(i / fps * sfps)), int(sdur * sfps) - 1) for i in idx))
+        smap = extract(a.source, sidx, out, "src")
+        srcp = {i: smap.get(min(int(round(i / fps * sfps)), int(sdur * sfps) - 1)) for i in idx}
+    frames = [{"i": i, "t": i / fps, "why": sorted(pick[i]) or ["neighbour of flagged frame"],
+               "out": outp.get(i), "src": srcp.get(i)} for i in idx if outp.get(i)]
+    man = {"clip": os.path.basename(a.output), "fps": fps, "size": [w, h], "frames_total": n,
+           "cuts": cuts, "floor_fps": a.floor_fps, "frames": frames,
+           "flagged_by_code": [i for i in range(n) if flags[i]]}
+    json.dump(man, open(os.path.join(out, "manifest.json"), "w"), indent=1)
+    open(os.path.join(out, "review.html"), "w", encoding="utf-8").write(HTML.replace("__MANIFEST__", json.dumps(man)))
+    print(f"{man['clip']}: {n} frames at {fps:g} fps, {w}x{h}")
+    print(f"  cuts: {len(cuts)}  flagged by code: {len(man['flagged_by_code'])}  exported full size: {len(frames)}")
+    for i in man["flagged_by_code"][:40]: print(f"   f{i:05d} {i / fps:6.3f}s  {' | '.join(flags[i])}")
+    print(f"  review: {os.path.join(out, 'review.html')}")
+
+if __name__ == "__main__":
+    main()

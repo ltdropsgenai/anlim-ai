@@ -1,0 +1,16 @@
+{
+  "name": "cartoon-studio-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Generation worker: claims queued generations, calls the video provider, stores the clip, runs the checker, settles credits. @anlim",
+  "type": "module",
+  "main": "src/worker.js",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node --env-file=.env src/worker.js",
+    "once": "node --env-file=.env src/worker.js --once"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  }
+}

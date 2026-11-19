@@ -1,0 +1,18 @@
+# anlim.ai repo (2026-11-19). Never commit secrets: .env files, dev logins, keys.
+node_modules/
+.env
+.env.*
+!.env.example
+dev_login.txt
+*.pem
+*.key
+*.p8
+*.p12
+__pycache__/
+*.pyc
+app/.expo/
+app/dist/
+app/web-build/
+work/
+checker/frame_check/_tests/
+.DS_Store

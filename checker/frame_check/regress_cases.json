@@ -1,0 +1,755 @@
+{
+ "note": "Paths are relative to the vid_projects folder. A case whose files are missing is SKIPPED. 'why' says what the case protects. Added 2026-11-10.",
+ "cases": [
+  {
+   "id": "verify.saved_decisions",
+   "type": "verify_saved",
+   "dir": "_tools/frame_check/_tests/eval_supercool_2026-11-10",
+   "want": {
+    "P002": "FAIL",
+    "P042": "FAIL",
+    "P026": "FLAG",
+    "P011": "FLAG",
+    "P037_b": "FLAG",
+    "P013": "FLAG"
+   },
+   "why": "second-opinion keep rule on the saved v4 answers: real defects P002 (fingers, UUU) and P042 (shopping, CRC) stay FAIL; misreads drop to FLAG; files untouched"
+  },
+  {
+   "id": "sync.ep18_b1_rejected_splice",
+   "type": "sync",
+   "render": "peleas/ep18_name_that_fight/rejected/out_im_b1_v5splice.mp4",
+   "source": "peleas/ep18_name_that_fight/frag/im_b1.mp4",
+   "want": "FAIL",
+   "drift_from": 103,
+   "why": "NOTES.md: dropped v5 f103-104 at the kick join, 2 frames ahead from f103"
+  },
+  {
+   "id": "sync.ep18_b3_rejected_splice",
+   "type": "sync",
+   "render": "peleas/ep18_name_that_fight/rejected/out_im_b3_v7splice.mp4",
+   "source": "peleas/ep18_name_that_fight/frag/im_b3.mp4",
+   "want": "FAIL",
+   "drift_from": 58,
+   "why": "NOTES.md: dropped 2 frames at the shotF join, 1-2 frames ahead from f58"
+  },
+  {
+   "id": "sync.ep18_g_rejected_splice",
+   "type": "sync",
+   "render": "peleas/ep18_name_that_fight/rejected/out_im_g_v3splice.mp4",
+   "source": "peleas/ep18_name_that_fight/frag/im_g.mp4",
+   "want": "FAIL",
+   "why": "NOTES.md: dropped v3 f63-67, 5 frames ahead from f63 (first cut after the join is ~f88)"
+  },
+  {
+   "id": "sync.ep18_b1_approved",
+   "type": "sync",
+   "render": "peleas/ep18_name_that_fight/renders/out_im_b1_v5splice2.mp4",
+   "source": "peleas/ep18_name_that_fight/frag/im_b1.mp4",
+   "want": [
+    "PASS",
+    "FLAG"
+   ],
+   "why": "approved re-splice must not FAIL"
+  },
+  {
+   "id": "sync.ep18_b3_approved",
+   "type": "sync",
+   "render": "peleas/ep18_name_that_fight/renders/out_im_b3_v7splice2.mp4",
+   "source": "peleas/ep18_name_that_fight/frag/im_b3.mp4",
+   "want": [
+    "PASS",
+    "FLAG"
+   ],
+   "why": "approved re-splice must not FAIL (tail cut 8 frames off = FLAG)"
+  },
+  {
+   "id": "sync.ep18_g_approved",
+   "type": "sync",
+   "render": "peleas/ep18_name_that_fight/renders/out_im_g_v3splice5.mp4",
+   "source": "peleas/ep18_name_that_fight/frag/im_g.mp4",
+   "want": [
+    "PASS",
+    "FLAG"
+   ],
+   "why": "approved re-splice must not FAIL"
+  },
+  {
+   "id": "sync.ep18_b2_approved",
+   "type": "sync",
+   "render": "peleas/ep18_name_that_fight/renders/out_im_b2_v2splice2.mp4",
+   "source": "peleas/ep18_name_that_fight/frag/im_b2.mp4",
+   "want": [
+    "PASS",
+    "FLAG"
+   ],
+   "why": "approved re-splice must not FAIL"
+  },
+  {
+   "id": "sync.ep18_dm_g_unspliced",
+   "type": "sync",
+   "render": "peleas/ep18_name_that_fight/renders/out_dm_g.mp4",
+   "source": "peleas/ep18_name_that_fight/frag/dm_g.mp4",
+   "want": [
+    "PASS",
+    "FLAG"
+   ],
+   "why": "approved render, cut noise +1.6 must not read as drift"
+  },
+  {
+   "id": "sync.ep18_bs_b1_unspliced",
+   "type": "sync",
+   "render": "peleas/ep18_name_that_fight/renders/out_bs_b1.mp4",
+   "source": "peleas/ep18_name_that_fight/frag/bs_b1.mp4",
+   "want": [
+    "PASS",
+    "FLAG"
+   ],
+   "why": "approved render, cuts +1.6 / -1.4"
+  },
+  {
+   "id": "sync.ep18_pr_b2_unspliced",
+   "type": "sync",
+   "render": "peleas/ep18_name_that_fight/renders/out_pr_b2.mp4",
+   "source": "peleas/ep18_name_that_fight/frag/pr_b2.mp4",
+   "want": [
+    "PASS",
+    "FLAG"
+   ],
+   "why": "approved render"
+  },
+  {
+   "id": "dense.ep18_b2_third_hand",
+   "type": "dense",
+   "clip": "peleas/ep18_name_that_fight/rejected/out_im_b2_v2splice.mp4",
+   "defect_frames": [
+    181,
+    182,
+    183
+   ],
+   "why": "third hand at her belt f181-f183 must be reviewed frame by frame"
+  },
+  {
+   "id": "dense.ep18_b1_v4_foot_in_shirt",
+   "type": "dense",
+   "clip": "peleas/ep18_name_that_fight/renders/out_im_b1_v4.mp4",
+   "defect_frames": [
+    97,
+    98,
+    99,
+    100,
+    101,
+    102
+   ],
+   "min_hit": 5,
+   "why": "Londi 11:09: foot fused into the boxer's shirt f97-f102"
+  },
+  {
+   "id": "dense.ep18_shotD_kick_blob",
+   "type": "dense",
+   "clip": "peleas/ep18_name_that_fight/rejected/out_im_b1_shotD_54cd0051.mp4",
+   "defect_frames": [
+    4,
+    5,
+    6,
+    7,
+    8
+   ],
+   "why": "kick + blocking arm merged into one black shape f4-f8"
+  },
+  {
+   "id": "shotqc.ep18_b1_rejected_splice_in_use",
+   "type": "shot_qc",
+   "spec": {
+    "clip": "peleas/ep18_name_that_fight/rejected/out_im_b1_v5splice.mp4",
+    "use": [
+     4.0,
+     12.0
+    ],
+    "driving": {
+     "video": "peleas/ep18_name_that_fight/frag/im_b1.mp4"
+    }
+   },
+   "want": "FAIL",
+   "contains": [
+    "QC-F",
+    "SYNC: from f103"
+   ],
+   "why": "sync drift inside the used window fails gate F (Editorial)"
+  },
+  {
+   "id": "shotqc.ep18_b1_rejected_splice_outside_use",
+   "type": "shot_qc",
+   "spec": {
+    "clip": "peleas/ep18_name_that_fight/rejected/out_im_b1_v5splice.mp4",
+    "use": [
+     0.0,
+     3.0
+    ],
+    "driving": {
+     "video": "peleas/ep18_name_that_fight/frag/im_b1.mp4"
+    }
+   },
+   "want": "FLAG",
+   "contains": [
+    "SYNC: from f103"
+   ],
+   "why": "the same drift outside the used window is only a flag"
+  },
+  {
+   "id": "shotqc.ep18_b1_v3_swap_outside_use",
+   "type": "shot_qc",
+   "slow": true,
+   "spec": {
+    "clip": "peleas/ep18_name_that_fight/rejected/out_im_b1_v3_0f37b803.mp4",
+    "use": [
+     4.0,
+     12.0
+    ],
+    "driving": {
+     "video": "peleas/ep18_name_that_fight/frag/im_b1.mp4",
+     "roles": "peleas/ep18_name_that_fight/project/roles_im.json"
+    }
+   },
+   "want": "FLAG",
+   "contains": [
+    "outside the used window"
+   ],
+   "why": "render log: the 2.3-3.8 s swap was outside the 4-12 s the episode used"
+  },
+  {
+   "id": "roles.ep18_b3_v2_swap",
+   "type": "roles",
+   "slow": true,
+   "render": "peleas/ep18_name_that_fight/rejected/out_im_b3_v2_30b60312.mp4",
+   "source": "peleas/ep18_name_that_fight/frag/im_b3.mp4",
+   "roles": "peleas/ep18_name_that_fight/project/roles_im.json",
+   "want": "FAIL",
+   "swap_within": [
+    29,
+    59
+   ],
+   "why": "NOTES.md: roles swapped f29-f46 and f47-f59"
+  },
+  {
+   "id": "roles.ep18_b1_v3_swap",
+   "type": "roles",
+   "slow": true,
+   "render": "peleas/ep18_name_that_fight/rejected/out_im_b1_v3_0f37b803.mp4",
+   "source": "peleas/ep18_name_that_fight/frag/im_b1.mp4",
+   "roles": "peleas/ep18_name_that_fight/project/roles_im.json",
+   "want": "FAIL",
+   "swap_within": [
+    55,
+    92
+   ],
+   "why": "render log: Londi saw a swap at 2.3-3.8 s"
+  },
+  {
+   "id": "roles.ep18_b1_approved",
+   "type": "roles",
+   "slow": true,
+   "render": "peleas/ep18_name_that_fight/renders/out_im_b1_v5splice2.mp4",
+   "source": "peleas/ep18_name_that_fight/frag/im_b1.mp4",
+   "roles": "peleas/ep18_name_that_fight/project/roles_im.json",
+   "want": "PASS",
+   "why": "approved: no swap"
+  },
+  {
+   "id": "roles.ep18_b3_approved",
+   "type": "roles",
+   "slow": true,
+   "render": "peleas/ep18_name_that_fight/renders/out_im_b3_v7splice2.mp4",
+   "source": "peleas/ep18_name_that_fight/frag/im_b3.mp4",
+   "roles": "peleas/ep18_name_that_fight/project/roles_im.json",
+   "want": "PASS",
+   "why": "approved: no swap"
+  },
+  {
+   "id": "benchmark.supercool_55",
+   "type": "benchmark",
+   "slow": true,
+   "args": {
+    "clips": "music_projects/M_Ap_Rete_Mwen/04_video/work/08_SUPERCOOL_CLIPS_2026-10-22",
+    "manifest": "music_projects/M_Ap_Rete_Mwen/04_video/work/05_BLOCKING_CAMERA_MAPS/shot_manifest_v1.csv",
+    "stills": "music_projects/M_Ap_Rete_Mwen/04_video/work/06_STORYBOARD_STILLS/v2_3D_checked/finals",
+    "bible": "music_projects/M_Ap_Rete_Mwen/04_video/work/03_CHARACTER_BIBLE",
+    "out": "_tools/frame_check/_tests/eval_supercool_2026-11-10"
+   },
+   "why": "55 clips judged by Londi (34 pass / 9 minor / 12 fail): no clip may get worse than the accepted baseline; no bad clip may pass"
+  },
+  {
+   "id": "repair.ep18_b1_rebuild",
+   "type": "repair_build",
+   "slow": true,
+   "render": "peleas/ep18_name_that_fight/renders/out_im_b1_v5.mp4",
+   "patch": "peleas/ep18_name_that_fight/renders/test_b1kick_normal.mp4",
+   "source": "peleas/ep18_name_that_fight/frag/im_b1.mp4",
+   "approved": "peleas/ep18_name_that_fight/renders/out_im_b1_v5splice2.mp4",
+   "replace": [
+    90,
+    104
+   ],
+   "patch_from": 0,
+   "why": "render log: v5 f0-89 + test f0-11 + test f12 held x3 + v5 f105-end; the patch cuts 2 frames early, so its own cut must land on the render's"
+  },
+  {
+   "id": "repair.ep18_b2_edit_box_only",
+   "type": "repair_edit",
+   "clip": "peleas/ep18_name_that_fight/rejected/out_im_b2_v2splice.mp4",
+   "frames": [
+    181,
+    182,
+    183
+   ],
+   "box": [
+    0.45,
+    0.55,
+    0.55,
+    0.7
+   ],
+   "why": "third hand f181-f183 was fixed by an image edit composited on its box only"
+  },
+  {
+   "id": "benchmark.keycard_v4",
+   "type": "benchmark",
+   "slow": true,
+   "args": {
+    "cases": "_tools/frame_check/_tests/eval_keycard_v4/cases.json",
+    "out": "_tools/frame_check/_tests/eval_keycard_v4"
+   },
+   "why": "unseen photoreal set (Keycard v4, labels from Londi's v4-master notes): 2 FAIL / 11 PASS / 4 unscored; no clip may get worse than the accepted baseline"
+  },
+  {
+   "id": "benchmark.phase0_47",
+   "type": "benchmark",
+   "slow": true,
+   "args": {
+    "cases": "_phase0/route_test_2026-11-11/cases.json",
+    "out": "_tools/frame_check/_tests/exp_haiku_nothink/phase0"
+   },
+   "why": "Phase 0 route test (Kling / Kling+refs / Gemini / Seedance, 47 clips of Layana & King, labels by Londi 2026-11-11: 16 pass / 13 minor / 13 fail / 5 unscored), saved answers from the Haiku-5.5-thinking-off run (the shipping default): no clip may get worse than the accepted baseline; no bad clip may pass. Added 2026-11-14."
+  },
+  {
+   "id": "benchmark.minimax_37",
+   "type": "benchmark",
+   "slow": true,
+   "args": {
+    "cases": "_tools/frame_check/_tests/eval_minimax_2026-11-13/cases.json",
+    "out": "_tools/frame_check/_tests/eval_minimax_2026-11-13"
+   },
+   "why": "MiniMax H3 clips from the app (2026-11-13: walk past the table, sofa sit, truck hand-off, blocks, talking), 37 clips labelled by Londi 2026-11-14 (13 pass / 4 minor / 19 fail / 1 unscored): no clip may get worse than the accepted baseline; no bad clip may pass. Added 2026-11-14."
+  },
+  {
+   "id": "benchmark.kijan_12",
+   "type": "benchmark",
+   "slow": true,
+   "args": {
+    "cases": "_tools/frame_check/_tests/eval_kijan_2026-11-17/cases.json",
+    "out": "_tools/frame_check/_tests/eval_kijan_2026-11-17"
+   },
+   "why": "App photoreal route test, Kijan living room (2026-11-17): 7 Kling 4.0 approved, MiniMax H3 4 rejected (faces changing, blurry) / 1 approved, labels by Londi in the app; saved AI answers copied from the app. No clip may get worse than the accepted baseline; no bad clip may pass. Added 2026-11-17."
+  },
+  {
+   "id": "end_frame.s3",
+   "type": "end_frame",
+   "slow": true,
+   "start": "_phase0/route_test_2026-11-11/stills/S3_walk_pan.png",
+   "drifted": [
+    "_phase0/route_test_2026-11-11/stills/S3_end_shelf2.png",
+    "_phase0/route_test_2026-11-11/stills/S3_end_watch.png",
+    "_phase0/route_test_2026-11-11/stills/S3_end_turn.png"
+   ],
+   "shelf": [
+    0.7,
+    0.35,
+    1.0,
+    0.72
+   ],
+   "why": "2026-11-12: three end-frame edits moved the shelf toys; the video slid them during the clip (Londi). check must FLAG each on the shelf, compose must PASS."
+  },
+  {
+   "id": "room_drift.minimax_walk_toys_shift",
+   "type": "room_drift",
+   "slow": true,
+   "clip": "_app/work/9e1b9abe-187a-40ee-8d8d-bb3cfb25209d/clip.mp4",
+   "want": "DRIFT",
+   "why": "Londi 2026-11-14: toys on the shelf behind her shifted when she came to a stop (MiniMax walk)"
+  },
+  {
+   "id": "room_drift.minimax_walk_clean",
+   "type": "room_drift",
+   "slow": true,
+   "clip": "_app/work/95df3ca3-6877-49e1-9225-21df26b88b16/clip.mp4",
+   "want": "OK",
+   "why": "Londi 2026-11-14: pass; a 0.43 % strip of sofa beside King's moving head must not count as drift"
+  },
+  {
+   "id": "cutout.new_setup_with_plate",
+   "type": "cutout",
+   "slow": true,
+   "image": "_phase0/start_still_test/new_setup.png",
+   "plate": "_phase0/start_still_test/plate.png",
+   "want": {
+    "count": 2,
+    "plate_used": [
+     true,
+     true
+    ],
+    "warnings": [
+     [],
+     []
+    ]
+   },
+   "why": "2026-11-16: a still composed onto its plate -> two clean cut-outs (Layana, King), room cut away by the plate"
+  },
+  {
+   "id": "cutout.no_plate_warns",
+   "type": "cutout",
+   "slow": true,
+   "image": "_phase0/start_still_test/new_setup.png",
+   "want": {
+    "count": 2,
+    "plate_used": [
+     false,
+     false
+    ],
+    "warnings": [
+     [
+      "background may come along: no plate for this location"
+     ],
+     [
+      "background may come along: no plate for this location"
+     ]
+    ]
+   },
+   "why": "without a plate the creator is told background may come along"
+  },
+  {
+   "id": "height.bench_measured",
+   "type": "height",
+   "slow": true,
+   "bench": "_tools/frame_check/_tests/height_bench/cases.json",
+   "want": {
+    "S1_handoff": "WRONG",
+    "S2_blocks": "NOT CHECKED",
+    "S3_walk": "NOT CHECKED",
+    "S4_ok": "OK",
+    "S4_too_tall": "WRONG",
+    "S5_dialogue": "NOT CHECKED",
+    "continue_s5end": "NOT CHECKED",
+    "newsetup_live": "WRONG",
+    "newsetup_feas": "NOT CHECKED"
+   },
+   "why": "2026-11-16: standing pairs measured free (S4_ok 0.838 vs 0.85; too-tall 0.929; live new setup 0.906); the rest need the AI question, which regress does not ask. With AI on Londi's PC: 9/9 as labelled, $0.052 2026-11-16 later: cut-outs now grow over heads the detector box cut off, so S1_handoff's standing pair is measured: WRONG (the AI question had also said WRONG, 'same height'; unlabelled by Londi)."
+  },
+  {
+   "id": "compose.revealed_plate",
+   "type": "compose",
+   "slow": true,
+   "start": "_tools/frame_check/_tests/revealed/start.png",
+   "edited": "_tools/frame_check/_tests/revealed/edited.png",
+   "plate": "_tools/frame_check/_tests/revealed/plate.png",
+   "region": [
+    0.75,
+    0.63,
+    0.83,
+    0.69
+   ],
+   "region_like": "_tools/frame_check/_tests/revealed/plate.png",
+   "max_diff": 5,
+   "want": {
+    "verdict": "PASS",
+    "sources": [
+     "plate"
+    ],
+    "region matches": true
+   },
+   "why": "2026-11-16 (synthetic from the Playroom plate): Layana moves away from the shelf and the edit invents a blue block where she stood; with a fitting plate the block is gone (region diff 1.0 vs the plate)"
+  },
+  {
+   "id": "compose.revealed_no_plate",
+   "type": "compose",
+   "slow": true,
+   "start": "_tools/frame_check/_tests/revealed/start.png",
+   "edited": "_tools/frame_check/_tests/revealed/edited.png",
+   "region": [
+    0.75,
+    0.63,
+    0.83,
+    0.69
+   ],
+   "region_like": "_tools/frame_check/_tests/revealed/edited.png",
+   "max_diff": 15,
+   "want": {
+    "verdict": "PASS",
+    "sources": [
+     "edit"
+    ],
+    "region matches": true
+   },
+   "why": "2026-11-16: without a plate the vacated area comes from the edit and is listed as revealed/source edit, so the app shows it dashed for the creator to check"
+  },
+  {
+   "id": "compose.seated_head_kept",
+   "type": "compose",
+   "slow": true,
+   "start": "_app/work/frames/f5f11c3d-29e8-42dc-9978-6aaf1f5c53b3/base.png",
+   "edited": "_app/work/frames/f5f11c3d-29e8-42dc-9978-6aaf1f5c53b3/raw.png",
+   "region": [
+    0.33,
+    0.21,
+    0.43,
+    0.38
+   ],
+   "region_like": "_app/work/frames/f5f11c3d-29e8-42dc-9978-6aaf1f5c53b3/base.png",
+   "want": {
+    "verdict": "PASS",
+    "sources": [
+     "edit"
+    ],
+    "region matches": true
+   },
+   "why": "2026-11-16 live reposition (job f5f11c3d): compose pasted the wall over seated Layana's hair and bows (detector box started at her mouth). Her head must come from the edit. The blue block Layana uncovered on the shelf is source edit (no plate for this shot). Measured: the head region differs from the start still (wall) by 92.5 now, 4.3 in the live composed frame.",
+   "min_diff": 40
+  },
+  {
+   "id": "compose.revealed_second_plate",
+   "type": "compose",
+   "slow": true,
+   "start": "_tools/frame_check/_tests/revealed/start.png",
+   "edited": "_tools/frame_check/_tests/revealed/edited.png",
+   "plates": [
+    "_app/work/frames/29ea99cd-88ea-4066-ad03-a71bfac82caa/source.png",
+    "_tools/frame_check/_tests/revealed/plate.png"
+   ],
+   "region": [
+    0.75,
+    0.63,
+    0.83,
+    0.69
+   ],
+   "region_like": "_tools/frame_check/_tests/revealed/plate.png",
+   "max_diff": 5,
+   "want": {
+    "verdict": "PASS",
+    "sources": [
+     "plate"
+    ],
+    "region matches": true
+   },
+   "why": "2026-11-16: a location with a plate per camera framing; the first (a seated close-up, 34 % off) does not fit, the second does and is used"
+  },
+  {
+   "id": "compose.closeup_redrawn",
+   "type": "compose",
+   "slow": true,
+   "start": "_tools/frame_check/_tests/closeup/source.png",
+   "edited": "_tools/frame_check/_tests/closeup/raw.png",
+   "plates": [
+    "_tools/frame_check/_tests/closeup/plate-0.png"
+   ],
+   "expect": 2,
+   "region": [
+    0.0,
+    0.0,
+    0.15,
+    0.5
+   ],
+   "region_like": "_tools/frame_check/_tests/closeup/raw.png",
+   "max_diff": 20,
+   "want": {
+    "verdict": "FLAG",
+    "sources": [
+     "edit"
+    ],
+    "region matches": true
+   },
+   "why": "2026-11-16 live (job ed5bee77): close-up at the table -> both on the sofa; no plate fits (34.6 %), the edit redrew the room and found 1 of 2 characters (wall through Layana's face). Was PASS 'room unchanged'; must FLAG and list the redrawn area as source edit."
+  },
+  {
+   "id": "reposition_fit.closeup_no_plate",
+   "type": "reposition_fit",
+   "slow": true,
+   "start": "_tools/frame_check/_tests/closeup/source.png",
+   "plates": [
+    "_tools/frame_check/_tests/closeup/plate-0.png"
+   ],
+   "want": "FLAG",
+   "why": "2026-11-16 (job ed5bee77): characters cover 52 % of the still and the Playroom plate does not fit: refuse before paying"
+  },
+  {
+   "id": "reposition_fit.wide_with_plate",
+   "type": "reposition_fit",
+   "slow": true,
+   "start": "_tools/frame_check/_tests/revealed/start.png",
+   "plates": [
+    "_tools/frame_check/_tests/revealed/plate.png"
+   ],
+   "want": "PASS",
+   "why": "a wide Playroom still with a fitting plate: reposition goes ahead"
+  },
+  {
+   "id": "compose.new_setup_seated_sofa",
+   "type": "compose",
+   "slow": true,
+   "start": "_tools/frame_check/_tests/new_setup_sofa/base.png",
+   "edited": "_tools/frame_check/_tests/new_setup_sofa/raw.png",
+   "expect": 2,
+   "region": [
+    0.28,
+    0.62,
+    0.7,
+    0.8
+   ],
+   "region_like": "_tools/frame_check/_tests/new_setup_sofa/raw.png",
+   "max_diff": 6,
+   "want": {
+    "verdict": "FLAG",
+    "sources": [],
+    "region matches": true
+   },
+   "why": "2026-11-16 live (job 4954a1b8): new setup, both seated; the edit's sofa is smaller and lower than the plate's. Pasting the characters onto the plate left them hovering with patches of the plate's sofa (check said unchanged). Now the frame is the edit as drawn (sofa front region matches the edit) and FLAGs."
+  },
+  {
+   "id": "compose.new_setup_standing_clean",
+   "type": "compose",
+   "slow": true,
+   "start": "_tools/frame_check/_tests/new_setup_standing/base.png",
+   "edited": "_tools/frame_check/_tests/new_setup_standing/raw.png",
+   "expect": 2,
+   "region": [
+    0.0,
+    0.0,
+    0.2,
+    0.4
+   ],
+   "region_like": "_tools/frame_check/_tests/new_setup_standing/base.png",
+   "max_diff": 6,
+   "want": {
+    "verdict": "PASS",
+    "sources": [],
+    "region matches": true
+   },
+   "why": "2026-11-16 (job 8dcf8b15): a standing new setup composes onto the plate as before (furniture band diff 1.3 % < 3 %)."
+  },
+  {
+   "id": "compose.new_setup_layana_kept",
+   "type": "compose",
+   "slow": true,
+   "start": "_tools/frame_check/_tests/new_setup_missed/base.png",
+   "edited": "_tools/frame_check/_tests/new_setup_missed/raw.png",
+   "region": [
+    0.34,
+    0.25,
+    0.44,
+    0.7
+   ],
+   "region_like": "_tools/frame_check/_tests/new_setup_missed/base.png",
+   "min_diff": 40,
+   "want": {
+    "verdict": "PASS",
+    "sources": [],
+    "region matches": true
+   },
+   "why": "2026-11-16 live (job 0a3a685e): new setup, both seated; the detector called Layana a teddy bear in the edit and missed her in the composed frame, so the repair pass painted the empty sofa back over her (one leg left). Her region must differ from the empty sofa (she is there)."
+  },
+  {
+   "id": "compose.photoreal_room_kept",
+   "type": "compose",
+   "slow": true,
+   "look": "photoreal",
+   "subjects": [
+    {
+     "name": "Him",
+     "kind": "person"
+    },
+    {
+     "name": "Her",
+     "kind": "person"
+    }
+   ],
+   "start": "_tools/frame_check/_tests/photoreal_newsetup/plate.png",
+   "edited": "_tools/frame_check/_tests/photoreal_newsetup/nano_perched.png",
+   "region": [
+    0.0,
+    0.0,
+    0.3,
+    0.4
+   ],
+   "region_like": "_tools/frame_check/_tests/photoreal_newsetup/plate.png",
+   "max_diff": 25,
+   "want": {
+    "verdict": "PASS",
+    "sources": [],
+    "region matches": true
+   },
+   "why": "2026-11-17 live (job cb15df56, Kijan living room, Nano Banana 2): the room is unchanged after alignment (2.0 % coarse) - the pixel check had drawn 9 red boxes on re-rendered texture. Photoreal keeps the picture as drawn. (The people are perched on the sofa's edge: that is still_check's job, not this one.) Region check: the window/lamp corner stays within 25 of the plate (20.9 measured: re-rendered photo texture, not movement)."
+  },
+  {
+   "id": "compose.photoreal_room_relit",
+   "type": "compose",
+   "slow": true,
+   "look": "photoreal",
+   "subjects": [
+    {
+     "name": "Him",
+     "kind": "person"
+    },
+    {
+     "name": "Her",
+     "kind": "person"
+    }
+   ],
+   "start": "_tools/frame_check/_tests/photoreal_newsetup/plate.png",
+   "edited": "_tools/frame_check/_tests/photoreal_newsetup/gpt26_relit.png",
+   "region": [
+    0.0,
+    0.0,
+    0.3,
+    0.4
+   ],
+   "region_like": "_tools/frame_check/_tests/photoreal_newsetup/gpt26_relit.png",
+   "max_diff": 255,
+   "want": {
+    "verdict": "PASS",
+    "sources": [],
+    "region matches": true
+   },
+   "why": "2026-11-17 bake-off: GPT Image 2.6 re-lit the room (colour 8.6 %) but kept every wall, window and sofa in place (edge structure 0.96): PASS - re-lit is not moved."
+  },
+  {
+   "id": "compose.photoreal_room_rearranged",
+   "type": "compose",
+   "slow": true,
+   "look": "photoreal",
+   "subjects": [
+    {
+     "name": "Him",
+     "kind": "person"
+    },
+    {
+     "name": "Her",
+     "kind": "person"
+    }
+   ],
+   "expect": 2,
+   "start": "_tools/frame_check/_tests/photoreal_newsetup/plate.png",
+   "edited": "_tools/frame_check/_tests/photoreal_newsetup/nano_rearranged.png",
+   "region": [
+    0.0,
+    0.0,
+    0.3,
+    0.4
+   ],
+   "region_like": "_tools/frame_check/_tests/photoreal_newsetup/nano_rearranged.png",
+   "max_diff": 255,
+   "want": {
+    "verdict": "FLAG",
+    "sources": [],
+    "region matches": true
+   },
+   "why": "2026-11-17 live (job 2830f49f): Nano Banana 2 widened the view and moved the sofas and fireplace (edge structure 0.71): FLAG."
+  }
+ ]
+}

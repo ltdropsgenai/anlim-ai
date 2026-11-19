@@ -1,0 +1,131 @@
+{
+ "about": "Foot-slide bench, 2026-11-17: 3 labelled slides (2 moon-walks, 1 slide) and walking clips Londi passed (cartoon + photoreal), plus 4 MiniMax walks failed for other reasons (feet assumed fine).",
+ "cases": [
+  {
+   "id": "p0_S1_r1_gemini",
+   "clip": "C:\\vid_projects\\_phase0\\route_test_2026-11-11\\clips\\S1_r1_gemini.mp4",
+   "expect": "slide",
+   "label_source": "Londi: She is moon-walking",
+   "action": "Layana takes one step toward King and hands him the red-and-yellow toy dump truck; King reaches out with both hands and takes it from her; Layana lets go and her hands are empty; King holds the truck and smiles."
+  },
+  {
+   "id": "p0_S1_r2_gemini",
+   "clip": "C:\\vid_projects\\_phase0\\route_test_2026-11-11\\clips\\S1_r2_gemini.mp4",
+   "expect": "slide",
+   "label_source": "Londi: She is moon-walking",
+   "action": "Layana takes one step toward King and hands him the red-and-yellow toy dump truck; King reaches out with both hands and takes it from her; Layana lets go and her hands are empty; King holds the truck and smiles."
+  },
+  {
+   "id": "mm_walk_061a6169",
+   "clip": "C:\\vid_projects\\_app\\work\\061a6169-0743-4629-88b6-52b48be6daa1\\clip.mp4",
+   "expect": "slide",
+   "label_source": "Londi: she also slide to her right to avoid colliding",
+   "action": "Layana walks to the right in front of the coffee table, between the table and the camera, past its right end, each foot stepping on the floor with no sliding. She stops in front of the toy shelf, turns toward King, then looks at the camera and smiles. King stays seated on the sofa the whole time and watches her, turning his head to follow her."
+  },
+  {
+   "id": "p0_S1_r3_gemini",
+   "clip": "C:\\vid_projects\\_phase0\\route_test_2026-11-11\\clips\\S1_r3_gemini.mp4",
+   "expect": "ok",
+   "label_source": "Londi: pass",
+   "action": "Layana takes one step toward King and hands him the red-and-yellow toy dump truck; King reaches out with both hands and takes it from her; Layana lets go and her hands are empty; King holds the truck and smiles."
+  },
+  {
+   "id": "p0_S1_r1_klingS",
+   "clip": "C:\\vid_projects\\_phase0\\route_test_2026-11-11\\clips\\S1_r1_klingS.mp4",
+   "expect": "ok",
+   "label_source": "Londi: pass",
+   "action": "Layana takes one step toward King and hands him the red-and-yellow toy dump truck; King reaches out with both hands and takes it from her; Layana lets go and her hands are empty; King holds the truck and smiles."
+  },
+  {
+   "id": "p0_S1_r2_klingS",
+   "clip": "C:\\vid_projects\\_phase0\\route_test_2026-11-11\\clips\\S1_r2_klingS.mp4",
+   "expect": "ok",
+   "label_source": "Londi: pass",
+   "action": "Layana takes one step toward King and hands him the red-and-yellow toy dump truck; King reaches out with both hands and takes it from her; Layana lets go and her hands are empty; King holds the truck and smiles."
+  },
+  {
+   "id": "mm_walk_95df3ca3",
+   "clip": "C:\\vid_projects\\_app\\work\\95df3ca3-6877-49e1-9225-21df26b88b16\\clip.mp4",
+   "expect": "ok",
+   "label_source": "Londi: pass",
+   "action": "Layana walks to the right in front of the coffee table, between the table and the camera, past its right end, each foot stepping on the floor with no sliding. She stops in front of the toy shelf, turns toward King, then looks at the camera and smiles. King stays seated on the sofa the whole time and watches her, turning his head to follow her."
+  },
+  {
+   "id": "mm_walk_6cb6b0fa",
+   "clip": "C:\\vid_projects\\_app\\work\\6cb6b0fa-5f8a-476f-942a-5ab7f2a96323\\clip.mp4",
+   "expect": "ok",
+   "label_source": "Londi: pass",
+   "action": "Layana walks to the right in front of the coffee table, between the table and the camera, past its right end, each foot stepping on the floor with no sliding. She stops in front of the toy shelf, turns toward King, then looks at the camera and smiles. King stays seated on the sofa the whole time and watches her, turning his head to follow her."
+  },
+  {
+   "id": "mm_walk_b766fa00",
+   "clip": "C:\\vid_projects\\_app\\work\\b766fa00-0126-43d4-9e98-755db15e2abf\\clip.mp4",
+   "expect": "ok",
+   "label_source": "Londi: pass",
+   "action": "Layana walks to the right in front of the coffee table, between the table and the camera, past its right end, each foot stepping on the floor with no sliding. She stops in front of the toy shelf, turns toward King, then looks at the camera and smiles. King stays seated on the sofa the whole time and watches her, turning his head to follow her."
+  },
+  {
+   "id": "mm_walk_44f604f9",
+   "clip": "C:\\vid_projects\\_app\\work\\44f604f9-dfa3-4e4b-bfc8-51f97f6bbde5\\clip.mp4",
+   "expect": "ok",
+   "label_source": "Londi: pass",
+   "action": "Layana walks to the right in front of the coffee table, between the table and the camera, past its right end, each foot stepping on the floor with no sliding. She stops in front of the toy shelf, turns toward King, then looks at the camera and smiles. King stays seated on the sofa the whole time and watches her, turning his head to follow her."
+  },
+  {
+   "id": "kj_KL_s2",
+   "clip": "C:\\vid_projects\\_app\\work\\5f9fb3fc-451d-4c40-8ae6-4bd427c037d7\\clip.mp4",
+   "expect": "ok",
+   "label_source": "Londi approved",
+   "action": "Her stands in front of the fireplace, walks around the glass coffee table to the cream sofa on the left and sits down on it."
+  },
+  {
+   "id": "kj_KL_s2b",
+   "clip": "C:\\vid_projects\\_app\\work\\4282720a-f334-479b-849a-e1402f17a211\\clip.mp4",
+   "expect": "ok",
+   "label_source": "Londi approved",
+   "action": "Her stands in front of the fireplace, walks around the glass coffee table to the cream sofa on the left and sits down on it."
+  },
+  {
+   "id": "kj_KL_s3",
+   "clip": "C:\\vid_projects\\_app\\work\\c95f0ae1-b39b-4c48-bc86-3cef0c81f433\\clip.mp4",
+   "expect": "ok",
+   "label_source": "Londi approved",
+   "action": "Him walks from the right side of the room, around the glass coffee table, to the fireplace and stops facing the camera."
+  },
+  {
+   "id": "kj_KL_s3b",
+   "clip": "C:\\vid_projects\\_app\\work\\d24a04c2-c3e7-4065-b085-80925b0486bb\\clip.mp4",
+   "expect": "ok",
+   "label_source": "Londi approved",
+   "action": "Him walks from the right side of the room, around the glass coffee table, to the fireplace and stops facing the camera."
+  },
+  {
+   "id": "mm_walk_1e3161ee",
+   "clip": "C:\\vid_projects\\_app\\work\\1e3161ee-bacd-4a95-bdca-34a85f55f879\\clip.mp4",
+   "expect": "ok_assumed",
+   "label_source": "Londi failed it for another reason, no sliding mentioned (assumed feet OK)",
+   "action": "Layana walks to the right in front of the coffee table, between the table and the camera, past its right end, then turns to the toy shelf and stops in front of it, each foot stepping on the floor with no sliding. King stays seated on the sofa the whole time and watches her, turning his head to follow her."
+  },
+  {
+   "id": "mm_walk_efb37875",
+   "clip": "C:\\vid_projects\\_app\\work\\efb37875-67c2-4447-beff-b67081861d9c\\clip.mp4",
+   "expect": "ok_assumed",
+   "label_source": "Londi failed it for another reason, no sliding mentioned (assumed feet OK)",
+   "action": "Layana walks to the right in front of the coffee table, between the table and the camera, past its right end, then turns to the toy shelf and stops in front of it, each foot stepping on the floor with no sliding. King stays seated on the sofa the whole time and watches her, turning his head to follow her."
+  },
+  {
+   "id": "mm_walk_9e1b9abe",
+   "clip": "C:\\vid_projects\\_app\\work\\9e1b9abe-187a-40ee-8d8d-bb3cfb25209d\\clip.mp4",
+   "expect": "ok_assumed",
+   "label_source": "Londi failed it for another reason, no sliding mentioned (assumed feet OK)",
+   "action": "Layana walks to the right in front of the coffee table, between the table and the camera, past its right end, each foot stepping on the floor with no sliding. She stops in front of the toy shelf, turns toward King, then looks at the camera and smiles. King stays seated on the sofa the whole time and watches her, turning his head to follow her."
+  },
+  {
+   "id": "mm_walk_e98b3141",
+   "clip": "C:\\vid_projects\\_app\\work\\e98b3141-0e74-42b6-b22d-bbcc13e0a573\\clip.mp4",
+   "expect": "ok_assumed",
+   "label_source": "Londi failed it for another reason, no sliding mentioned (assumed feet OK)",
+   "action": "Layana walks to the right in front of the coffee table, between the table and the camera, past its right end, then turns to the toy shelf and stops in front of it, each foot stepping on the floor with no sliding. King stays seated on the sofa the whole time and watches her, turning his head to follow her."
+  }
+ ]
+}

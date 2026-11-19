@@ -1,0 +1,273 @@
+// Calls the studio-api Edge Function as the signed-in creator.
+import { supabase } from "./supabase";
+
+export type Flag = { t_s: number | null; frame: string; verdict: string; rules: string[]; note: string };
+export type QueueItem = {
+  id: string; status: string; created_at: string; free_retry: boolean; credits_reserved: number; credits_charged: number;
+  settled: string | null; error: string | null; shot_ord: number; action: string; shot_status: string;
+  scene_title: string; series_name: string; verdict: string | null; check_usd: string | null; flag_count: number | null;
+  decision: string | null; thumb_url: string | null; model_id: string; shot_id: string;
+};
+export type Clip = {
+  id: string; status: string; settled: string | null; credits_reserved: number; free_retry: boolean; error: string | null;
+  action: string; camera: string | null; duration_s: number; scene_title: string; series_name: string;
+  verdict: string | null; flags: Flag[] | null; reasons: string[] | null;
+  action_check: { verdict?: string; confidence?: string; differs?: string; why?: string } | null;
+  review_usd: string | null; verify_usd: string | null; action_usd: string | null; passthrough_usd: string | null;
+  passthrough: { verdict?: string; confidence?: string } | null;
+  clip_url: string | null; start_url: string | null; decision: string | null;
+  watermarked: boolean;   // free account: clip_url is the watermarked copy (2026-11-18)
+  model_id: string; route_kind: string | null; route_reason: string | null;   // route_kind null = the creator chose the model
+  shot_id: string;
+};
+
+export type ShotRow = {
+  id: string; ord: number; action: string; status: string; duration_s: number; camera: string | null;
+  has_end_frame: boolean; end_frame_approved: boolean; has_start_frame: boolean; start_frame_approved: boolean;
+  scene_id: string; scene_title: string; scene_ord: number; series_id: string; series_name: string;
+  gen_status: string | null; gen_id: string | null; frame_status: string | null; frame_kind: "end" | "start" | null;
+  thumb_url: string | null; has_approved_clip: boolean; gen_model: string | null;   // 2026-11-19 board
+};
+export type HeightCheck = { verdict: "OK" | "WRONG" | "UNSURE" | "NOT CHECKED"; problems: string[]; notes: string[] };
+// 2026-11-17: is everyone physically doing what was asked (sitting ON the seat, feet on the floor, hands holding)?
+export type StagingCheck = { verdict: "OK" | "WRONG" | "UNSURE" | "NOT CHECKED"; problems: string[]; notes?: string[] };
+export type EndCheck = { verdict: "PASS" | "FLAG"; drift: { box: number[]; area_pct: number }[]; why: string | null; height?: HeightCheck; staging?: StagingCheck;
+  revealed?: { box: number[]; area_pct: number; source: "plate" | "edit" }[]; plate_used?: boolean };
+export type FrameJob = {
+  id: string; status: "queued" | "running" | "composing" | "ready" | "failed" | "approved" | "discarded";
+  instruction: string; check_result: EndCheck | null; composed_url: string | null; error: string | null; created_at: string;
+};
+export type StartMode = "continue" | "reposition" | "new_setup";
+export type StartSource = "prev_last" | "this_start" | "prev_start";
+export type StartJob = FrameJob & { mode: StartMode };
+export type ShotContext = {
+  scene_id: string; series_id: string; location_id: string | null; location_name: string | null; has_plate: boolean | null;
+  prev_id: string | null; prev_clip_approved: boolean | null; prev_start_approved: boolean | null; cast_ids: string[];
+  characters: { id: string; name: string; has_ref: boolean; in_shot: boolean }[];
+};
+export type Shot = {
+  id: string; ord: number; action: string; status: string; duration_s: number; camera: string | null;
+  start_url: string | null; start_frame_approved: boolean; end_url: string | null; end_frame_path: string | null;
+  end_frame_approved: boolean; end_instruction: string | null; scene_title: string; series_name: string; look: Look;
+  job: FrameJob | null;
+  route: { kind: string; model_id: string; reason: string; evidence: string; label: string | null; credits: number } | null;
+  quality: Quality; series_id: string; models: { id: string; label: string | null; credits: number }[];
+  route_error: string | null; latest: { id: string; status: string } | null; owner: string;
+  start_job: StartJob | null; context: ShotContext | null;
+  // height check of an uploaded start still (frame_jobs kind 'height', 2026-11-16)
+  height_job: { id: string; status: FrameJob["status"]; check_result: { height?: HeightCheck } | null; error: string | null } | null;
+};
+export type LibCharacter = { id: string; name: string; kind: Kind; what: string | null; height_units: string | null; wardrobe: string | null; ref_front_path: string | null; ref_url: string | null };
+export type LibLocation = {
+  id: string; name: string; description: string | null; layout_path: string | null; plate_url: string | null; scene_ids: string[];
+  other_plates?: number;
+  job_id: string | null; job_status: FrameJob["status"] | null; job_url: string | null; job_check: EndCheck | null; job_error: string | null;
+};
+export type PricePlan = { id: string; kind: "pack" | "plan"; tier: string | null; billing_interval: "month" | "year" | null;
+  name: string; price_cents: number; credits: number };
+export type Billing = {
+  plans: PricePlan[]; ready: boolean;
+  account: { balance: number; reserved: number; plan_credits: number; plan_id: string | null; plan_status: string | null;
+             plan_period_end: string | null; plan_next_refresh: string | null; plan_cancel_at_period_end: boolean;
+             plan_cancel_at: string | null; has_customer: boolean } | null;
+};
+// why a creator did or didn't get welcome credits (trial guard, 2026-11-18); null = older account
+export type WelcomeStatus = "granted" | "repeat" | "disposable" | "held" | "off" | null;
+export type Library = { characters: LibCharacter[]; locations: LibLocation[]; owner: string };
+// cartoon = drawn; photoreal = looks filmed. Picks the checker's rules, the image-prompt wording and the video route.
+export type Look = "cartoon" | "photoreal";
+// a cast member: a person, an animal or an object, in either look (2026-11-16)
+export type Kind = "person" | "animal" | "object";
+// which tested route table Auto uses for a series (2026-11-19); balanced = the tested picks
+export type Quality = "best" | "balanced" | "economy";
+export const QUALITY_NAMES: Record<string, string> = { best: "Best quality", balanced: "Balanced", economy: "Lowest cost" };
+export const QUALITY_HELP: Record<string, string> = {
+  best: "Picks the model that tested best for each kind of shot, even when it costs more.",
+  balanced: "Picks the tested model that gives good results for the price. Recommended.",
+  economy: "Picks the cheapest model that still passed our tests for that kind of shot.",
+};
+// a scene cut (studio.assemblies, 2026-11-19)
+export type CutFormat = "16x9" | "9x16" | "4x5";
+export type Cut = {
+  id: string; format: CutFormat; options: { fade: boolean; end_card: boolean; music_path: string | null; voice?: boolean; sfx?: boolean };
+  status: "queued" | "running" | "done" | "failed"; duration_s: string | null; error: string | null; skipped: number[]; shots: number;
+  report: { checks: { name: string; ok: boolean; detail: string }[]; notes: string[]; voiceovers?: number; effects?: number } | null;
+  watermarked: boolean; url: string | null; created_at: string;
+};
+export type Series = {
+  id: string; name: string; look: Look; quality: Quality; genre: Genre | null; style_prompt: string | null; scenes: { id: string; title: string; ord: number; location_id: string | null }[];
+  locations: { id: string; name: string; has_plate: boolean }[];
+};
+// Genre: optional, files and filters work in Assets; it changes nothing about how frames or clips are made (2026-11-19).
+export type Genre = "drama" | "comedy" | "action" | "kids" | "horror" | "romance" | "documentary" | "music_video" | "ad" | "explainer" | "other";
+export const GENRE_NAMES: Record<Genre, string> = {
+  drama: "Drama", comedy: "Comedy", action: "Action", kids: "Kids", horror: "Horror", romance: "Romance",
+  documentary: "Documentary", music_video: "Music video", ad: "Ad / promo", explainer: "Explainer", other: "Other",
+};
+// Assets library (studio.my_assets + music, 2026-11-19)
+export type AssetKind = "clip" | "cut" | "still" | "character" | "place" | "voice" | "sfx" | "music";
+export const ASSET_KIND_NAMES: Record<AssetKind, string> = {
+  clip: "Clips", cut: "Scene cuts", still: "Frames", character: "Characters", place: "Places", voice: "Voiceover", sfx: "Sound effects", music: "Music",
+};
+export type AssetStatus = "kept" | "to_review" | "rejected";
+export type Asset = {
+  kind: AssetKind; id: string; created_at: string; series_id: string | null; series_name: string | null; look: Look | null;
+  genre: Genre | null; scene_id: string | null; scene_title: string | null; shot_id: string | null; shot_ord: number | null;
+  title: string; subtitle: string | null; model: string | null; duration_s: string | null; status: AssetStatus; verdict: string | null;
+  thumb_url: string | null; url: string | null; watermarked: boolean;
+};
+export type AssetQuery = { kind?: AssetKind | null; series_id?: string | null; look?: Look | null; genre?: Genre | null;
+  status?: AssetStatus | null; q?: string; sort?: "newest" | "oldest"; limit?: number; offset?: number };
+export type HomeData = {
+  models: { id: string; label: string | null; resolution: string; credits_per_second: number; min_duration_s: number; max_duration_s: number;
+            auto_for: { look: Look; kind: string }[] }[];
+  counts: { series: number; shots: number; kept: number; to_review: number; cuts: number };
+  recent: { kind: "clip" | "cut"; id: string; title: string; series_name: string; scene_title: string | null; shot_id: string | null;
+            scene_id: string | null; thumb_url: string | null; created_at: string }[];
+  last: { shot_id: string; ord: number; action: string; scene_id: string; scene_title: string; series_id: string; series_name: string;
+          thumb_url: string | null } | null;
+};
+
+// ElevenLabs connection and audio for scene cuts (2026-11-19). The key never comes back from the server.
+export type Connection = { provider: "elevenlabs"; key_hint: string | null; status: "ok" | "invalid"; checked_at: string | null; created_at: string;
+  account: { tier: string | null; character_count?: number | null; character_limit?: number | null; next_reset_unix?: number | null; note?: string } | null };
+export type Voice = { id: string; name: string; category: string | null; gender: string | null; accent: string | null; age: string | null;
+  description: string | null; preview_url: string | null };
+export type AudioKind = "voiceover" | "sfx" | "music";
+export type AudioJob = { id: string; shot_id: string | null; kind: AudioKind; status: "queued" | "running" | "done" | "failed"; in_cut: boolean;
+  duration_s: string | null; error: string | null; created_at: string; url: string | null;
+  input: { text: string; voice_id?: string; voice_name?: string; duration_s?: number | null; length_s?: number; instrumental?: boolean } };
+
+export const END_FRAME_CREDITS = 20;   // studio.request_end_frame: Nano Banana 2 edit, $0.08 at the house margin
+export const FRAME_CREDITS = 20;       // start still (reposition / new setup) and plate: one Nano Banana 2 edit; "continue" is free
+// photoreal New setup: GPT Image 2.6 Sunburst edit, priced by cast size (2026-11-18, Londi): $0.068 + $0.012 a person
+// (measured $0.092 with 2 people), 250 credits a dollar -> 17 + 3 x people. Must match studio.request_start_frame.
+export const photoSetupCredits = (people: number) => 17 + 3 * Math.max(1, people);
+export const startFrameCredits = (mode: string, look?: string | null, people = 2) =>
+  mode === "continue" ? 0 : mode === "new_setup" && look === "photoreal" ? photoSetupCredits(people) : FRAME_CREDITS;
+
+// Display names for the video models (studio.models ids).
+export const MODEL_NAMES: Record<string, string> = {
+  "kling-v4-i2v-720p": "Kling 4.0", "minimax-h3-i2v-768p": "MiniMax H3", "mock-i2v": "Test model",
+};
+export const KIND_NAMES: Record<string, string> = {
+  walking: "walking shots", sit_stand: "sitting and standing", handling: "handling props", talking: "talking shots", other: "this kind of shot",
+};
+
+async function call<T>(body: Record<string, unknown>, fn = "studio-api"): Promise<T> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Please sign in again.");
+  const r = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/${fn}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, apikey: process.env.EXPO_PUBLIC_SUPABASE_KEY!, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `Request failed (${r.status})`);
+  return j as T;
+}
+
+export const api = {
+  me: () => call<{ user_id: string; email: string; balance: number; reserved: number; plan_credits: number;
+                   plan_id: string | null; plan_status: string | null;
+                   welcome_status: WelcomeStatus }>({ op: "me" }),
+  // billing (studio-billing Edge Function: Stripe Checkout and billing portal)
+  billing: () => call<Billing>({ op: "plans" }, "studio-billing"),
+  checkout: (planId: string, returnUrl: string) => call<{ url: string }>({ op: "checkout", plan_id: planId, return_url: returnUrl }, "studio-billing"),
+  portal: (returnUrl: string) => call<{ url: string }>({ op: "portal", return_url: returnUrl }, "studio-billing"),
+  queue: () => call<{ items: QueueItem[] }>({ op: "queue" }).then((r) => r.items),
+  clip: (id: string) => call<Clip>({ op: "clip", generation_id: id }),
+  decide: (id: string, decision: "approve" | "reject", reasons: string[], note: string) =>
+    call<{ ok: boolean }>({ op: "decide", generation_id: id, decision, reasons, note }),
+  shots: () => call<{ items: ShotRow[] }>({ op: "shots" }).then((r) => r.items),
+  shot: (id: string) => call<Shot>({ op: "shot", shot_id: id }),
+  requestEndFrame: (id: string, instruction: string) => call<{ job_id: string }>({ op: "end_frame", shot_id: id, instruction }),
+  decideEndFrame: (job: string, decision: "approve" | "discard") => call<{ ok: boolean }>({ op: "end_frame_decide", job_id: job, decision }),
+  clearEndFrame: (id: string) => call<{ ok: boolean }>({ op: "end_frame_clear", shot_id: id }),
+  render: (id: string, model?: string) => call<{ generation_id: string }>({ op: "render", shot_id: id, model }),
+  series: () => call<{ items: Series[] }>({ op: "series" }).then((r) => r.items),
+  createScene: (seriesId: string, title: string) => call<{ id: string }>({ op: "scene_create", series_id: seriesId, title }),
+  createShot: (sceneId: string, action: string, durationS: number, camera = "locked") =>
+    call<{ id: string }>({ op: "shot_create", scene_id: sceneId, action, duration_s: durationS, camera }),
+  updateShot: (id: string, action: string, camera: string | null, durationS: number) =>
+    call<{ ok: boolean }>({ op: "shot_update", shot_id: id, action, camera, duration_s: durationS }),
+  setStartFrame: (id: string, path: string) => call<{ ok: boolean }>({ op: "shot_start_frame", shot_id: id, path }),
+  approveStartFrame: (id: string) => call<{ ok: boolean }>({ op: "shot_start_approve", shot_id: id }),
+  deleteShot: (id: string) => call<{ ok: boolean }>({ op: "shot_delete", shot_id: id }),
+  requestStartFrame: (id: string, mode: StartMode, instruction?: string, source?: StartSource) =>
+    call<{ job_id: string }>({ op: "start_frame", shot_id: id, mode, instruction: instruction ?? null, source: source ?? null }),
+  decideFrame: (job: string, decision: "approve" | "discard") => call<{ ok: boolean }>({ op: "frame_decide", job_id: job, decision }),
+  requestPlate: (locationId: string, shotId: string) => call<{ job_id: string }>({ op: "plate", location_id: locationId, shot_id: shotId }),
+  library: (seriesId: string) => call<Library>({ op: "library", series_id: seriesId }),
+  createSeries: (name: string, look: Look, style?: string, genre?: Genre | null) =>
+    call<{ id: string }>({ op: "series_create", name, look, style: style ?? null, genre: genre ?? null }),
+  setSeriesGenre: (seriesId: string, genre: Genre | null) => call<{ ok: true }>({ op: "series_genre", series_id: seriesId, genre }),
+  assets: (q: AssetQuery) => call<{ items: Asset[]; total: number; counts: Record<string, number> }>({ op: "assets", ...q }),
+  home: () => call<HomeData>({ op: "home" }),
+  setSeriesQuality: (seriesId: string, quality: Quality) => call<{ ok: true }>({ op: "series_quality", series_id: seriesId, quality }),
+  connections: () => call<{ items: Connection[] }>({ op: "connections" }).then((r) => r.items),
+  connect: (key: string) => call<{ ok: true; key_hint: string; account: Connection["account"] }>({ op: "connection_set", provider: "elevenlabs", key }),
+  checkConnection: () => call<{ ok: boolean }>({ op: "connection_check" }),
+  disconnect: () => call<{ ok: true }>({ op: "connection_remove" }),
+  voices: (search?: string) => call<{ items: Voice[] }>({ op: "voices", search: search ?? null }).then((r) => r.items),
+  makeAudio: (a: { scene_id: string; shot_id?: string | null; kind: AudioKind; text: string; voice_id?: string; voice_name?: string;
+                   duration_s?: number | null; length_s?: number; instrumental?: boolean }) => call<{ id: string }>({ op: "audio_create", ...a }),
+  audio: (sceneId: string) => call<{ items: AudioJob[] }>({ op: "audio_list", scene_id: sceneId }).then((r) => r.items),
+  useAudio: (id: string, on: boolean) => call<{ ok: true }>({ op: "audio_use", id, on }),
+  makeCut: (sceneId: string, format: CutFormat, opts: { fade: boolean; end_card: boolean; music_path: string | null; voice?: boolean; sfx?: boolean }) =>
+    call<{ id: string }>({ op: "assembly_create", scene_id: sceneId, format, ...opts }),
+  cuts: (sceneId: string) => call<{ items: Cut[] }>({ op: "assemblies", scene_id: sceneId }).then((r) => r.items),
+  updateSeries: (seriesId: string, look?: Look, style?: string) =>
+    call<{ ok: true }>({ op: "series_update", series_id: seriesId, look: look ?? null, style: style ?? null }),
+  createCharacter: (seriesId: string, name: string, height: string, wardrobe: string, kind: Kind = "person", what = "") =>
+    call<{ id: string }>({ op: "character_create", series_id: seriesId, name, height: height.trim() || null, wardrobe: wardrobe.trim() || null,
+                           kind, what: what.trim() || null }),
+  setCharacterRef: (id: string, path: string) => call<{ ok: boolean }>({ op: "character_ref", character_id: id, path }),
+  // edit a character's card (2026-11-18): new frames and renders use it; finished ones keep what they were given
+  updateCharacter: (id: string, name: string, height: string, wardrobe: string, kind: Kind, what: string) =>
+    call<{ ok: boolean }>({ op: "character_update", character_id: id, name, height, wardrobe, kind, what }),
+  createLocation: (seriesId: string, name: string, description: string) =>
+    call<{ id: string }>({ op: "location_create", series_id: seriesId, name, description: description.trim() || null }),
+  setLocationPlate: (id: string, path: string) => call<{ ok: boolean }>({ op: "location_plate", location_id: id, path }),
+  setSceneLocation: (sceneId: string, locationId: string | null) => call<{ ok: boolean }>({ op: "scene_location", scene_id: sceneId, location_id: locationId }),
+  setShotCast: (id: string, cast: string[]) => call<{ ok: boolean }>({ op: "shot_cast", shot_id: id, cast }),
+  requestHeightCheck: (shotId: string) => call<{ job_id: string }>({ op: "height_request", shot_id: shotId }),
+  requestCutouts: (shotId: string) => call<{ job_id: string }>({ op: "cutout_request", shot_id: shotId }),
+  cutouts: (shotId: string) => call<{ job: CutoutJob | null }>({ op: "cutouts", shot_id: shotId }).then((r) => r.job),
+  useCutout: (jobId: string, index: number, characterId: string) =>
+    call<{ ok: boolean; path: string }>({ op: "cutout_use", job_id: jobId, index, character_id: characterId }),
+};
+
+// Reference cut-outs (2026-11-16): each character of a shot's start still cut out onto white, left to right.
+export type Cutout = { index: number; path: string; url: string | null; box: number[]; warnings: string[]; plate_used?: boolean };
+export type CutoutJob = { id: string; status: string; error: string | null; cutouts: Cutout[] };
+
+// Any image the creator adds goes straight to storage with their own session, under <owner>/<folder>/
+// (stills = start frames, characters = reference images, locations = empty-room plates).
+export async function uploadImage(owner: string, folder: "stills" | "characters" | "locations", name: string, file: Blob, type: string): Promise<string> {
+  const ext = type === "image/jpeg" ? "jpg" : type === "image/webp" ? "webp" : "png";
+  const path = `${owner}/${folder}/${name}-${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from("studio").upload(path, file, { contentType: type, upsert: false });
+  if (error) throw new Error(`Upload failed: ${error.message}`);
+  return path;
+}
+
+// A music track for a scene cut, uploaded with the creator's own session to <owner>/music/ (2026-11-19).
+export async function uploadMusic(owner: string, file: Blob, name: string, type: string): Promise<string> {
+  const ext = (name.split(".").pop() || "mp3").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5) || "mp3";
+  const path = `${owner}/music/track-${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from("studio").upload(path, file, { contentType: type || "audio/mpeg", upsert: false });
+  if (error) throw new Error(`Upload failed: ${error.message}`);
+  return path;
+}
+
+// Start stills go straight to storage with the creator's own session (bucket "studio", folder <owner>/stills/).
+export const uploadStill = (owner: string, shotId: string, file: Blob, type: string) => uploadImage(owner, "stills", shotId, file, type);
+
+// Frames the second opinion dismissed: reasons lines look like "ANATOMY: f20 REJECTED: ... | f24 REJECTED: ...".
+export function dismissedFrames(reasons: string[] | null): Set<string> {
+  const out = new Set<string>();
+  for (const line of reasons || []) for (const m of line.matchAll(/\b(f\d+) REJECTED\b/g)) out.add(m[1]);
+  return out;
+}
