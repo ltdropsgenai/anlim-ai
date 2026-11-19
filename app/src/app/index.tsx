@@ -1,5 +1,5 @@
-// Home (2026-11-19, Londi: "home screen that details features, models, tools"): what anlim does, the models it uses
-// (live from studio.models and the tested routes), the tools, and where the creator left off. @anlim
+// Home (2026-11-19). Prompt first ("What are we making today?", components/Composer), then where the creator left
+// off, recent work, and what anlim does: features, the models (live from studio.models and the tested routes), tools. @anlim
 import { useCallback, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
@@ -8,6 +8,7 @@ import { c, font } from "../lib/theme";
 import { Grid } from "../components/Grid";
 import { Icon, IconName } from "../components/Icon";
 import { FEATURES } from "../lib/marketing";
+import { Composer } from "../components/Composer";
 
 const KIND: Record<string, string> = { walking: "walking", sit_stand: "sitting and standing", handling: "handling props", talking: "talking", other: "other shots" };
 const LOOK: Record<string, string> = { cartoon: "Cartoon", photoreal: "Photoreal" };
@@ -50,31 +51,39 @@ export default function Home() {
 
   return (
     <ScrollView style={{ backgroundColor: c.bg }} contentContainerStyle={[s.page, narrow && { padding: 16 }]}>
-      {/* hero */}
-      <View style={[s.hero, narrow && { padding: 22 }]}>
-        <Text style={[s.kicker, font.mono, { color: c.accent }]}>ANLIM.AI · AI VIDEO STUDIO</Text>
-        <Text style={[s.h1, font.display, narrow && { fontSize: 32, lineHeight: 36 }]}>Make AI video where your cast stays the same.</Text>
-        <Text style={s.lead}>Write what happens in each shot. anlim makes the frames, picks the model, renders the clip and checks it before you keep it.</Text>
-        <View style={[s.row, { marginTop: 22 }]}>
-          <Pressable style={s.cta} onPress={() => router.navigate("/workspace")} accessibilityRole="link">
-            <Text style={s.ctaText}>Open the Workspace</Text><Icon name="arrow" size={18} color={c.onAccent} />
-          </Pressable>
-          {d?.last && (
-            <Pressable style={s.ghost} accessibilityRole="link"
-              onPress={() => router.navigate({ pathname: "/workspace", params: { series: d.last!.series_id, scene: d.last!.scene_id, shot: d.last!.shot_id } })}>
-              <Text style={{ color: c.ink, fontWeight: "600" }} numberOfLines={1}>Continue: {d.last.scene_title}, shot {d.last.ord}</Text>
-            </Pressable>
-          )}
-        </View>
-        <View style={[s.stats, narrow && { gap: 18 }]}>
-          {stats.map(([k, v]) => (
-            <View key={k}>
-              <Text style={[{ color: c.ink, fontSize: 26 }, font.display]}>{v ?? "–"}</Text>
-              <Text style={[s.statLabel, font.mono]}>{k}</Text>
+      {/* prompt first (2026-11-19, Londi: like other tools, "What are we making today?" with a prompt window) */}
+      <Composer narrow={narrow} />
+
+      {/* where the creator left off; a brand-new account has none of this yet */}
+      {d && (d.last || d.counts.series > 0) && (
+        <View style={[s.hero, narrow && { padding: 18 }, { marginTop: 40 }]}>
+          <View style={[s.row, { justifyContent: "space-between" }]}>
+            <View style={{ flex: 1, minWidth: 220 }}>
+              <Text style={[s.kicker, font.mono]}>PICK UP WHERE YOU LEFT OFF</Text>
+              {d.last && <Text style={[s.h3, font.display]} numberOfLines={2}>{d.last.series_name} · {d.last.scene_title}, shot {d.last.ord}</Text>}
             </View>
-          ))}
+            <View style={s.row}>
+              {d.last && (
+                <Pressable style={s.cta} accessibilityRole="link"
+                  onPress={() => router.navigate({ pathname: "/workspace", params: { series: d.last!.series_id, scene: d.last!.scene_id, shot: d.last!.shot_id } })}>
+                  <Text style={s.ctaText}>Continue</Text><Icon name="arrow" size={18} color={c.onAccent} />
+                </Pressable>
+              )}
+              <Pressable style={s.ghost} onPress={() => router.navigate("/workspace")} accessibilityRole="link">
+                <Text style={{ color: c.ink, fontWeight: "600" }}>Open the Workspace</Text>
+              </Pressable>
+            </View>
+          </View>
+          <View style={[s.stats, narrow && { gap: 18 }]}>
+            {stats.map(([k, v]) => (
+              <View key={k}>
+                <Text style={[{ color: c.ink, fontSize: 26 }, font.display]}>{v ?? "–"}</Text>
+                <Text style={[s.statLabel, font.mono]}>{k}</Text>
+              </View>
+            ))}
+          </View>
         </View>
-      </View>
+      )}
       {error && <Text style={{ color: c.fail, marginTop: 12 }}>{error}</Text>}
 
       {d && d.recent.length > 0 && (
@@ -169,7 +178,7 @@ export default function Home() {
 
 const s = StyleSheet.create({
   page: { padding: 28, maxWidth: 1240, width: "100%", alignSelf: "center" },
-  hero: { backgroundColor: c.card, borderWidth: 1, borderColor: c.line, borderRadius: 24, padding: 40, overflow: "hidden" },
+  hero: { backgroundColor: c.card, borderWidth: 1, borderColor: c.line, borderRadius: 24, padding: 28, overflow: "hidden" },
   kicker: { color: c.sub, fontSize: 12, letterSpacing: 1 },
   h1: { color: c.ink, fontSize: 48, lineHeight: 52, marginTop: 12, maxWidth: 820 },
   h2: { color: c.ink, fontSize: 28, textTransform: "uppercase", marginTop: 4, marginBottom: 16 },

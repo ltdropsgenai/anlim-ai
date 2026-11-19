@@ -2,7 +2,8 @@
 //   end   : how the shot ends: this shot's start still, edited.
 //   start : the shot's start still. mode continue   = last frame of the previous approved clip (no image model, free);
 //                                   mode reposition = a still (or the previous clip's last frame), edited;
-//                                   mode new_setup  = the location's empty-room plate + each character's reference image.
+//                                   mode new_setup  = the location's empty-room plate + each character's reference image;
+//                                   mode prompt     = drawn from the shot's description alone (text to image, 2026-11-19).
 //   plate : a location's empty room: every character removed from a shot's start still.
 //   height: an uploaded start still, height-checked only (frame_check height_check.py; no image model, 0 credits).
 //   cutout: each character of a shot's start still cut out onto white (frame_check cutout.py, with the location's
@@ -87,6 +88,21 @@ export function setupPrompt(instruction, names, heights = [], look = "cartoon", 
     (sizes.length ? sizes.join(" ") + " " : "") +
     `Keep the room of image 1 exactly as it is: same furniture, props, window, colors, lighting, ${lookWords(look)} and camera ` +
     "framing. Nobody else. No text.";
+}
+
+// Start frame from the description (mode "prompt", 2026-11-19): a new project's first shot has no room, cast or
+// previous clip to start from, so the still is drawn from the shot's words alone (text to image, 16:9). The creator
+// can then cut character references out of it, and later shots continue from its clip.
+export function framePrompt(instruction, look = "cartoon", style = null, chars = []) {
+  const cast = chars.map(castText).join("; ");
+  const looks = look === "photoreal"
+    ? "A real photograph: natural light, a real camera lens, real people and places, not drawn, not 3D, not animated."
+    : "A clean cartoon illustration with a consistent drawing style, clear shapes and readable faces.";
+  return `The opening frame of a short video shot, 16:9, a wide or medium shot that shows the whole setting. ` +
+    `${instruction.trim().replace(/\.?$/, ".")} Show the moment the shot begins: everyone in their starting positions, ` +
+    `faces and bodies fully visible, nobody cut off by the frame edge. ${looks}` +
+    (style ? ` Style: ${style.trim().replace(/\.?$/, ".")}` : "") +
+    (cast ? ` Characters: ${cast}.` : "") + " No text, no captions, no logos, no watermark.";
 }
 
 // Nano Banana 2 takes an aspect ratio, not a size: pick the supported ratio nearest the start still's.
@@ -229,7 +245,16 @@ async function stepCutout(j, shot, base, look, characters) {
 }
 
 async function stepQueued(j) {
-  const { shot, characters, look } = await db.frameContext(j);
+  const { shot, characters, look, stylePrompt } = await db.frameContext(j);
+  if (j.kind === "start" && j.mode === "prompt") {
+    // no image to start from: text to image only
+    const prompt = framePrompt(j.instruction || shot?.action || "", look, stylePrompt, characters);
+    const sub = await provider().submit(j.endpoint, { prompt, num_images: 1, aspect_ratio: "16:9", resolution: "1K", output_format: "png" });
+    await db.updateFrame(j.id, { status: "running", prompt, provider_request_id: sub.requestId, provider_status_url: sub.statusUrl,
+      provider_response_url: sub.responseUrl, submitted_at: new Date(), next_poll_at: later(5000), tries: 0,
+      locked_by: null, locked_until: null });
+    return log(j, `start/prompt submitted to ${j.endpoint} (${sub.requestId})`);
+  }
   const base = await baseStill(j, shot);
   if (j.kind === "cutout") return stepCutout(j, shot, base, look, characters);
   if (j.kind === "height") {
@@ -309,6 +334,18 @@ async function stepRunning(j) {
 async function stepComposing(j) {
   const { shot, characters, platePaths, look } = await db.frameContext(j);
   const dir = path.join(config.workDir, "frames", j.id);
+  if (j.kind === "start" && j.mode === "prompt") {
+    // nothing to compose onto: the drawn still is the start frame; the creator approves or discards it
+    const raw = path.join(dir, "raw.png");
+    try { await fs.access(raw); } catch { await storage.download(j.raw_path, raw); }
+    const composedPath = outPath(j);
+    await storage.upload(raw, composedPath, "image/png");
+    await db.settleFrame(j.id, "charge");
+    const check = { verdict: "PASS", drift: [], why: "drawn from your description" };
+    await db.updateFrame(j.id, { status: "ready", composed_path: composedPath, check_result: JSON.stringify(check),
+      locked_by: null, locked_until: null });
+    return log(j, "start frame from the description ready");
+  }
   const base = await baseStill(j, shot);
   const raw = path.join(dir, "raw.png"), out = path.join(dir, "out.png");
   try { await fs.access(raw); } catch { await storage.download(j.raw_path, raw); }

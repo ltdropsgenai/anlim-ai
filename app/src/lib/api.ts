@@ -37,7 +37,7 @@ export type FrameJob = {
   id: string; status: "queued" | "running" | "composing" | "ready" | "failed" | "approved" | "discarded";
   instruction: string; check_result: EndCheck | null; composed_url: string | null; error: string | null; created_at: string;
 };
-export type StartMode = "continue" | "reposition" | "new_setup";
+export type StartMode = "prompt" | "continue" | "reposition" | "new_setup";   // prompt: drawn from the description (2026-11-19)
 export type StartSource = "prev_last" | "this_start" | "prev_start";
 export type StartJob = FrameJob & { mode: StartMode };
 export type ShotContext = {

@@ -10,6 +10,7 @@ import { StillPicker } from "./StillPicker";
 
 const MAKING = ["queued", "running", "composing"];
 const MODE_TEXT: Record<StartMode, string> = {
+  prompt: "From the shot's description",
   continue: "Continue from the previous clip", reposition: "Same room, new positions", new_setup: "New setup from the location",
 };
 const SOURCE_TEXT: Record<StartSource, string> = {
@@ -75,6 +76,7 @@ function StartMaker({ shot, busy, run }: { shot: Shot; busy: boolean; run: (fn: 
   const cast = ctx.characters.filter((x) => x.in_shot);
   const noRef = cast.filter((x) => !x.has_ref).map((x) => x.name);
   const why: Record<StartMode, string | null> = {
+    prompt: null,
     continue: !ctx.prev_id ? "This is the first shot of the scene." : !ctx.prev_clip_approved ? "Approve a clip of the previous shot first." : null,
     reposition: !shot.start_url && !ctx.prev_clip_approved && !ctx.prev_start_approved ? "Needs a still to start from: upload one, or approve the previous shot's start frame or clip." : null,
     new_setup: !ctx.location_id ? "Give the scene a location (Characters & locations)." : !ctx.has_plate ? `Make or upload the empty-room plate for ${ctx.location_name}.`
@@ -84,6 +86,7 @@ function StartMaker({ shot, busy, run }: { shot: Shot; busy: boolean; run: (fn: 
     ...(ctx.prev_clip_approved ? ["prev_last" as const] : []), ...(shot.start_url ? ["this_start" as const] : []),
     ...(ctx.prev_start_approved ? ["prev_start" as const] : [])];
   const src = source && sources.includes(source) ? source : sources[0];
+  const needsText = mode === "reposition" || mode === "new_setup";
   return (
     <View style={s.panel}>
       <Text style={s.label}>Make a start frame</Text>
@@ -91,7 +94,8 @@ function StartMaker({ shot, busy, run }: { shot: Shot; busy: boolean; run: (fn: 
         <Pressable key={m} disabled={!!why[m] || busy} onPress={() => setMode(m)} accessibilityRole="radio" accessibilityState={{ checked: mode === m, disabled: !!why[m] }}
           style={[s.choice, mode === m && s.choiceOn, !!why[m] && { opacity: 0.55 }]}>
           <Text style={s.choiceTitle}>{MODE_TEXT[m]} · {m === "continue" ? "free" : `${startFrameCredits(m, shot.look, cast.length)} credits`}</Text>
-          <Text style={s.sub}>{why[m] ?? (m === "continue" ? "Starts exactly where the approved clip ended."
+          <Text style={s.sub}>{why[m] ?? (m === "prompt" ? "Draws the first frame from the shot's words. Best for a new project's first shot; then cut character references out of it."
+            : m === "continue" ? "Starts exactly where the approved clip ended."
             : m === "reposition" ? "Moves the characters; the room stays pixel-for-pixel." : `Places ${cast.map((x) => x.name).join(" and ")} in the empty ${ctx.location_name}.`)}</Text>
         </Pressable>
       ))}
@@ -119,11 +123,11 @@ function StartMaker({ shot, busy, run }: { shot: Shot; busy: boolean; run: (fn: 
         )}
       </>)}
       {mode && (
-        <Pressable style={[s.btn, { backgroundColor: c.accent }, (busy || (mode !== "continue" && !text.trim())) && { opacity: 0.5 }]}
-          disabled={busy || (mode !== "continue" && !text.trim())} accessibilityRole="button"
+        <Pressable style={[s.btn, { backgroundColor: c.accent }, (busy || (needsText && !text.trim())) && { opacity: 0.5 }]}
+          disabled={busy || (needsText && !text.trim())} accessibilityRole="button"
           onPress={() => {
-            if (mode !== "continue" && sameText(text, shot.action) >= 0.8 && !sameOk) { setSameOk(true); return; }   // first press: warn
-            run(() => api.requestStartFrame(shot.id, mode, mode === "continue" ? undefined : text, mode === "reposition" ? src : undefined));
+            if (needsText && sameText(text, shot.action) >= 0.8 && !sameOk) { setSameOk(true); return; }   // first press: warn
+            run(() => api.requestStartFrame(shot.id, mode, needsText ? text : undefined, mode === "reposition" ? src : undefined));
           }}>
           <Text style={s.btnText}>{mode === "continue" ? "Use the last frame" : `Make start frame (${startFrameCredits(mode, shot.look, cast.length)} credits)`}</Text>
         </Pressable>
@@ -351,11 +355,12 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
       {startCandidate && (
         <View style={s.panel}>
           <Text style={s.sub}>{MODE_TEXT[startCandidate.mode]}{startCandidate.mode !== "continue" ? `: ${startCandidate.instruction}` : "."}</Text>
-          {startCandidate.mode !== "continue" && (startCandidate.check_result?.verdict === "PASS"
+          {startCandidate.mode === "prompt" && <Text style={[s.badge, { color: c.pass, borderColor: c.pass }]}>Drawn from your description. Keep it if it shows the moment the shot starts.</Text>}
+          {startCandidate.mode !== "continue" && startCandidate.mode !== "prompt" && (startCandidate.check_result?.verdict === "PASS"
             ? <Text style={[s.badge, { color: c.pass, borderColor: c.pass }]}>{startCandidate.check_result?.why?.startsWith("the room's layout")
                 ? "Check: the room's layout matches the location (lighting may differ slightly)" : "Check: the room is unchanged"}</Text>
             : <Text style={[s.badge, { color: c.flag, borderColor: c.flag }]}>{flagText(startCandidate.check_result, "something in the room changed (red boxes). Look closely.")}</Text>)}
-          {startCandidate.mode !== "continue" && <RevealedNote ch={startCandidate.check_result} />}
+          {startCandidate.mode !== "continue" && startCandidate.mode !== "prompt" && <RevealedNote ch={startCandidate.check_result} />}
           <HeightBadge h={startCandidate.check_result?.height} mode={startCandidate.mode} />
           <StagingBadge st={startCandidate.check_result?.staging} />
           {startCandidate.mode !== "continue" && <Text style={s.sub}>Look at each character's face and clothes: the checks cannot judge those.</Text>}
