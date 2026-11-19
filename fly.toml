@@ -1,7 +1,8 @@
 # Fly.io config for the worker + checker. @anlim
-# The worker only makes outbound calls. The http_service below exists only so Fly keeps the machine running:
-# without it Fly's GitHub launcher adds a default one that stops the machine when no web traffic arrives.
-# Set app name and region when you run `fly launch --no-deploy` (it rewrites these two lines).
+# No public service on purpose (2026-11-19): the worker only makes outbound calls. With an [http_service], Fly's
+# proxy stopped the machine about 5 minutes after every start (seen live 19:22, 19:29, 19:34 UTC), even with
+# auto_stop_machines off on the machine, and nothing restarts it. Without a service the proxy never touches it and
+# the restart policy keeps it running.
 app = "anlim-worker"
 primary_region = "ord"
 
@@ -11,20 +12,6 @@ primary_region = "ord"
 [env]
   WORKER_ID = "fly-1"
   CHECKER_MAX_JOBS = "2"
-
-[http_service]
-  internal_port = 8080
-  force_https = true
-  auto_stop_machines = "off"
-  auto_start_machines = true
-  min_machines_running = 1
-
-  [[http_service.checks]]
-    grace_period = "60s"
-    interval = "30s"
-    timeout = "5s"
-    method = "GET"
-    path = "/"
 
 # Always on: one machine, restarted if it stops.
 [[restart]]
