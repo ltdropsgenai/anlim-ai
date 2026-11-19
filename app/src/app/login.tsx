@@ -8,6 +8,7 @@ import { Captcha, CAPTCHA_ON } from "../components/Captcha";
 import { appUrl, authFlags, supabase } from "../lib/supabase";
 import { c } from "../lib/theme";
 import { Logo } from "../components/Logo";
+import { peekDraft } from "../lib/draft";
 
 type Mode = "signin" | "signup" | "forgot" | "code";
 const TITLES: Record<Mode, string> = { signin: "Sign in", signup: "Create your account", forgot: "Reset your password", code: "Enter the code from the email" };
@@ -36,6 +37,7 @@ export default function Login() {
   const [notice, setNotice] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [codeFor, setCodeFor] = useState<"signup" | "recovery">("signup");
+  const [draft] = useState(() => peekDraft());   // a prompt typed on /start before signing up
 
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const ready = mode === "code" ? emailOk && /^\d{6,10}$/.test(code.trim())
@@ -87,6 +89,10 @@ export default function Login() {
           <Logo size={34} /><Text style={s.title}>anlim.ai</Text>
         </Pressable>
         <Text style={s.sub}>{TITLES[mode]}</Text>
+        {draft && mode !== "forgot" && (
+          <Text style={s.notice}>Your shot is waiting: "{draft.text.length > 90 ? draft.text.slice(0, 90) + "…" : draft.text}". {mode === "signin"
+            ? "Sign in and we'll make its first frame." : "Create your account and we'll make its first frame, paid from your free starter credits."}</Text>
+        )}
         {notice && <Text style={s.notice}>{notice}</Text>}
         <TextInput style={s.input} placeholder="Email" autoCapitalize="none" keyboardType="email-address" autoComplete="email"
           placeholderTextColor={c.muted} value={email} onChangeText={setEmail} accessibilityLabel="Email" onSubmitEditing={submit} />

@@ -7,6 +7,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } fr
 import { router } from "expo-router";
 import { api, Look, Series } from "../lib/api";
 import { c, font } from "../lib/theme";
+import { clearDraft, peekDraft, saveDraft } from "../lib/draft";
 
 const IDEAS: Record<Look, string[]> = {
   cartoon: [
@@ -31,7 +32,7 @@ function nameFrom(prompt: string) {
   return n ? n[0].toUpperCase() + n.slice(1) : "Untitled project";
 }
 
-export function Composer({ narrow }: { narrow: boolean }) {
+export function Composer({ narrow, guest = false }: { narrow: boolean; guest?: boolean }) {
   const [text, setText] = useState("");
   const [look, setLook] = useState<Look>("cartoon");
   const [len, setLen] = useState(5);
@@ -42,7 +43,16 @@ export function Composer({ narrow }: { narrow: boolean }) {
   const [focus, setFocus] = useState(false);
   const input = useRef<{ focus: () => void } | null>(null);
 
-  useEffect(() => { api.series().then(setSeries).catch(() => setSeries([])); }, []);
+  useEffect(() => { if (!guest) api.series().then(setSeries).catch(() => setSeries([])); }, [guest]);
+  // a prompt typed before signing up: make it now, on the new account (once; the draft is cleared first)
+  useEffect(() => {
+    if (guest) return;
+    const d = peekDraft();
+    if (!d) return;
+    clearDraft();
+    setText(d.text); setLook(d.look); setLen(d.len);
+    make(d.text, d.look, d.len, null);
+  }, [guest]);   // eslint-disable-line react-hooks/exhaustive-deps
   const picked = useMemo(() => series.find((x) => x.id === target) ?? null, [series, target]);
   // adding to an existing project uses that project's look; the toggle is for new projects
   const effLook: Look = picked ? picked.look : look;
@@ -50,19 +60,28 @@ export function Composer({ narrow }: { narrow: boolean }) {
 
   async function go() {
     if (!ready) return;
+    if (guest) {
+      // visitors: keep the prompt, ask for an account; the shot is made as soon as they are signed in
+      saveDraft({ text: text.trim(), look, len });
+      router.navigate({ pathname: "/login", params: { mode: "signup" } });
+      return;
+    }
+    await make(text.trim(), look, len, picked);
+  }
+
+  async function make(action: string, lk: Look, ln: number, p: Series | null) {
     setBusy(true); setError(null);
     try {
-      const action = text.trim();
       let seriesId: string, sceneId: string;
-      if (picked) {
-        seriesId = picked.id;
-        const last = [...picked.scenes].sort((a, b) => b.ord - a.ord)[0];
+      if (p) {
+        seriesId = p.id;
+        const last = [...p.scenes].sort((a, b) => b.ord - a.ord)[0];
         sceneId = last ? last.id : (await api.createScene(seriesId, "Scene 1")).id;
       } else {
-        seriesId = (await api.createSeries(nameFrom(action), look)).id;
+        seriesId = (await api.createSeries(nameFrom(action), lk)).id;
         sceneId = (await api.createScene(seriesId, "Scene 1")).id;
       }
-      const shot = await api.createShot(sceneId, action, len);
+      const shot = await api.createShot(sceneId, action, ln);
       // draw the first frame right away (20 credits); if that is refused (e.g. not enough credits) the shot still
       // opens and the Workspace offers the same option
       try { await api.requestStartFrame(shot.id, "prompt"); } catch { /* shown in the Workspace */ }
@@ -117,7 +136,7 @@ export function Composer({ narrow }: { narrow: boolean }) {
             </View>
           </View>
           <Pressable onPress={go} disabled={!ready} style={[s.send, !ready && { opacity: 0.35 }]} accessibilityRole="button"
-            accessibilityLabel="Create this shot">
+            accessibilityLabel={guest ? "Create an account and make this shot" : "Create this shot"}>
             <Text style={{ color: c.onAccent, fontSize: 20, fontWeight: "800", lineHeight: 22 }}>{busy ? "…" : "↑"}</Text>
           </Pressable>
         </View>
@@ -137,6 +156,7 @@ export function Composer({ narrow }: { narrow: boolean }) {
         </View>
       )}
 
+      {busy && <Text style={{ color: c.link, marginTop: 12, textAlign: "center" }}>Setting up your shot and starting its first frame…</Text>}
       {error && <Text style={{ color: c.fail, marginTop: 12, textAlign: "center" }}>{error}</Text>}
 
       <View style={[s.row, { marginTop: 18, justifyContent: "center" }]}>
@@ -148,7 +168,8 @@ export function Composer({ narrow }: { narrow: boolean }) {
         ))}
       </View>
       <Text style={[s.small, { textAlign: "center", marginTop: 14 }]}>
-        The first frame uses 20 credits. Rendering the clip is a separate step, priced before you start.
+        {guest ? "Press the arrow and create a free account to see your first frame. New accounts get free starter credits; the first frame uses 20."
+          : "The first frame uses 20 credits. Rendering the clip is a separate step, priced before you start."}
       </Text>
     </View>
   );

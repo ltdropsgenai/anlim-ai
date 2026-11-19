@@ -41,7 +41,7 @@ export default function Welcome() {
           <Text style={[s.h1, font.display, narrow && { fontSize: 36, lineHeight: 40 }]}>Make AI video where your cast stays the same.</Text>
           <Text style={s.lead}>Cartoon or photoreal. Write each shot, and anlim makes the frames, picks the model, renders the clip and checks it before you keep it.</Text>
           <View style={[s.row, { marginTop: 24, justifyContent: "center" }]}>
-            <Pressable style={s.cta} onPress={() => router.navigate(signedIn ? "/" : { pathname: "/login", params: { mode: "signup" } })} accessibilityRole="link">
+            <Pressable style={s.cta} onPress={() => router.navigate(signedIn ? "/" : "/start")} accessibilityRole="link">
               <Text style={s.ctaText}>{signedIn ? "Open the studio" : "Start free"}</Text><Icon name="arrow" size={18} color={c.onAccent} />
             </Pressable>
             {!signedIn && <Pressable style={s.ghost} onPress={() => router.navigate("/login")} accessibilityRole="link"><Text style={{ color: c.ink, fontWeight: "600" }}>Sign in</Text></Pressable>}
@@ -109,7 +109,7 @@ export default function Welcome() {
         <View style={[s.card, { padding: 28, alignItems: "center", marginTop: 40, gap: 10 }]}>
           <Text style={[s.h2, font.display, s.center, { marginTop: 0 }]}>Your first scene is on us</Text>
           <Text style={[s.body, s.center]}>Confirm your email and your starter credits are waiting.</Text>
-          <Pressable style={s.cta} onPress={() => router.navigate(signedIn ? "/" : { pathname: "/login", params: { mode: "signup" } })} accessibilityRole="link">
+          <Pressable style={s.cta} onPress={() => router.navigate(signedIn ? "/" : "/start")} accessibilityRole="link">
             <Text style={s.ctaText}>{signedIn ? "Open the studio" : "Create your account"}</Text>
           </Pressable>
         </View>

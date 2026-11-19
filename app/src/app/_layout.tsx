@@ -57,9 +57,9 @@ export default function RootLayout() {
     return () => data.subscription.unsubscribe();
   }, []);
 
-  // Pages anyone may open (2026-11-19): the landing page, sign-in, Terms, Privacy, Help. Signed-out visitors to any
-  // other page go to the landing page.
-  const PUBLIC = ["welcome", "login", "terms", "privacy", "support"];
+  // Pages anyone may open (2026-11-19): the landing page, the try-it prompt (start), sign-in, Terms, Privacy, Help.
+  // Signed-out visitors to any other page go to the landing page.
+  const PUBLIC = ["welcome", "start", "login", "terms", "privacy", "support"];
   const seg = (segments[0] as string | undefined) ?? "";
   useEffect(() => {
     if (session === undefined) return;
@@ -85,6 +85,7 @@ export default function RootLayout() {
       <Stack.Screen name="account" options={{ title: "Account" }} />
       <Stack.Screen name="reset-password" options={{ title: "New password" }} />
       <Stack.Screen name="welcome" options={{ title: "anlim.ai" }} />
+      <Stack.Screen name="start" options={{ title: "Start · anlim.ai" }} />
       <Stack.Screen name="terms" options={{ title: "Terms" }} />
       <Stack.Screen name="privacy" options={{ title: "Privacy" }} />
       <Stack.Screen name="support" options={{ title: "Help & contact" }} />

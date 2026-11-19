@@ -22,7 +22,7 @@ export function PublicFrame({ children, signedIn }: { children: ReactNode; signe
           <Pressable style={s.cta} onPress={() => router.navigate("/")} accessibilityRole="link"><Text style={s.ctaText}>Open the studio</Text></Pressable>
         ) : (<>
           <Pressable onPress={() => router.navigate("/login")} accessibilityRole="link"><Text style={s.nav}>Sign in</Text></Pressable>
-          <Pressable style={s.cta} onPress={() => router.navigate({ pathname: "/login", params: { mode: "signup" } })} accessibilityRole="link">
+          <Pressable style={s.cta} onPress={() => router.navigate("/start")} accessibilityRole="link">
             <Text style={s.ctaText}>Start free</Text>
           </Pressable>
         </>)}
