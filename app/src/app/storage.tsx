@@ -60,7 +60,10 @@ function Card({ a, onPress }: { a: Asset; onPress: () => void }) {
   );
 }
 
-function Preview({ a, onClose }: { a: Asset; onClose: () => void }) {
+function Preview({ a, onClose, onDeleted }: { a: Asset; onClose: () => void; onDeleted: () => void }) {
+  const [confirm, setConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const canDelete = !["character", "place"].includes(a.kind) && !(a.kind === "clip" && a.status === "kept");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const ext = (a.url?.split("?")[0].split(".").pop() || "").toLowerCase().slice(0, 5);
@@ -116,6 +119,23 @@ function Preview({ a, onClose }: { a: Asset; onClose: () => void }) {
                 <Text style={{ color: c.ink, fontWeight: "600" }}>Scene cut page</Text>
               </Pressable>
             )}
+            {canDelete && !confirm && (
+              <Pressable style={s.ghost} onPress={() => setConfirm(true)} accessibilityRole="button">
+                <Text style={{ color: c.fail, fontWeight: "600" }}>Delete</Text>
+              </Pressable>
+            )}
+            {canDelete && confirm && (
+              <Pressable style={[s.ghost, { borderColor: c.failLine, backgroundColor: c.failBg }]} disabled={deleting} accessibilityRole="button"
+                onPress={async () => {
+                  setDeleting(true); setErr(null);
+                  try { await api.deleteAsset(a.kind, a.id, a.upload_path ?? undefined); onDeleted(); }
+                  catch (e) { setErr((e as Error).message); setConfirm(false); }
+                  setDeleting(false);
+                }}>
+                <Text style={{ color: c.fail, fontWeight: "700" }}>{deleting ? "Deleting…" : "Delete for good? It cannot be undone"}</Text>
+              </Pressable>
+            )}
+            {a.kind === "clip" && a.status === "kept" && <Text style={[s.sub, { fontSize: 12 }]}>This is a shot's kept clip, so it can't be deleted here.</Text>}
             {(a.kind === "character" || a.kind === "place") && a.series_id && (
               <Pressable style={s.ghost} onPress={() => { onClose(); router.navigate({ pathname: "/library", params: { series: a.series_id! } }); }} accessibilityRole="link">
                 <Text style={{ color: c.ink, fontWeight: "600" }}>Open in Cast & places</Text>
@@ -244,7 +264,7 @@ export default function Assets() {
         )}
         <View style={{ height: 40 }} />
       </ScrollView>
-      {open && <Preview a={open} onClose={() => setOpen(null)} />}
+      {open && <Preview a={open} onClose={() => setOpen(null)} onDeleted={() => { setOpen(null); load(); }} />}
     </View>
   );
 }

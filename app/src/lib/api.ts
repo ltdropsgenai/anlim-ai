@@ -72,7 +72,10 @@ export type Billing = {
              plan_cancel_at: string | null; has_customer: boolean } | null;
 };
 // why a creator did or didn't get welcome credits (trial guard, 2026-11-18); null = older account
-export type WelcomeStatus = "granted" | "repeat" | "disposable" | "held" | "off" | null;
+export type WelcomeStatus = "granted" | "repeat" | "disposable" | "held" | "off" | "needs_phone" | null;
+// finished work since the last look, for the app's notices (2026-11-19)
+export type Activity = { kind: "clip" | "frame" | "cut" | "audio"; id: string; status: string; updated_at: string; ord: number | null;
+  scene_title: string; scene_id: string; shot_id: string | null };
 export type Library = { characters: LibCharacter[]; locations: LibLocation[]; owner: string };
 // cartoon = drawn; photoreal = looks filmed. Picks the checker's rules, the image-prompt wording and the video route.
 export type Look = "cartoon" | "photoreal";
@@ -114,7 +117,7 @@ export type Asset = {
   kind: AssetKind; id: string; created_at: string; series_id: string | null; series_name: string | null; look: Look | null;
   genre: Genre | null; scene_id: string | null; scene_title: string | null; shot_id: string | null; shot_ord: number | null;
   title: string; subtitle: string | null; model: string | null; duration_s: string | null; status: AssetStatus; verdict: string | null;
-  thumb_url: string | null; url: string | null; watermarked: boolean;
+  thumb_url: string | null; url: string | null; watermarked: boolean; upload_path: string | null;
 };
 export type AssetQuery = { kind?: AssetKind | null; series_id?: string | null; look?: Look | null; genre?: Genre | null;
   status?: AssetStatus | null; q?: string; sort?: "newest" | "oldest"; limit?: number; offset?: number };
@@ -153,6 +156,16 @@ export const MODEL_NAMES: Record<string, string> = {
 export const KIND_NAMES: Record<string, string> = {
   walking: "walking shots", sit_stand: "sitting and standing", handling: "handling props", talking: "talking shots", other: "this kind of shot",
 };
+
+// The public price list for the landing page (no sign-in needed).
+export async function publicPlans(): Promise<PricePlan[]> {
+  const r = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/studio-billing?public=plans`, {
+    method: "POST", headers: { apikey: process.env.EXPO_PUBLIC_SUPABASE_KEY!, "Content-Type": "application/json" }, body: "{}",
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `Request failed (${r.status})`);
+  return j.plans as PricePlan[];
+}
 
 async function call<T>(body: Record<string, unknown>, fn = "studio-api"): Promise<T> {
   const { data } = await supabase.auth.getSession();
@@ -206,6 +219,15 @@ export const api = {
   assets: (q: AssetQuery) => call<{ items: Asset[]; total: number; counts: Record<string, number> }>({ op: "assets", ...q }),
   home: () => call<HomeData>({ op: "home" }),
   setSeriesQuality: (seriesId: string, quality: Quality) => call<{ ok: true }>({ op: "series_quality", series_id: seriesId, quality }),
+  // managing work (2026-11-19)
+  renameSeries: (id: string, name: string) => call<{ ok: true }>({ op: "series_rename", series_id: id, name }),
+  renameScene: (id: string, title: string) => call<{ ok: true }>({ op: "scene_rename", scene_id: id, title }),
+  deleteSeries: (id: string) => call<{ ok: true; files: number }>({ op: "series_delete", series_id: id }),
+  deleteScene: (id: string) => call<{ ok: true; files: number }>({ op: "scene_delete", scene_id: id }),
+  moveShot: (id: string, dir: -1 | 1) => call<{ ok: true }>({ op: "shot_move", shot_id: id, dir }),
+  deleteAsset: (kind: AssetKind, id: string, path?: string) => call<{ ok: true; files: number }>({ op: "asset_delete", kind, id, path: path ?? null }),
+  activity: (since: number) => call<{ items: Activity[]; now: number }>({ op: "activity", since }),
+  deleteAccount: (confirm: string) => call<{ ok: true; files: number }>({ op: "account_delete", confirm }, "studio-billing"),
   connections: () => call<{ items: Connection[] }>({ op: "connections" }).then((r) => r.items),
   connect: (key: string) => call<{ ok: true; key_hint: string; account: Connection["account"] }>({ op: "connection_set", provider: "elevenlabs", key }),
   checkConnection: () => call<{ ok: boolean }>({ op: "connection_check" }),

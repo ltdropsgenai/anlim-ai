@@ -97,6 +97,8 @@ async function soundtrack(dir, musicPath, total, notes, target = LUFS, name = "a
   }
   const src = path.join(dir, "music" + (path.extname(musicPath) || ".mp3"));
   await storage.download(musicPath, src);
+  // the app allows 30 MB; a bigger file came in some other way and is not opened (security review 2026-11-19)
+  if ((await fs.stat(src)).size > 30 * 1024 * 1024) throw new Error("the music file is over 30 MB; use a smaller MP3, WAV or M4A");
   const mlen = await audioDur(src, true);
   const af = [`atrim=0:${total.toFixed(3)}`, "asetpts=PTS-STARTPTS", "aresample=48000", "aformat=channel_layouts=stereo"];
   if (mlen > total + 0.05) af.push(`afade=t=out:st=${Math.max(0, total - MUSIC_FADE).toFixed(3)}:d=${MUSIC_FADE}`);

@@ -72,11 +72,52 @@ function NewScene({ seriesId, onDone }: { seriesId: string; onDone: (err?: strin
   );
 }
 
-function ShotRowItem({ r, on, onPress }: { r: ShotRow; on: boolean; onPress: () => void }) {
+// Rename and delete for a series or a scene (2026-11-19). Deleting asks a second time and says what goes with it.
+function Manage({ label, name, what, onRename, onDelete }: { label: string; name: string; what: string;
+  onRename: (v: string) => Promise<unknown>; onDelete: () => Promise<unknown> }) {
+  const [mode, setMode] = useState<"idle" | "rename" | "delete">("idle");
+  const [v, setV] = useState(name);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const run = async (fn: () => Promise<unknown>) => { setBusy(true); setErr(null); try { await fn(); setMode("idle"); } catch (e) { setErr((e as Error).message); } setBusy(false); };
+  if (mode === "idle") return (
+    <View style={[s.row, { gap: 14 }]}>
+      <Pressable onPress={() => { setV(name); setMode("rename"); }} accessibilityRole="button"><Text style={s.small}>Rename {label}</Text></Pressable>
+      <Pressable onPress={() => setMode("delete")} accessibilityRole="button"><Text style={[s.small, { color: c.fail }]}>Delete {label}</Text></Pressable>
+    </View>
+  );
+  if (mode === "rename") return (
+    <View style={[s.row, { width: "100%" }]}>
+      <TextInput value={v} onChangeText={setV} style={[s.input, { flex: 1 }]} autoFocus accessibilityLabel={`New ${label} name`} />
+      <Pressable style={[s.btn, (!v.trim() || busy) && { opacity: 0.5 }]} disabled={!v.trim() || busy} onPress={() => run(() => onRename(v))} accessibilityRole="button">
+        <Text style={s.btnText}>Save</Text>
+      </Pressable>
+      <Pressable onPress={() => setMode("idle")} accessibilityRole="button"><Text style={s.small}>Cancel</Text></Pressable>
+      {err && <Text style={{ color: c.fail, fontSize: 12 }}>{err}</Text>}
+    </View>
+  );
+  return (
+    <View style={s.danger}>
+      <Text style={{ color: c.ink, fontSize: 13 }}>Delete “{name}” and {what}? Its files are removed too. This cannot be undone.</Text>
+      <View style={s.row}>
+        <Pressable style={[s.btn, { backgroundColor: c.fail }, busy && { opacity: 0.5 }]} disabled={busy} onPress={() => run(onDelete)} accessibilityRole="button">
+          <Text style={s.btnText}>{busy ? "Deleting…" : `Delete ${label}`}</Text>
+        </Pressable>
+        <Pressable onPress={() => setMode("idle")} accessibilityRole="button"><Text style={s.small}>Keep it</Text></Pressable>
+      </View>
+      {err && <Text style={{ color: c.fail, fontSize: 12 }}>{err}</Text>}
+    </View>
+  );
+}
+
+function ShotRowItem({ r, on, onPress, onMove, first, last }: { r: ShotRow; on: boolean; onPress: () => void;
+  onMove: (dir: -1 | 1) => void; first: boolean; last: boolean }) {
   const st = chip(r), t = TONE[st.tone];
   return (
-    <Pressable onPress={onPress} style={[s.shot, on && s.shotOn]} accessibilityRole="button" accessibilityState={{ selected: on }}
-      accessibilityLabel={`Shot ${r.ord}: ${r.action}. ${st.text}`}>
+    // the row and its move buttons are siblings: a button inside a button is invalid HTML on the web (2026-11-19)
+    <View style={[s.shot, on && s.shotOn]}>
+    <Pressable onPress={onPress} style={{ flex: 1, minWidth: 0, flexDirection: "row", gap: 10 }} accessibilityRole="button"
+      accessibilityState={{ selected: on }} accessibilityLabel={`Shot ${r.ord}: ${r.action}. ${st.text}`}>
       <View style={s.shotThumb}>
         {r.thumb_url ? <Image source={{ uri: r.thumb_url }} style={{ width: "100%", height: "100%" }} resizeMode="cover" /> : null}
         <Text style={[s.slate, font.mono]}>SH {pad2(r.ord)}</Text>
@@ -89,6 +130,13 @@ function ShotRowItem({ r, on, onPress }: { r: ShotRow; on: boolean; onPress: () 
         </View>
       </View>
     </Pressable>
+      <View style={{ justifyContent: "center", gap: 2 }}>
+        <Pressable onPress={() => onMove(-1)} disabled={first} accessibilityRole="button" accessibilityLabel={`Move shot ${r.ord} earlier`}
+          style={[s.move, first && { opacity: 0.25 }]}><Text style={{ color: c.sub, fontSize: 12 }}>▲</Text></Pressable>
+        <Pressable onPress={() => onMove(1)} disabled={last} accessibilityRole="button" accessibilityLabel={`Move shot ${r.ord} later`}
+          style={[s.move, last && { opacity: 0.25 }]}><Text style={{ color: c.sub, fontSize: 12 }}>▼</Text></Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -177,6 +225,10 @@ export default function Workspace() {
             <Text style={[s.link, { marginVertical: 0, fontSize: 13 }]}>Cast & places</Text>
           </Pressable>
         </View>
+        <Manage key={`se-${cur.id}`} label="series" name={cur.name}
+          what={`its ${cur.scenes.length} scene${cur.scenes.length === 1 ? "" : "s"}, every shot, clip, cut, character and place in it`}
+          onRename={async (v) => { await api.renameSeries(cur.id, v); await load(); }}
+          onDelete={async () => { await api.deleteSeries(cur.id); router.setParams({ series: "", scene: "", shot: "" }); await load(); }} />
         <Text style={[s.kicker, font.mono, { marginTop: 8 }]}>SCENE</Text>
         <View style={s.row}>
           {cur.scenes.map((sc) => (
@@ -188,6 +240,10 @@ export default function Workspace() {
           ))}
           <NewScene seriesId={cur.id} onDone={done} />
         </View>
+        {scene && <Manage key={`sc-${scene.id}`} label="scene" name={scene.title}
+          what={`its ${shots.length} shot${shots.length === 1 ? "" : "s"}, their clips, frames, cuts and sound`}
+          onRename={async (v) => { await api.renameScene(scene.id, v); await load(); }}
+          onDelete={async () => { await api.deleteScene(scene.id); router.setParams({ scene: "", shot: "" }); await load(); }} />}
       </>)}
       {scene && (<>
         <View style={[s.row, { justifyContent: "space-between", marginTop: 8 }]}>
@@ -197,7 +253,9 @@ export default function Workspace() {
           </Pressable>
         </View>
         {shots.length === 0 && <Text style={s.sub}>No shots yet. Describe the first one below.</Text>}
-        {shots.map((r) => <ShotRowItem key={r.id} r={r} on={r.id === shotId} onPress={() => openShot(r.id)} />)}
+        {shots.map((r, i) => <ShotRowItem key={r.id} r={r} on={r.id === shotId} onPress={() => openShot(r.id)} first={i === 0} last={i === shots.length - 1}
+          onMove={async (dir) => { try { await api.moveShot(r.id, dir); await load(); } catch (e) { setError((e as Error).message); } }} />)}
+        {shots.length > 1 && <Text style={s.small}>Moving a shot changes which shot "continue from the previous clip" uses.</Text>}
         <AddShot sceneId={scene.id} onDone={done} onCreated={(id) => { load(); openShot(id); }} />
         <Pressable onPress={() => router.navigate("/shots")} accessibilityRole="link"><Text style={[s.link, { fontSize: 13 }]}>See every scene on the scene board</Text></Pressable>
       </>)}
@@ -263,5 +321,8 @@ const s = StyleSheet.create({
   empty: { flex: 1, alignItems: "center", justifyContent: "center", padding: 40 },
   out: { flexDirection: "row", gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.line, alignItems: "center" },
   outThumb: { width: 92, aspectRatio: 16 / 9, borderRadius: 8, overflow: "hidden", backgroundColor: c.card2, justifyContent: "center", alignItems: "center" },
+  small: { color: c.sub, fontSize: 12 },
+  danger: { backgroundColor: c.failBg, borderColor: c.failLine, borderWidth: 1, borderRadius: 10, padding: 10, gap: 8 },
+  move: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: c.field },
   play: { position: "absolute", width: 26, height: 26, borderRadius: 13, backgroundColor: "rgba(8,8,10,0.75)", alignItems: "center", justifyContent: "center" },
 });

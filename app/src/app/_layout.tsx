@@ -57,14 +57,18 @@ export default function RootLayout() {
     return () => data.subscription.unsubscribe();
   }, []);
 
+  // Pages anyone may open (2026-11-19): the landing page, sign-in, Terms, Privacy, Help. Signed-out visitors to any
+  // other page go to the landing page.
+  const PUBLIC = ["welcome", "login", "terms", "privacy", "support"];
+  const seg = (segments[0] as string | undefined) ?? "";
   useEffect(() => {
     if (session === undefined) return;
-    const onLogin = segments[0] === "login";
-    if (!session && !onLogin) router.replace("/login");      // includes /reset-password without a recovery session
+    const onLogin = seg === "login";
+    if (!session && !PUBLIC.includes(seg)) router.replace("/welcome");   // includes /reset-password without a recovery session
     if (session && onLogin && !authFlags.recovery) router.replace("/");
-  }, [session, segments]);
+  }, [session, seg]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  const bare = segments[0] === "login" || segments[0] === "reset-password" || !session;   // no frame before sign-in
+  const bare = PUBLIC.includes(seg) || seg === "reset-password" || !session;   // no studio frame on public pages
   const stack = (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bg } }}>
       <Stack.Screen name="index" options={{ title: "anlim.ai" }} />
@@ -80,6 +84,10 @@ export default function RootLayout() {
       <Stack.Screen name="billing" options={{ title: "Credits & plan" }} />
       <Stack.Screen name="account" options={{ title: "Account" }} />
       <Stack.Screen name="reset-password" options={{ title: "New password" }} />
+      <Stack.Screen name="welcome" options={{ title: "anlim.ai" }} />
+      <Stack.Screen name="terms" options={{ title: "Terms" }} />
+      <Stack.Screen name="privacy" options={{ title: "Privacy" }} />
+      <Stack.Screen name="support" options={{ title: "Help & contact" }} />
     </Stack>
   );
   return bare ? stack : <Shell>{stack}</Shell>;

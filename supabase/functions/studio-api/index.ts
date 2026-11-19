@@ -26,17 +26,60 @@ function asUser<T>(uid: string, fn: (tx: postgres.TransactionSql) => Promise<T>)
   });
 }
 
-// small preview of a still (480 px wide; browsers get WebP) for the board and the queue (2026-11-19)
-async function thumb(path: string | null) {
-  if (!path) return null;
-  const { data, error } = await admin.storage.from(BUCKET).createSignedUrl(path, 3600, { transform: { width: 480, height: 270, resize: "cover", quality: 70 } });
-  return error ? null : data.signedUrl;
+// Signing is batched and throttled (2026-11-19): the Assets list asked Storage for 100+ links at once, one request
+// each, and Storage answered 429 (rate limited), leaving blank cards. Plain links now go out as one
+// createSignedUrls call per expiry per tick; resized previews (which need their own call each) run at most 6 at a time
+// and fall back to the plain link when Storage refuses.
+const signQueue = new Map<number, Map<string, Array<(u: string | null) => void>>>();
+let signFlush: Promise<void> | null = null;
+function sign(path: string | null, seconds = 3600): Promise<string | null> {
+  if (!path) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const byPath = signQueue.get(seconds) ?? new Map();
+    signQueue.set(seconds, byPath);
+    byPath.set(path, [...(byPath.get(path) ?? []), resolve]);
+    signFlush ??= new Promise<void>((r) => setTimeout(() => r(flushSigns()), 0));   // gather every link asked for in this turn
+  });
+}
+async function flushSigns() {
+  const batches = [...signQueue.entries()];
+  signQueue.clear(); signFlush = null;
+  for (const [seconds, byPath] of batches) {
+    const paths = [...byPath.keys()];
+    for (let i = 0; i < paths.length; i += 200) {
+      const part = paths.slice(i, i + 200);
+      const { data, error } = await admin.storage.from(BUCKET).createSignedUrls(part, seconds);
+      const got = new Map<string, string | null>();
+      if (!error) for (const d of data ?? []) got.set(d.path ?? "", d.error ? null : d.signedUrl);
+      for (const p of part) for (const r of byPath.get(p) ?? []) r(got.get(p) ?? null);
+    }
+  }
 }
 
-async function sign(path: string | null, seconds = 3600) {
+let thumbsRunning = 0;
+const thumbWaiters: Array<() => void> = [];
+async function thumb(path: string | null) {
   if (!path) return null;
-  const { data, error } = await admin.storage.from(BUCKET).createSignedUrl(path, seconds);
-  return error ? null : data.signedUrl;
+  if (thumbsRunning >= 6) await new Promise<void>((r) => thumbWaiters.push(r));
+  thumbsRunning++;
+  try {
+    const { data, error } = await admin.storage.from(BUCKET).createSignedUrl(path, 3600, { transform: { width: 480, height: 270, resize: "cover", quality: 70 } });
+    if (!error) return data.signedUrl;
+  } finally {
+    thumbsRunning--; thumbWaiters.shift()?.();
+  }
+  return sign(path);   // preview refused (rate limit or not an image): the full picture still shows
+}
+
+// Remove stored files a delete function returned. Only the caller's own folder and their clean copies are touched,
+// whatever the list says (2026-11-19).
+async function removeFiles(uid: string, paths: string[]) {
+  const mine = [...new Set(paths)].filter((p) => p.startsWith(`${uid}/`) || p.startsWith(`00000000-0000-0000-0000-000000000000/clean/${uid}/`));
+  for (let i = 0; i < mine.length; i += 100) {
+    const { error } = await admin.storage.from(BUCKET).remove(mine.slice(i, i + 100));
+    if (error) console.error(`remove files for ${uid}: ${error.message}`);
+  }
+  return mine.length;
 }
 
 // ---- ElevenLabs (2026-11-19): the creator's own account. The key lives in Supabase Vault; it is read here only to
@@ -420,8 +463,9 @@ async function handle(req: Request): Promise<Response> {
         const page = await Promise.all(list.slice(offset, offset + limit).map(async (a) => {
           const marked = !paid && !!a.preview_path && (a.kind === "clip" || a.kind === "cut");
           const { path, preview_path: _p, thumb_path, ...rest } = a;
-          return { ...rest, watermarked: marked, thumb_url: await thumb(thumb_path ?? null),
-                   url: await sign(marked ? a.preview_path : path, 3600) };
+          const [thumb_url, url] = await Promise.all([thumb(thumb_path ?? null), sign(marked ? a.preview_path : path, 3600)]);
+          return { ...rest, watermarked: marked, thumb_url, url,
+                   upload_path: a.kind === "music" && !a.series_id ? path : null };   // an uploaded track: deleted by its path
         }));
         return json({ items: page, total: list.length, counts });
       }
@@ -531,6 +575,60 @@ async function handle(req: Request): Promise<Response> {
       case "audio_use": {
         await asUser(uid, (tx) => tx`select studio.use_audio(${String(body.id || "")}, ${!!body.on})`);
         return json({ ok: true });
+      }
+      // ---- managing work (2026-11-19): rename / delete series and scenes, reorder shots, delete assets
+      case "series_rename": {
+        await asUser(uid, (tx) => tx`select studio.rename_series(${String(body.series_id || "")}, ${String(body.name || "")})`);
+        return json({ ok: true });
+      }
+      case "scene_rename": {
+        await asUser(uid, (tx) => tx`select studio.rename_scene(${String(body.scene_id || "")}, ${String(body.title || "")})`);
+        return json({ ok: true });
+      }
+      case "series_delete": {
+        const rows = await asUser(uid, (tx) => tx`select studio.delete_series(${String(body.series_id || "")}) as p`);
+        return json({ ok: true, files: await removeFiles(uid, rows.map((r) => r.p)) });
+      }
+      case "scene_delete": {
+        const rows = await asUser(uid, (tx) => tx`select studio.delete_scene(${String(body.scene_id || "")}) as p`);
+        return json({ ok: true, files: await removeFiles(uid, rows.map((r) => r.p)) });
+      }
+      case "shot_move": {
+        await asUser(uid, (tx) => tx`select studio.move_shot(${String(body.shot_id || "")}, ${Number(body.dir) < 0 ? -1 : 1}::int)`);
+        return json({ ok: true });
+      }
+      case "asset_delete": {
+        const kind = String(body.kind || "");
+        if (kind === "music" && body.path) {
+          // an uploaded track: only a file in the caller's own music folder
+          const p = String(body.path);
+          if (!p.startsWith(`${uid}/music/`) || p.includes("..")) return json({ error: "not found" }, 404);
+          return json({ ok: true, files: await removeFiles(uid, [p]) });
+        }
+        const rows = await asUser(uid, (tx) => tx`select studio.delete_asset(${kind}, ${String(body.id || "")}) as p`);
+        return json({ ok: true, files: await removeFiles(uid, rows.map((r) => r.p)) });
+      }
+      // ---- what finished lately, for the app's notices (2026-11-19)
+      case "activity": {
+        const since = new Date(Number(body.since) || Date.now() - 5 * 60_000).toISOString();
+        const rows = await asUser(uid, (tx) => tx`
+          select 'clip' as kind, g.id, g.status, g.updated_at, sh.ord, sc.title as scene_title, sc.id as scene_id, sh.id as shot_id
+            from studio.generations g join studio.shots sh on sh.id = g.shot_id join studio.scenes sc on sc.id = sh.scene_id
+           where g.updated_at > ${since} and g.status in ('review', 'succeeded', 'failed')
+          union all
+          select 'frame', f.id, f.status, f.updated_at, sh.ord, sc.title, sc.id, sh.id
+            from studio.frame_jobs f join studio.shots sh on sh.id = f.shot_id join studio.scenes sc on sc.id = sh.scene_id
+           where f.updated_at > ${since} and f.status in ('ready', 'failed') and f.kind in ('start', 'end')
+          union all
+          select 'cut', a.id, a.status, a.updated_at, null, sc.title, sc.id, null
+            from studio.assemblies a join studio.scenes sc on sc.id = a.scene_id
+           where a.updated_at > ${since} and a.status in ('done', 'failed')
+          union all
+          select 'audio', a.id, a.status, a.updated_at, sh.ord, sc.title, sc.id, sh.id
+            from studio.audio_jobs a join studio.scenes sc on sc.id = a.scene_id left join studio.shots sh on sh.id = a.shot_id
+           where a.updated_at > ${since} and a.status in ('done', 'failed')
+          order by 4 limit 30`);
+        return json({ items: rows, now: Date.now() });
       }
       default:
         return json({ error: "unknown op" }, 400);

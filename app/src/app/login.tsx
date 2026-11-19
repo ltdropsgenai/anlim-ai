@@ -3,9 +3,11 @@
 // The code is the fallback when a mail scanner opens the link first and uses it up (Supabase auth-email docs).
 import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
+import { Captcha, CAPTCHA_ON } from "../components/Captcha";
 import { appUrl, authFlags, supabase } from "../lib/supabase";
 import { c } from "../lib/theme";
+import { Logo } from "../components/Logo";
 
 type Mode = "signin" | "signup" | "forgot" | "code";
 const TITLES: Record<Mode, string> = { signin: "Sign in", signup: "Create your account", forgot: "Reset your password", code: "Enter the code from the email" };
@@ -15,13 +17,17 @@ const BUTTONS: Record<Mode, string> = { signin: "Sign in", signup: "Create accou
 function friendly(msg: string) {
   if (/email not confirmed/i.test(msg)) return "Confirm your email first: open the link we sent you, then sign in.";
   if (/invalid login credentials/i.test(msg)) return "That email and password don't match an account.";
+  if (/captcha/i.test(msg)) return "The security check didn't go through. Tick it again, then try once more.";
   if (/rate limit/i.test(msg)) return "Too many emails sent just now. Wait a few minutes and try again.";
   if (/expired|invalid/i.test(msg) && /token|otp/i.test(msg)) return "That code is wrong or has expired. Ask for a new email and use the newest code.";
   return msg;
 }
 
 export default function Login() {
-  const [mode, setMode] = useState<Mode>("signin");
+  const params = useLocalSearchParams<{ mode?: string }>();
+  const [mode, setMode] = useState<Mode>(params.mode === "signup" ? "signup" : "signin");
+  const [captcha, setCaptcha] = useState<string | null>(null);
+  const [captchaKey, setCaptchaKey] = useState(0);   // a new widget after each try: a token works once
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
@@ -33,7 +39,8 @@ export default function Login() {
 
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const ready = mode === "code" ? emailOk && /^\d{6,10}$/.test(code.trim())
-    : emailOk && (mode === "forgot" || password.length >= (mode === "signup" ? 8 : 1)) && (mode !== "signup" || password === password2);
+    : emailOk && (mode === "forgot" || password.length >= (mode === "signup" ? 8 : 1)) && (mode !== "signup" || password === password2)
+      && (!CAPTCHA_ON || !!captcha);
 
   function go(m: Mode) { setMode(m); setError(null); setNotice(null); setPassword(""); setPassword2(""); setCode(""); }
 
@@ -41,12 +48,13 @@ export default function Login() {
     if (!ready || busy) return;
     setBusy(true); setError(null); setNotice(null);
     const e = email.trim();
+    const captchaToken = captcha ?? undefined;
     try {
       if (mode === "signin") {
-        const { error } = await supabase.auth.signInWithPassword({ email: e, password });
+        const { error } = await supabase.auth.signInWithPassword({ email: e, password, options: { captchaToken } });
         if (error) throw error;
       } else if (mode === "signup") {
-        const { data, error } = await supabase.auth.signUp({ email: e, password, options: { emailRedirectTo: appUrl("/") } });
+        const { data, error } = await supabase.auth.signUp({ email: e, password, options: { emailRedirectTo: appUrl("/"), captchaToken } });
         if (error) throw error;
         // With email confirmation on, there is no session yet. Supabase also returns no error for an address that
         // already has an account (so the form can't be used to find out who has one): same message either way.
@@ -60,12 +68,13 @@ export default function Login() {
         if (error) { authFlags.recovery = false; throw error; }
         if (codeFor === "recovery") router.replace("/reset-password");   // signed in to choose a new password
       } else {
-        const { error } = await supabase.auth.resetPasswordForEmail(e, { redirectTo: appUrl("/reset-password") });
+        const { error } = await supabase.auth.resetPasswordForEmail(e, { redirectTo: appUrl("/reset-password"), captchaToken });
         if (error) throw error;
         setNotice(`If ${e} has an account, an email is on its way. Open its link, or enter its code here, to choose a new password.`);
         setCodeFor("recovery"); go2("code");
       }
     } catch (err) { setError(friendly((err as Error).message)); }
+    if (CAPTCHA_ON) { setCaptcha(null); setCaptchaKey((k) => k + 1); }
     setBusy(false);
   }
   // switch mode but keep the notice and the email
@@ -74,7 +83,9 @@ export default function Login() {
   return (
     <View style={s.page}>
       <View style={s.card}>
-        <Text style={s.title}>anlim.ai</Text>
+        <Pressable onPress={() => router.navigate("/welcome")} accessibilityRole="link" style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <Logo size={34} /><Text style={s.title}>anlim.ai</Text>
+        </Pressable>
         <Text style={s.sub}>{TITLES[mode]}</Text>
         {notice && <Text style={s.notice}>{notice}</Text>}
         <TextInput style={s.input} placeholder="Email" autoCapitalize="none" keyboardType="email-address" autoComplete="email"
@@ -93,6 +104,7 @@ export default function Login() {
             value={password2} onChangeText={setPassword2} onSubmitEditing={submit} accessibilityLabel="Password again" />
         )}
         {mode === "signup" && password2.length > 0 && password !== password2 && <Text style={s.hint}>The passwords don't match.</Text>}
+        {mode !== "code" && <Captcha key={captchaKey} onToken={setCaptcha} />}
         {error && <Text style={s.error}>{error}</Text>}
         <Pressable style={[s.button, (!ready || busy) && { opacity: 0.6 }]} onPress={submit} disabled={!ready || busy} accessibilityRole="button">
           {busy ? <ActivityIndicator color={c.onAccent} /> : <Text style={s.buttonText}>{BUTTONS[mode]}</Text>}
@@ -102,6 +114,11 @@ export default function Login() {
           {mode !== "signup" && <Pressable onPress={() => go("signup")} accessibilityRole="link"><Text style={s.link}>New here? Create an account</Text></Pressable>}
           {mode === "signin" && <Pressable onPress={() => go("forgot")} accessibilityRole="link"><Text style={s.link}>Forgot your password?</Text></Pressable>}
         </View>
+        {mode === "signup" && (
+          <Text style={{ color: c.sub, fontSize: 12 }}>By creating an account you agree to the{" "}
+            <Text style={{ color: c.link }} onPress={() => router.navigate("/terms")} accessibilityRole="link">Terms</Text> and the{" "}
+            <Text style={{ color: c.link }} onPress={() => router.navigate("/privacy")} accessibilityRole="link">Privacy policy</Text>.</Text>
+        )}
       </View>
     </View>
   );

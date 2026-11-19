@@ -12,6 +12,7 @@ const WELCOME_NOTE: Record<string, string> = {
   repeat: "Free starter credits are one per person, and this email already received them. You can buy credits under Credits & plan.",
   disposable: "Free starter credits aren't given to temporary email addresses. Sign up with your regular email, or buy credits under Credits & plan.",
   held: "Your free starter credits are on their way. We're handing them out in batches today; they'll appear here soon.",
+  needs_phone: "Verify your phone number in Account to get your free starter credits.",
 };
 
 type Tone = "ok" | "call" | "busy" | "bad" | "idle";

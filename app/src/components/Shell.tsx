@@ -1,11 +1,14 @@
 // App frame (2026-11-19, direction D): icon rail (bottom tab bar on phone widths) + top bar with the page title,
 // back, credits and Upgrade. Pages render inside it. @anlim
 import { ReactNode, useEffect, useState } from "react";
-import { Pressable, Text, useWindowDimensions, View } from "react-native";
+import { Platform, Pressable, Text, useWindowDimensions, View } from "react-native";
+import { Notices } from "./Notices";
 import { router, usePathname } from "expo-router";
 import { api } from "../lib/api";
 import { c, font } from "../lib/theme";
 import { Icon, IconName } from "./Icon";
+import { Logo } from "./Logo";
+export { Logo };
 
 type Item = { href: "/" | "/workspace" | "/storage" | "/review" | "/library" | "/billing"; label: string; icon: IconName;
   match: (p: string) => boolean; phone: boolean };
@@ -32,6 +35,8 @@ export function Shell({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<{ balance: number; reserved: number; plan_status: string | null } | null>(null);
   useEffect(() => { api.me().then(setMe).catch(() => setMe(null)); }, [path]);
   const title = TITLES.find(([r]) => r.test(path))?.[1] ?? "anlim.ai";
+  // the browser tab says where you are (2026-11-19: Stack titles did not reach the tab with the header hidden)
+  useEffect(() => { if (Platform.OS === "web") document.title = title === "Home" ? "anlim.ai" : `${title} · anlim.ai`; }, [title]);
   const deep = /^\/(clip|shot|cut)\//.test(path) || path.startsWith("/shots");
   const hasPlan = me?.plan_status === "active" || me?.plan_status === "trialing";
 
@@ -84,7 +89,7 @@ export function Shell({ children }: { children: ReactNode }) {
     return (
       <View style={{ flex: 1, backgroundColor: c.bg }}>
         {top}
-        <View style={{ flex: 1 }}>{children}</View>
+        <View style={{ flex: 1 }}>{children}<Notices /></View>
         <View accessibilityRole="tablist" style={{ flexDirection: "row", borderTopWidth: 1, borderTopColor: c.line, backgroundColor: c.rail, paddingHorizontal: 6 }}>
           {rail}
         </View>
@@ -109,17 +114,8 @@ export function Shell({ children }: { children: ReactNode }) {
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         {top}
-        <View style={{ flex: 1 }}>{children}</View>
+        <View style={{ flex: 1 }}>{children}<Notices /></View>
       </View>
-    </View>
-  );
-}
-
-// Placeholder mark until the logo is chosen (2026-11-19: logo options on the design canvas).
-export function Logo({ size = 40 }: { size?: number }) {
-  return (
-    <View style={{ width: size, height: size, borderRadius: size * 0.3, backgroundColor: c.accent, alignItems: "center", justifyContent: "center" }}>
-      <Text style={[{ color: c.onAccent, fontSize: size * 0.5, lineHeight: size * 0.62 }, font.display]}>a.</Text>
     </View>
   );
 }

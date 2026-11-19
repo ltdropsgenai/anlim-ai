@@ -170,7 +170,7 @@ export default function Review() {
 
             {done ? (
               <>
-                <Text style={[s.decided, font.display]}>{done === "approve" ? "Kept" : "Rejected · credits back"}</Text>
+                <Text style={[s.decided, font.display]}>{done === "approve" ? "Kept" : clip.settled === "charged" ? "Rejected" : "Rejected · credits back"}</Text>
                 <Pressable style={s.ghost} onPress={() => router.navigate("/review")} accessibilityRole="link"><Text style={{ color: c.ink }}>Back to Review</Text></Pressable>
               </>
             ) : decidable ? (

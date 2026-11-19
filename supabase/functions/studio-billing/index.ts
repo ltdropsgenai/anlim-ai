@@ -1,6 +1,7 @@
 // studio-billing: credit packs and plans through Stripe Checkout, the Stripe billing portal, and Stripe's webhook. @anlim
 //   Creator ops (signed in): POST {op: "plans"} | {op: "checkout", plan_id, return_url} | {op: "portal", return_url}
 //                            | {op: "account_delete", confirm: "<the account's email>"} (2026-11-19)
+//   Public (no sign-in): POST ?public=plans -> the active price list, for the landing page (2026-11-19).
 //   Stripe webhook: POST with a Stripe-Signature header -> signature checked -> studio.apply_stripe_event(event).
 // Deployed with verify_jwt off (Stripe sends no Supabase JWT); creator ops check the sign-in themselves.
 // Secrets: STRIPE_SECRET_KEY (sk_test_… while testing), STRIPE_WEBHOOK_SECRET (whsec_…), APP_URLS (allowed return
@@ -133,6 +134,12 @@ async function handle(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (req.headers.get("Stripe-Signature")) return handleWebhook(req);
+
+  // The price list for the public landing page (no sign-in; 2026-11-19). Names, prices and credits only.
+  if (new URL(req.url).searchParams.get("public") === "plans") {
+    const plans = await sql`select id, kind, tier, billing_interval, name, price_cents, credits from studio.price_plans where active order by sort`;
+    return json({ plans });
+  }
 
   const jwt = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
   const { data: who, error: authErr } = await admin.auth.getUser(jwt);
