@@ -1,19 +1,29 @@
-# Fly.io config for the worker + checker (no public port: the worker only makes outbound calls). @anlim
-# Set app name and region when you run `fly launch --no-deploy` (it rewrites these two lines).
-app = "anlim-worker"
-primary_region = "ord"
+# fly.toml app configuration file generated for anlim-worker on 2026-11-19T19:10:04Z
+#
+# See https://docs.fly.io/reference/configuration for information about how to use this file.
+#
+
+app = 'anlim-worker'
+primary_region = 'ord'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [env]
-  WORKER_ID = "fly-1"
-  CHECKER_MAX_JOBS = "2"
+  CHECKER_MAX_JOBS = '2'
+  WORKER_ID = 'fly-1'
 
-# Always on: one machine, restarted if it stops.
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
 [[restart]]
-  policy = "always"
+  policy = 'always'
 
 [[vm]]
-  size = "shared-cpu-2x"
-  memory = "2gb"
+  size = 'shared-cpu-2x'
+  memory = '2gb'
