@@ -12,6 +12,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
+import http from "node:http";
 import { promisify } from "node:util";
 import { config } from "./config.js";
 import * as db from "./db.js";
@@ -28,6 +29,23 @@ const run = promisify(execFile);
 const providers = { fal, mock };
 const log = (g, msg) => console.log(`${new Date().toISOString()} [${String(g.id).slice(0, 8)}] ${msg}`);
 const later = (ms) => new Date(Date.now() + ms);
+
+// POST to the checker without Node fetch's 300 s headers timeout (undici): a check that waited in the checker's queue
+// past 5 min came back as "fetch failed" and was retried from scratch (2026-11-19, 100-clip held-out run). 20 min cap.
+function postChecker(route, body) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(`${config.checkerUrl}${route}`);
+    const data = Buffer.from(JSON.stringify(body));
+    const req = http.request({ hostname: u.hostname, port: u.port, path: u.pathname, method: "POST", timeout: 20 * 60000,
+      headers: { Authorization: `Bearer ${config.checkerToken}`, "Content-Type": "application/json", "Content-Length": data.length } },
+      (res) => { const chunks = []; res.on("data", (c) => chunks.push(c)); res.on("end", () => {
+        const text = Buffer.concat(chunks).toString("utf8"); let json; try { json = JSON.parse(text); } catch { json = null; }
+        resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, json }); }); });
+    req.on("timeout", () => req.destroy(new Error("checker timeout after 20 min")));
+    req.on("error", reject);
+    req.end(data);
+  });
+}
 
 async function fetchTo(url, dest) {
   await fs.mkdir(path.dirname(dest), { recursive: true });
@@ -172,12 +190,10 @@ async function stepChecking(g) {
   let res;
   try { res = JSON.parse(await fs.readFile(saved, "utf8")); } catch { res = null; }
   if (!res) {
-    const r = await fetch(`${config.checkerUrl}/check`, {
-      method: "POST", headers: { Authorization: `Bearer ${config.checkerToken}`, "Content-Type": "application/json" },
-      // the creator approved the start still with this shot's cast list: the head count is confirmed
-      body: JSON.stringify({ generation_id: g.id, spec, max_usd: config.checkerMaxUsd, confirmed_spec: !!shot.start_frame_approved }),
-    });
-    res = await r.json().catch(() => ({ verdict: "ERROR", error: `checker HTTP ${r.status}` }));
+    // the creator approved the start still with this shot's cast list: the head count is confirmed
+    const r = await postChecker("/check", { generation_id: g.id, spec, max_usd: config.checkerMaxUsd,
+                                             confirmed_spec: !!shot.start_frame_approved });
+    res = r.json || { verdict: "ERROR", error: `checker HTTP ${r.status}` };
     if (!r.ok || res.verdict === "ERROR") throw new Error(`checker: ${res.error || r.status}`);
     await fs.writeFile(saved, JSON.stringify(res));
   }
@@ -231,13 +247,24 @@ async function refreshPlans() {
   } catch (e) { console.error("refresh_plans:", e.message); }
 }
 
+// Clip checks take minutes; the tick used to wait for every claimed job, so 4 checks in a batch stopped the worker
+// from collecting finished renders for 10+ min (2026-11-19). Checks now run beside the tick, at most checkerSlots at a
+// time (the checker service runs CHECKER_MAX_JOBS); a check claimed while all slots are busy is put back for 20 s.
+const inflight = new Map();
 export async function tick() {
   await refreshPlans();
-  const jobs = await db.claim(config.workerId, config.batch, 600);
-  const [, nFrames, nCuts, nAudio] = await Promise.all([Promise.all(jobs.map(handle)), frames.tick(),   // end-frame jobs (frames.js)
+  const jobs = await db.claim(config.workerId, config.batch, 1500);
+  const now = [];
+  for (const g of jobs) {
+    if (g.status !== "checking") { now.push(g); continue; }
+    if (inflight.has(g.id)) continue;
+    if (inflight.size >= config.checkerSlots) { await db.unlock(g.id, { next_poll_at: later(20000) }); continue; }
+    inflight.set(g.id, handle(g).catch((e) => console.error("check:", e.message)).finally(() => inflight.delete(g.id)));
+  }
+  const [, nFrames, nCuts, nAudio] = await Promise.all([Promise.all(now.map(handle)), frames.tick(),   // end-frame jobs (frames.js)
     assemble.tick().catch((e) => { console.error("assemble:", e.message); return 0; }),           // scene cuts (assemble.js)
     audio.tick().catch((e) => { console.error("audio:", e.message); return 0; })]);               // ElevenLabs audio (audio.js)
-  return jobs.length + nFrames + nCuts + nAudio;
+  return now.length + nFrames + nCuts + nAudio;
 }
 
 async function main() {

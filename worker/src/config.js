@@ -23,6 +23,7 @@ export const config = {
   workDir: process.env.WORK_DIR || path.join(os.tmpdir(), "studio-work"),  // local clips + checker output
   workerId: process.env.WORKER_ID || `${os.hostname()}-${process.pid}`,
   batch: Number(process.env.WORKER_BATCH || "4"),
+  checkerSlots: Number(process.env.CHECKER_MAX_JOBS || "2"),   // clip checks in flight at once (same env as the checker)
   idleMs: Number(process.env.WORKER_IDLE_MS || "5000"),
   pollMs: Number(process.env.PROVIDER_POLL_MS || "15000"),
   providerTimeoutMin: Number(process.env.PROVIDER_TIMEOUT_MIN || "20"),
