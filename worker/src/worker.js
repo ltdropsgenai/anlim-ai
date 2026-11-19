@@ -37,6 +37,18 @@ async function fetchTo(url, dest) {
   await fs.writeFile(dest, Buffer.from(await r.arrayBuffer()));
 }
 
+// Frame rate of a clip (ffprobe r_frame_rate "30/1"); 24 if it cannot be read. The checker compares the clip with the
+// spec's rate, so the spec carries the model's real rate rather than flagging Wan 2.7 (30 fps) for not being 24.
+async function clipFps(file) {
+  try {
+    const { stdout } = await run("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate",
+                                             "-of", "csv=p=0", file]);
+    const [n, d] = stdout.trim().split("/").map(Number);
+    const f = d ? n / d : n;
+    return Number.isFinite(f) && f > 0 ? Math.round(f * 1000) / 1000 : 24;
+  } catch { return 24; }
+}
+
 async function fail(g, error, { release = true } = {}) {
   if (release) await db.settle(g.id, "release");
   await db.unlock(g.id, { status: "failed", error: String(error).slice(0, 1000), finished_at: new Date() });
@@ -131,7 +143,8 @@ async function stepChecking(g) {
   try { await fs.access(clip); } catch { await storage.download(g.output_path, clip); }   // another worker host
   const start = path.join(dir, "start" + path.extname(shot.start_frame_path || ".png"));
   await storage.download(shot.start_frame_path, start);
-  const spec = compile.checkerSpec(shot, characters, clip, path.join(dir, "qa"), start);
+  const fps = await clipFps(clip);
+  const spec = compile.checkerSpec(shot, characters, clip, path.join(dir, "qa"), start, fps);
   // Each cast member's reference image, once: the height check on the clip's last frame (2026-11-16) and, for a
   // photoreal series, face identity of the people (frame_check face_id, "faces"; it was only used by the photoreal
   // benchmarks until 2026-11-17, the app never sent faces).

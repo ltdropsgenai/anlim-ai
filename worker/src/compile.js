@@ -30,7 +30,7 @@ function heightOrder(chars) {
 
 // Bump on every prompt change; the worker prints it at start and saves it with each job (2026-11-12: a worker started
 // before a prompt change rendered 3 clips with the old prompt and nothing showed it).
-export const COMPILER_VERSION = "2026-11-17.1 (look: cartoon/photoreal; cast kinds; path rule, watchers, end frame, minimax static shot, walk end)";
+export const COMPILER_VERSION = "2026-11-19.1 (model adapters: Kling 3.0, Wan 2.7, Seedance 2.0; look: cartoon/photoreal; cast kinds; path rule, watchers, end frame, minimax static shot, walk end)";
 
 // Actions that move a character across the floor (same idea as frame_check/passthrough_check.MOVES).
 const MOVES = /\b(walk|walks|walking|step|steps|run|runs|running|cross|crosses|goes|go to|moves? to|dances?)\b/i;
@@ -81,21 +81,41 @@ export function prompt(shot, chars) {
   ].filter(Boolean).join("\n");
 }
 
-// Field names differ per model (fal pages read 2026-11-12):
-//   Kling 4.0 (kling/v4/image-to-video): start_image_url, end_image_url, duration, resolution "720p"
-//   MiniMax H3 (minimax/h3/image-to-video): image_url, end_image_url, duration, resolution "480P"|"768P"|"2K"|"4K",
-//     prompt_expansion_mode (default "balanced" rewrites our prompt; "disabled" keeps it as written)
+// Field names differ per model. One adapter per fal endpoint family; an endpoint with no adapter is refused (it used
+// to get Kling-shaped input silently). Schemas read from each model's fal llms.txt page, 2026-11-19 (Kling 4.0 and
+// MiniMax H3 2026-11-12). Model audio is always off where the model allows it (it is stripped after download anyway).
+//   Kling 4.0 (kling/v4/image-to-video): start_image_url, end_image_url, duration (number), resolution "720p"
+//   MiniMax H3 (minimax/h3/image-to-video): image_url, end_image_url, duration, resolution "768P", prompt_expansion_mode
+//   Kling 3.0 Pro (fal-ai/kling-video/v3/pro/image-to-video): start_image_url, end_image_url, duration "3".."15" (string),
+//     generate_audio (default true; $0.112/s off vs $0.168/s on), no resolution field
+//   Wan 2.7 (fal-ai/wan/v2.7/image-to-video): image_url, end_image_url, duration 2..15 (number), resolution "720p"|"1080p"
+//     (default 1080p), enable_prompt_expansion (default true rewrites our prompt)
+//   Seedance 2.0 (bytedance/seedance-2.0/image-to-video): image_url, end_image_url, duration "4".."15"|"auto" (string),
+//     resolution "720p", aspect_ratio "auto" (from the image), generate_audio (same price either way)
+const ADAPTERS = [
+  { match: /^kling\/v4\//, build: (p, s, u) => ({ prompt: p, start_image_url: u, duration: s.duration_s, resolution: s.resolution }) },
+  { match: /^minimax\//, build: (p, s, u) => ({ prompt: p, image_url: u, duration: s.duration_s, resolution: s.resolution,
+                                                prompt_expansion_mode: "disabled" }) },
+  { match: /^fal-ai\/kling-video\/v3\//, build: (p, s, u) => ({ prompt: p, start_image_url: u, duration: String(s.duration_s),
+                                                                  generate_audio: false }) },
+  { match: /^fal-ai\/wan\/v2\.7\//, build: (p, s, u) => ({ prompt: p, image_url: u, duration: s.duration_s, resolution: s.resolution,
+                                                             enable_prompt_expansion: false }) },
+  { match: /^bytedance\/seedance-2\.0\//, build: (p, s, u) => ({ prompt: p, image_url: u, duration: String(s.duration_s),
+                                                                  resolution: s.resolution, aspect_ratio: "auto", generate_audio: false }) },
+  { match: /^mock\//, build: (p, s, u) => ({ prompt: p, start_image_url: u, duration: s.duration_s, resolution: s.resolution }) },
+];
+
 export function providerInput(shot, chars, startUrl, endUrl) {
+  const a = ADAPTERS.find((x) => x.match.test(shot.endpoint || ""));
+  if (!a) throw Object.assign(new Error(`no input adapter for model endpoint ${shot.endpoint}`), { permanent: true });
   const p = prompt(shot, chars) + (endUrl ? "\n[END] Finish exactly on the given last frame." : "");
-  const input = /^minimax\//.test(shot.endpoint || "")
-    ? { prompt: p, image_url: startUrl, duration: shot.duration_s, resolution: shot.resolution, prompt_expansion_mode: "disabled" }
-    : { prompt: p, start_image_url: startUrl, duration: shot.duration_s, resolution: shot.resolution };
+  const input = a.build(p, shot, startUrl);
   if (endUrl) input.end_image_url = endUrl;
   return input;
 }
 
 // Spec in the form frame_check/shot_qc.py reads (same keys as the Phase 0 cases).
-export function checkerSpec(shot, chars, clip, out, startFrameLocal) {
+export function checkerSpec(shot, chars, clip, out, startFrameLocal, fps = 24) {
   const cast = {};
   for (const c of chars) {
     cast[c.name.toUpperCase()] = [c.kind && c.kind !== "person" ? c.kind : null, c.what, c.wardrobe, c.build,
@@ -115,7 +135,7 @@ export function checkerSpec(shot, chars, clip, out, startFrameLocal) {
     subjects: subjects(chars),
     start_frame: startFrameLocal,
     camera: !shot.camera || /lock|static/i.test(shot.camera) ? "locked" : undefined,
-    fps: 24,
+    fps,                                  // the clip's own rate (Wan 2.7 delivers 30 fps; was always 24)
     frame_check: {},
   };
 }
