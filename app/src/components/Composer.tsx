@@ -27,7 +27,7 @@ const IDEAS: Record<Look, string[]> = {
 const LENGTHS = [5, 10];
 const CLIP_CREDITS_PER_S = 40;   // Kling 4.0, Auto's pick (studio.models); the server checks the real price
 
-export function Composer({ narrow, guest = false }: { narrow: boolean; guest?: boolean }) {
+export function Composer({ narrow, guest = false, afterBanner = false }: { narrow: boolean; guest?: boolean; afterBanner?: boolean }) {
   const [text, setText] = useState("");
   const [look, setLook] = useState<Look>("cartoon");
   const [len, setLen] = useState(5);
@@ -91,7 +91,7 @@ export function Composer({ narrow, guest = false }: { narrow: boolean; guest?: b
   }
 
   return (
-    <View style={[s.wrap, narrow && { paddingTop: 28 }]}>
+    <View style={[s.wrap, narrow && { paddingTop: 28 }, afterBanner && { paddingTop: narrow ? 6 : 0, marginTop: narrow ? -28 : -64 }]}>
       <Text style={[s.h1, font.display, narrow && { fontSize: 30, lineHeight: 34 }]}>What are we making today?</Text>
       <Text style={s.lead}>Describe a shot. anlim makes the image or the clip; download it, or keep building it as a project.</Text>
 

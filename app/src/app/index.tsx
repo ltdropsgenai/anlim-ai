@@ -9,6 +9,7 @@ import { Grid } from "../components/Grid";
 import { Icon, IconName } from "../components/Icon";
 import { FEATURES } from "../lib/marketing";
 import { Composer } from "../components/Composer";
+import { SplashBanner } from "../components/SplashBanner";
 
 const KIND: Record<string, string> = { walking: "walking", sit_stand: "sitting and standing", handling: "handling props", talking: "talking", other: "other shots" };
 const LOOK: Record<string, string> = { cartoon: "Cartoon", photoreal: "Photoreal" };
@@ -52,7 +53,9 @@ export default function Home() {
   return (
     <ScrollView style={{ backgroundColor: c.bg }} contentContainerStyle={[s.page, narrow && { padding: 16 }]}>
       {/* prompt first (2026-11-19, Londi: like other tools, "What are we making today?" with a prompt window) */}
-      <Composer narrow={narrow} />
+      {/* splash banner (2026-11-20): a slow reel of clips made in anlim, above the prompt */}
+      <SplashBanner height={narrow ? 170 : 280} />
+      <Composer narrow={narrow} afterBanner />
 
       {/* where the creator left off; a brand-new account has none of this yet */}
       {d && (d.last || d.counts.series > 0) && (
