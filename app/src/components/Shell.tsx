@@ -27,7 +27,7 @@ const ITEMS: Item[] = [
   { href: "/billing", label: "Credits", icon: "credits", match: (p) => p.startsWith("/billing"), phone: false },
 ];
 // compact rail and tab bar geometry (the tally light's position is computed from it)
-const RAIL_W = 76, ITEM_H = 60, TAB_H = 58, GAP = 14, TALLY = 22, GROUP_BREAK = 4;   // Cast and Credits sit apart
+const RAIL_W = 72, ITEM_H = 52, TAB_H = 58, GAP = 14, TALLY = 22, GROUP_BREAK = 4;   // Cast and Credits sit apart
 const SIDE_W = 248, ROW_H = 40;
 const CLIP_5S = 200;   // credits of a 5 s Kling 4.0 clip (40 cr/s, studio.models), for "about N clips" on the gauge
 const TITLES: [RegExp, string][] = [
@@ -44,22 +44,34 @@ export function Shell({ children }: { children: ReactNode }) {
   const narrow = width < 760, wide = width >= 1100;
   const [me, setMe] = useState<Me | null>(null);
   useEffect(() => { api.me().then(setMe).catch(() => setMe(null)); }, [path]);
+  const [hover, setHover] = useState<string | null>(null);
+  // Collapsible sidebar (2026-11-20, Londi: "expanded will show the titles, collapsed just the icons, which still
+  // display the name when pointed at"). The choice is remembered in this browser; mid widths are always collapsed.
+  const [collapsedPref, setCollapsedPref] = useState<boolean>(() => {
+    try { return Platform.OS === "web" && window.localStorage.getItem("anlim.sidebar") === "collapsed"; } catch { return false; }
+  });
+  const toggleSidebar = () => {
+    const next = !collapsedPref;
+    setCollapsedPref(next); setHover(null);
+    try { window.localStorage.setItem("anlim.sidebar", next ? "collapsed" : "expanded"); } catch { /* private window */ }
+  };
+  const expanded = wide && !collapsedPref;
   // the sidebar's project card and Review count come from "home"; refreshed at most every 30 s
   const [home, setHome] = useState<HomeData | null>(null);
   const homeAt = useRef(0);
   useEffect(() => {
-    if (!wide || Date.now() - homeAt.current < 30000) return;
+    if (!expanded || Date.now() - homeAt.current < 30000) return;
     homeAt.current = Date.now();
     api.home().then(setHome).catch(() => {});
-  }, [path, wide]);
+  }, [path, expanded]);
   const title = TITLES.find(([r]) => r.test(path))?.[1] ?? "anlim.ai";
   // the browser tab says where you are (2026-11-19: Stack titles did not reach the tab with the header hidden)
   useEffect(() => { if (Platform.OS === "web") document.title = title === "Home" ? "anlim.ai" : `${title} · anlim.ai`; }, [title]);
   const deep = /^\/(clip|shot|cut)\//.test(path) || path.startsWith("/shots");
   const hasPlan = me?.plan_status === "active" || me?.plan_status === "trialing";
+  const toReview = home?.counts.to_review ?? 0;
   const avail = me ? me.balance - me.reserved : 0;
   const initial = (me?.email ?? "").trim().charAt(0).toUpperCase() || "·";
-  const [hover, setHover] = useState<string | null>(null);
   const hv = (k: string) => hover === k;
   const hoverProps = (k: string) => ({ onHoverIn: () => setHover(k), onHoverOut: () => setHover(null) });
   const tone = (on: boolean, h: boolean) => (on ? c.ink : h ? "#E4E4E7" : c.muted);
@@ -70,6 +82,16 @@ export function Shell({ children }: { children: ReactNode }) {
   const railLabel = (txt: string, on: boolean, h: boolean) => (
     <Text style={[{ color: on ? c.ink : h ? "#D4D4D8" : c.muted, fontSize: narrow ? 8.5 : 9, letterSpacing: 0.7,
                     textTransform: "uppercase", fontWeight: "500" }, font.mono]} numberOfLines={1}>{txt}</Text>
+  );
+  // the name of a collapsed item, floating beside it while pointed at
+  const tip = (txt: string, h: number, sub?: string) => (
+    <View pointerEvents="none" style={{ position: "absolute", left: RAIL_W - 6, top: (h - 32) / 2, height: 32, justifyContent: "center",
+                                        paddingHorizontal: 11, borderRadius: 8, backgroundColor: "#1E1E24", zIndex: 50,
+                                        shadowColor: "#000", shadowOpacity: 0.55, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } }}>
+      <Text style={{ color: c.ink, fontSize: 12.5, fontWeight: "500" }} numberOfLines={1}>
+        {txt}{sub ? <Text style={[{ color: c.muted, fontSize: 11.5 }, font.mono]}>{`  ${sub}`}</Text> : null}
+      </Text>
+    </View>
   );
   const rail = shown.map((it, i) => {
     const on = i === activeIdx, h = hv(it.href) && !on;
@@ -84,19 +106,21 @@ export function Shell({ children }: { children: ReactNode }) {
             <NavGlow tone={on ? "on" : h ? "hover" : "off"} />
             <Icon name={it.icon} size={22} weight={1.7} active={on} color={tone(on, h)} />
           </View>
-          {railLabel(it.label, on, h)}
+          {narrow && railLabel(it.label, on, h)}
         </Pressable>
+        {!narrow && hv(it.href) && tip(it.long ?? it.label, ITEM_H,
+          it.href === "/billing" && me ? `${avail.toLocaleString("en-US")} cr` : it.href === "/review" && toReview > 0 ? String(toReview) : undefined)}
       </View>
     );
   });
   const tallyPos = useRef(new Animated.Value(0)).current;
   const [tabW, setTabW] = useState(0);
   useEffect(() => {
-    if (activeIdx < 0 || wide) return;
+    if (activeIdx < 0 || expanded) return;
     const to = narrow ? activeIdx * tabW + (tabW - TALLY) / 2
       : activeIdx * ITEM_H + (activeIdx >= GROUP_BREAK ? GAP : 0) + (ITEM_H - TALLY) / 2;
     Animated.spring(tallyPos, { toValue: to, useNativeDriver: Platform.OS !== "web", stiffness: 260, damping: 26, mass: 0.9 }).start();
-  }, [activeIdx, narrow, wide, tabW, tallyPos]);
+  }, [activeIdx, narrow, expanded, tabW, tallyPos]);
   const tallyStyle = { position: "absolute" as const, backgroundColor: c.accent, shadowColor: c.accent, shadowOpacity: 0.9,
                        shadowRadius: 8, shadowOffset: { width: 0, height: 0 } };
   const tally = activeIdx < 0 ? null : (
@@ -124,7 +148,6 @@ export function Shell({ children }: { children: ReactNode }) {
   const section = (txt: string) => (
     <Text style={[{ color: "#5A5A63", fontSize: 10, letterSpacing: 1.4, paddingTop: 20, paddingBottom: 8, paddingHorizontal: 12 }, font.mono]}>{txt}</Text>
   );
-  const toReview = home?.counts.to_review ?? 0;
   const last = home?.last ?? null;
   // gauge: what is left of the month's plan credits, or of the balance when there is no plan
   const cap = Math.max(me?.plan_credits ?? 0, avail, 1);
@@ -133,11 +156,18 @@ export function Shell({ children }: { children: ReactNode }) {
   const sidebar = (
     <View style={{ width: SIDE_W, backgroundColor: c.rail, paddingTop: 18, paddingBottom: 14, paddingHorizontal: 14, zIndex: 2,
                    shadowColor: "#000", shadowOpacity: 0.45, shadowRadius: 36, shadowOffset: { width: 14, height: 0 } }}>
-      <Pressable onPress={() => router.navigate("/")} accessibilityRole="link" accessibilityLabel="anlim.ai home"
-        style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 6, transform: [{ scale: pressed ? 0.98 : 1 }] })}>
-        <Logo size={30} />
-        <Text style={[{ color: c.ink, fontSize: 17 }, font.display]}>anlim<Text style={{ color: c.accent }}>.</Text>ai</Text>
-      </Pressable>
+      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 6 }}>
+        <Pressable onPress={() => router.navigate("/")} accessibilityRole="link" accessibilityLabel="anlim.ai home"
+          style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, transform: [{ scale: pressed ? 0.98 : 1 }] })}>
+          <Logo size={30} />
+          <Text style={[{ color: c.ink, fontSize: 17 }, font.display]}>anlim<Text style={{ color: c.accent }}>.</Text>ai</Text>
+        </Pressable>
+        <Pressable onPress={toggleSidebar} {...hoverProps("fold")} accessibilityRole="button" accessibilityLabel="Collapse the sidebar"
+          style={({ pressed }) => ({ width: 30, height: 30, borderRadius: 8, alignItems: "center", justifyContent: "center",
+                                     backgroundColor: hv("fold") ? "rgba(255,255,255,0.06)" : "transparent", transform: [{ scale: pressed ? 0.92 : 1 }] })}>
+          <Icon name="fold" size={18} weight={1.6} color={hv("fold") ? c.ink : c.muted} />
+        </Pressable>
+      </View>
 
       {last && (
         <Pressable onPress={() => router.navigate({ pathname: "/workspace", params: { series: last.series_id, scene: last.scene_id } })}
@@ -223,12 +253,12 @@ export function Shell({ children }: { children: ReactNode }) {
       {narrow && !deep && <Logo size={28} />}
       <Text style={[{ color: c.ink, fontSize: narrow ? 17 : 19, textTransform: "uppercase", letterSpacing: 0.4 }, font.display]} numberOfLines={1}>{title}</Text>
       <View style={{ flex: 1 }} />
-      {me?.is_admin && !wide && (
+      {me?.is_admin && !expanded && (
         <Pressable onPress={() => router.navigate("/refunds" as never)} accessibilityRole="link" accessibilityLabel="Refund requests" {...hoverProps("refunds")}>
           <Text style={[{ color: hv("refunds") ? c.ink : c.muted, fontSize: 11, letterSpacing: 0.8, textTransform: "uppercase" }, font.mono]}>Refunds</Text>
         </Pressable>
       )}
-      {me && !wide && (
+      {me && !expanded && (
         <Pressable onPress={() => router.navigate("/billing")} accessibilityRole="link" accessibilityLabel={`${avail} credits available`}
           {...hoverProps("bal")} style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
           <Icon name="credits" size={16} weight={1.6} color={hv("bal") ? c.ink : c.muted} />
@@ -275,6 +305,16 @@ export function Shell({ children }: { children: ReactNode }) {
         style={({ pressed }) => ({ marginBottom: 26, transform: [{ scale: pressed ? 0.95 : 1 }] })}>
         <Logo size={34} />
       </Pressable>
+      {wide && (
+        <View style={{ width: RAIL_W, alignItems: "center", marginTop: -14, marginBottom: 12 }}>
+          <Pressable onPress={toggleSidebar} {...hoverProps("unfold")} accessibilityRole="button" accessibilityLabel="Expand the sidebar"
+            style={({ pressed }) => ({ width: 34, height: 30, borderRadius: 8, alignItems: "center", justifyContent: "center",
+                                       backgroundColor: hv("unfold") ? "rgba(255,255,255,0.06)" : "transparent", transform: [{ scale: pressed ? 0.92 : 1 }] })}>
+            <Icon name="unfold" size={18} weight={1.6} color={hv("unfold") ? c.ink : c.muted} />
+          </Pressable>
+          {hv("unfold") && tip("Expand", 30)}
+        </View>
+      )}
       <View accessibilityRole="tablist" style={{ width: RAIL_W }}>
         {rail}
         {tally}
@@ -287,13 +327,14 @@ export function Shell({ children }: { children: ReactNode }) {
                        backgroundColor: path.startsWith("/account") ? "#2A2A31" : hv("/account") ? "#24242A" : "#1C1C21" }}>
           <Text style={{ color: c.ink, fontSize: 12, fontWeight: "600" }}>{initial}</Text>
         </View>
-        {railLabel("Account", path.startsWith("/account"), hv("/account"))}
       </Pressable>
+      {hv("/account") && <View style={{ position: "absolute", left: 0, bottom: 14, width: RAIL_W, height: ITEM_H }} pointerEvents="none">
+        {tip(me?.email?.split("@")[0] ?? "Account", ITEM_H, hasPlan ? "plan active" : "free")}</View>}
     </View>
   );
   return (
     <View style={{ flex: 1, flexDirection: "row", backgroundColor: c.bg }}>
-      {wide ? sidebar : compact}
+      {expanded ? sidebar : compact}
       <View style={{ flex: 1, minWidth: 0 }}>
         {top}
         <View style={{ flex: 1 }}>{children}<Notices /></View>

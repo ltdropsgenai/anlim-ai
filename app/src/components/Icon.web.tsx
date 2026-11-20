@@ -1,7 +1,7 @@
 // Icons for the app frame (web: inline SVG); the navigation set is drawn duotone, see NAV below. @anlim
 import type { ReactElement } from "react";
 export type IconName = "studio" | "review" | "cast" | "credits" | "account" | "back" | "cut" | "home" | "workspace" | "assets"
-  | "play" | "music" | "image" | "search" | "check" | "spark" | "arrow";
+  | "play" | "music" | "image" | "search" | "check" | "spark" | "arrow" | "fold" | "unfold";
 const P: Partial<Record<IconName, ReactElement>> = {
   studio: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 9h18M8 5v4M16 5v4" /></>,
   account: <><circle cx="12" cy="8.5" r="4" /><path d="M4 20c1.2-3.8 4.2-5.6 8-5.6s6.8 1.8 8 5.6" /></>,
@@ -14,6 +14,9 @@ const P: Partial<Record<IconName, ReactElement>> = {
   check: <><path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16" /><path d="M8.5 12.2l2.5 2.5 4.8-5" /></>,
   spark: <path d="M12 3l1.9 5.6L19.5 10.5l-5.6 1.9L12 18l-1.9-5.6L4.5 10.5l5.6-1.9z" />,
   arrow: <path d="M5 12h14M13 6l6 6-6 6" />,
+  // the sidebar's collapse / expand control: a panel with its edge, and a chevron pointing the way it will move
+  fold: <><rect x="3" y="4.5" width="18" height="15" rx="2.5" /><path d="M9 4.5v15M15.5 10l-2 2 2 2" /></>,
+  unfold: <><rect x="3" y="4.5" width="18" height="15" rx="2.5" /><path d="M9 4.5v15M13.5 10l2 2-2 2" /></>,
 };
 // Navigation glyphs (2026-11-20, Londi picked "icons2"): film-studio objects drawn duotone. A soft body (low-opacity
 // fill), crisp strokes, and ONE accent part that turns tungsten orange on the current page: the logo's dot. Home is a
