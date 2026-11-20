@@ -204,16 +204,52 @@ async function stepRunning(g) {
   log(g, `clip stored (${objectPath}${previewPath ? `; watermarked copy ${previewPath}` : ""}), provider $${usd.toFixed(3)}`);
 }
 
-async function stepChecking(g) {
-  if (isMotion(g)) {
-    // Motion transfer clips keep the source's camera cuts, which the clip checker reads as faults; until it has a
-    // motion mode (swap check across cuts), the clip goes to review unchecked and is charged like any made clip.
-    await db.settle(g.id, "charge");
-    await db.unlock(g.id, { status: "review", finished_at: new Date(),
-      error: "not checked: motion transfer clips are not checked automatically yet; look for swapped faces or costumes" });
-    await db.setShot(g.shot_id, "review");
-    return log(g, "motion transfer: sent to review unchecked");
+// Motion transfer (2026-11-20): the clip checker reads the source's camera cuts as faults, so these clips get their own
+// check instead: does each shot keep who is who against the source clip (checker /motion_check, one vision call)?
+// Never a FAIL; the clip is charged like any made clip and a flag only tells the creator where to look.
+async function checkMotion(g) {
+  const { shot } = await db.shotContext(g);
+  const dir = path.join(config.workDir, g.id);
+  await fs.mkdir(dir, { recursive: true });
+  const clip = path.join(dir, "clip.mp4");
+  try { await fs.access(clip); } catch { await storage.download(g.output_path, clip); }
+  const saved = path.join(dir, "motion_check.json");
+  let res;
+  try { res = JSON.parse(await fs.readFile(saved, "utf8")); } catch { res = null; }
+  if (!res) {
+    try {
+      const source = path.join(dir, "source" + (path.extname(shot.motion_source_path || "") || ".mp4"));
+      try { await fs.access(source); } catch { await storage.download(shot.motion_source_path, source); }
+      const refs = [];
+      for (const [i, p] of (shot.motion_ref_paths || []).entries()) {
+        const ref = path.join(dir, `mref-${i}${path.extname(p) || ".png"}`);
+        try { await fs.access(ref); refs.push(ref); } catch {
+          try { await storage.download(p, ref); refs.push(ref); } catch (e) { log(g, `reference image ${i + 1} not downloaded: ${e.message}`); }
+        }
+      }
+      const who = shot.action && shot.action !== "Motion transfer" ? shot.action : null;
+      const r = await postChecker("/motion_check", { render: clip, source, refs, who });
+      res = r.json || { verdict: "ERROR", error: `checker HTTP ${r.status}` };
+      if (!r.ok || res.verdict === "ERROR") throw new Error(res.error || `HTTP ${r.status}`);
+    } catch (e) {
+      // the swap check is a helper, not a gate: when it cannot run, the clip still goes to review
+      res = { verdict: "NOT_REVIEWED", reasons: [`the swap check could not run (${String(e.message).slice(0, 120)})`], usd: 0 };
+    }
+    await fs.writeFile(saved, JSON.stringify(res));
   }
+  await db.recordQc(g.id, { ...res, review_usd: res.usd || 0, models: { motion_swap: (res.detail && res.detail.model) || null } });
+  log(g, `motion swap check ${res.verdict} ($${(res.usd || 0).toFixed(3)})`);
+  await db.settle(g.id, "charge");
+  const reasons = (res.reasons || []).slice(0, 3).join(" | ");
+  const error = res.verdict === "PASS" ? null
+    : res.verdict === "FLAG" ? `checker found: ${reasons}`.slice(0, 1000)
+    : `not checked: ${reasons || "the swap check could not run"}; look for swapped faces or costumes`.slice(0, 1000);
+  await db.unlock(g.id, { status: res.verdict === "PASS" ? "succeeded" : "review", finished_at: new Date(), error });
+  await db.setShot(g.shot_id, "review");
+}
+
+async function stepChecking(g) {
+  if (isMotion(g)) return checkMotion(g);
   const { shot, characters } = await db.shotContext(g);
   const dir = path.join(config.workDir, g.id);
   const clip = path.join(dir, "clip.mp4");

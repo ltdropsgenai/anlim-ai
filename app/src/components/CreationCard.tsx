@@ -25,7 +25,10 @@ function stage(x: Creation | null, output: Output) {
     : `Animating with ${x.model_label ?? "the video model"}… (usually 3 to 5 minutes)` };
   if (x.gen_status === "checking") return { done: false, label: "Checking the clip… you can watch it below." };
   if (x.gen_status === "failed") return { done: true, label: x.gen_error === "refund requested" ? "Refund requested for this clip." : "The clip didn't finish. Nothing was charged for it." };
-  if (x.motion) return { done: true, label: "Your clip is ready. Watch the close-ups for swapped faces or clothes." };
+  // 2026-11-20: motion clips get the who-is-who check (worker checkMotion); it only flags, so "not checked" still asks for a look
+  if (x.motion) return { done: true, label: x.gen_status === "succeeded" ? "Your clip is ready (who is who checked ✓)."
+    : x.gen_error?.startsWith("checker found: ") ? "Your clip is ready. Our check thinks two people swapped in a shot: have a look."
+    : "Your clip is ready. Watch the close-ups for swapped faces or clothes." };
   return { done: true, label: x.gen_status === "succeeded" ? "Your clip is ready (checked ✓)." : "Your clip is ready. Our check flagged something: have a look." };
 }
 

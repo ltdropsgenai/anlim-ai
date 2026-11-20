@@ -56,21 +56,33 @@ def _label(im, text):
     return im
 
 
+def _frame_at(path, t, w=FRAME_W):
+    """One frame at t seconds, w wide (ffmpeg seek): only the picked moments are decoded at full size."""
+    import subprocess
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{t:.3f}", "-i", path, "-frames:v", "1", "-vf", f"scale={w}:-2",
+                          "-f", "image2pipe", "-vcodec", "png", "-"], capture_output=True, check=True).stdout
+    return np.asarray(Image.open(io.BytesIO(raw)).convert("RGB"))
+
+
 def moments(render, source):
-    """[(t_seconds, shot_no, render_rgb, source_rgb)] - the middle of each shot, plus thirds for shots over 3 s."""
-    R, rf = frames_rgb(render, w=FRAME_W); S, sf = frames_rgb(source, w=FRAME_W)
+    """[(t, shot_no, render_rgb, source_rgb, shot_from, shot_to)] - the middle of each shot, thirds for shots over 3 s.
+    Cuts are found on a 128 px copy (2026-11-20: the worker machine has 2 GB; a 30 s clip at full size would not fit)."""
+    R, rf = frames_rgb(render, w=128); S, sf = frames_rgb(source, w=128)
     n = min(len(R), int(len(S) / sf * rf))                       # the render can run past its (rounded-up) source
     cuts = [c for c in sorted(set(find_cuts(R[:n].astype(np.float32).mean(-1)))) if 0 < c < n]
-    bounds = [0] + cuts + [n]; out = []
+    del R, S
+    bounds = [0] + cuts + [n]; picks = []
     for k in range(len(bounds) - 1):
         a, b = bounds[k], bounds[k + 1]
         if b - a < 4: continue                                   # a flash of a few frames: not a shot
-        picks = [a + (b - a) // 2] if (b - a) / rf <= 3 else [a + (b - a) // 3, a + 2 * (b - a) // 3]
-        for i in picks:
-            j = min(int(round(i / rf * sf)), len(S) - 1)
-            out.append((round(i / rf, 2), k + 1, R[i], S[j], round(a / rf, 2), round(b / rf, 2)))
-    if len(out) > MAX_MOMENTS:                                   # keep it to one cheap call: even spread
-        out = [out[int(x)] for x in np.linspace(0, len(out) - 1, MAX_MOMENTS)]
+        for i in ([a + (b - a) // 2] if (b - a) / rf <= 3 else [a + (b - a) // 3, a + 2 * (b - a) // 3]):
+            picks.append((i, k + 1, a, b))
+    if len(picks) > MAX_MOMENTS:                                 # keep it to one cheap call: even spread
+        picks = [picks[int(x)] for x in np.linspace(0, len(picks) - 1, MAX_MOMENTS)]
+    out = []
+    for i, shot, a, b in picks:
+        t = (i + 0.5) / rf
+        out.append((round(i / rf, 2), shot, _frame_at(render, t), _frame_at(source, t), round(a / rf, 2), round(b / rf, 2)))
     return out
 
 

@@ -20,6 +20,8 @@ Python standard library only (no installs beyond what frame_check already needs)
                 Standing pairs are measured (free); anything else is one AI question (about $0.01, needs ANTHROPIC_API_KEY).
   POST /reposition_fit {"start", "plates"?} -> frame_check/end_frame.reposition_fit: {"verdict": "PASS"|"FLAG", "cover",
                 "plate_fit", "why"}. Free. The worker calls it before paying for a "same room, new positions" start still.
+  POST /motion_check {"render", "source", "refs": [...], "who"?} -> frame_check/motion_swap_ai.analyze: did a motion
+       transfer keep who is who in every shot? {"verdict": "PASS"|"FLAG"|"NOT_REVIEWED", "issues", "usd", ...}
   POST /still_check {"still", "instruction", "subjects"?, "out"?} -> frame_check/still_check.check: {"verdict":
                 "OK"|"WRONG"|"UNSURE"|"NOT CHECKED", "problems", "usd"}. Physical staging of a made still (~$0.01).
   Every frame route above also takes "look" (cartoon | photoreal) and "subjects" ([{"name", "kind": person | animal |
@@ -190,6 +192,25 @@ def run_still_check(body):
     r["drift"] = []
     return r
 
+def run_motion_check(body):
+    """POST /motion_check: one vision call over the render's shots against the source clip (2026-11-20). Never FAIL:
+    PASS, FLAG with the swapped shots, or NOT_REVIEWED when the model was unsure or the call could not run."""
+    for k in ("render", "source"):
+        if not body.get(k): raise ValueError(f"{k} is required")
+        if not os.path.exists(body[k]): raise FileNotFoundError(body[k])
+    refs = [r for r in (body.get("refs") or []) if r and os.path.exists(r)]
+    if MODE == "fake":
+        return {"verdict": body.get("fake_verdict", "PASS"), "issues": [], "usd": 0.0, "reasons": []}
+    if FC not in sys.path: sys.path.insert(0, FC)
+    import motion_swap_ai
+    r = motion_swap_ai.analyze(body["render"], body["source"], refs, body.get("who"), log=None)
+    v = {"PASS": "PASS", "FLAG": "FLAG"}.get(r.get("verdict"), "NOT_REVIEWED")
+    reasons = [x["text"] for x in r.get("issues", [])] or ([r["why"]] if r.get("why") else [])
+    if r.get("verdict") == "NOT SURE": reasons = ["the swap check could not tell who is who in most shots"]
+    r.pop("answer", None)
+    return {"verdict": v, "reasons": reasons, "usd": r.get("usd", 0.0), "detail": r,
+            "frame_flags": [{"t_s": x["from_s"], "verdict": "FLAG", "rules": ["SWAP"], "note": x["text"]} for x in r.get("issues", [])]}
+
 def run_last_frame(body):
     """POST /last_frame {"video", "out_png"}: the clip's last decodable frame as a PNG. The frame count in the header
     can be off by a frame or two, so the last few frames are read through and the last one that decodes is kept."""
@@ -231,7 +252,7 @@ class H(BaseHTTPRequestHandler):
         self._send(404, {"error": "not found"})
 
     def do_POST(self):
-        if self.path not in ("/check", "/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check"): return self._send(404, {"error": "not found"})
+        if self.path not in ("/check", "/motion_check", "/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check"): return self._send(404, {"error": "not found"})
         if not self._authed(): return self._send(401, {"error": "unauthorized"})
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
@@ -249,6 +270,17 @@ class H(BaseHTTPRequestHandler):
             except (Exception, SystemExit) as e:
                 traceback.print_exc()
                 return self._send(500, {"verdict": "ERROR", "error": f"{type(e).__name__}: {str(e)[:300]}"})
+        if self.path == "/motion_check":
+            with SLOTS:
+                try:
+                    r = run_motion_check(body)
+                    print(f"[motion_check] {os.path.basename(body.get('render', ''))}: {r['verdict']} (${r.get('usd', 0):.3f})", flush=True)
+                    return self._send(200, r)
+                except (ValueError, FileNotFoundError) as e:
+                    return self._send(400, {"verdict": "ERROR", "error": f"{type(e).__name__}: {e}"})
+                except (Exception, SystemExit) as e:
+                    traceback.print_exc()
+                    return self._send(500, {"verdict": "ERROR", "error": f"{type(e).__name__}: {str(e)[:300]}"})
         with SLOTS:
             try:
                 r = run_check(body)
