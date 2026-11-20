@@ -103,11 +103,28 @@ def _matting():
     name = MATTING[_CFG["look"]]
     if name not in _sess:
         try:
-            from rembg import new_session
-            _sess[name] = new_session(name)       # isnet-general-use (photoreal) downloads on first use, like isnet-anime
+            _sess[name] = _lean_session(name)     # isnet-general-use (photoreal) downloads on first use, like isnet-anime
         except Exception:
             _sess[name] = False
     return _sess[name]
+
+
+def _lean_session(name):
+    """rembg session with onnxruntime's CPU memory arena and memory pattern OFF.
+    2026-11-20: the Fly checker (2 GB) was OOM-killed every ~9 minutes. Measured on room_drift's end_frame.check (two
+    1344x752 cartoon stills, rembg 2.0.69 + onnxruntime 1.23.2, the versions in the Dockerfile): process peak 2,112 MB
+    with the defaults (the arena keeps every 1024x1024 activation buffer), 1,449 MB with both off; same drift boxes,
+    same time (16 s). Built through sessions_class because rembg 2.0.69's new_session takes no session options."""
+    import onnxruntime as ort
+    from rembg.sessions import sessions_class
+    o = ort.SessionOptions(); o.enable_cpu_mem_arena = False; o.enable_mem_pattern = False
+    if "OMP_NUM_THREADS" in os.environ:
+        o.inter_op_num_threads = o.intra_op_num_threads = int(os.environ["OMP_NUM_THREADS"])
+    cls = next((c for c in sessions_class if c.name() == name), None)
+    if cls is None:
+        from rembg import new_session
+        return new_session(name)
+    return cls(name, o)
 
 
 def _merged_people(dets, thr=0.25):
