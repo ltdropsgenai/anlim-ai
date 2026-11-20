@@ -28,5 +28,6 @@ export const config = {
   pollMs: Number(process.env.PROVIDER_POLL_MS || "15000"),
   providerTimeoutMin: Number(process.env.PROVIDER_TIMEOUT_MIN || "20"),
   maxStepTries: Number(process.env.MAX_STEP_TRIES || "5"),
+  checkerMaxCrashes: Number(process.env.CHECKER_MAX_CRASHES || "2"),   // checks of one clip that may die with the machine
   endFrameGate: process.env.END_FRAME_GATE || "block",   // block | warn | off (end-frame drift check before submit)
 };

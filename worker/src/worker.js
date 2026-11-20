@@ -211,9 +211,31 @@ async function stepChecking(g) {
   let res;
   try { res = JSON.parse(await fs.readFile(saved, "utf8")); } catch { res = null; }
   if (!res) {
+    // Crash guard (2026-11-20): a check that runs the machine out of memory takes this worker down with it, so
+    // `tries` never moves and the same check restarted after every reboot. check_started_at still set here means the
+    // last check of this clip died with the machine; after config.checkerMaxCrashes of those the clip goes to review
+    // unchecked, charged like a checker that gave up (policy v2), and the queue moves on.
+    if (g.check_started_at) {
+      const crashes = (g.check_crashes || 0) + 1;
+      await db.update(g.id, { check_crashes: crashes, check_started_at: null });
+      log(g, `the last check of this clip never finished (machine restart, likely out of memory); crash ${crashes}`);
+      if (crashes >= config.checkerMaxCrashes) {
+        await db.settle(g.id, "charge");
+        await db.unlock(g.id, { status: "review", finished_at: new Date(),
+          error: `not checked: the check stopped the server ${crashes} times (out of memory); have a look yourself` });
+        await db.setShot(g.shot_id, "review");
+        return log(g, `check skipped after ${crashes} crashes; sent to review unchecked`);
+      }
+    }
+    await db.update(g.id, { check_started_at: new Date() });
     // the creator approved the start still with this shot's cast list: the head count is confirmed
-    const r = await postChecker("/check", { generation_id: g.id, spec, max_usd: config.checkerMaxUsd,
-                                             confirmed_spec: !!shot.start_frame_approved && !fromText(g) });
+    let r;
+    try {
+      r = await postChecker("/check", { generation_id: g.id, spec, max_usd: config.checkerMaxUsd,
+                                        confirmed_spec: !!shot.start_frame_approved && !fromText(g) });
+    } finally {
+      await db.update(g.id, { check_started_at: null });   // the checker answered (or the call failed): not a crash
+    }
     res = r.json || { verdict: "ERROR", error: `checker HTTP ${r.status}` };
     if (!r.ok || res.verdict === "ERROR") throw new Error(`checker: ${res.error || r.status}`);
     await fs.writeFile(saved, JSON.stringify(res));
