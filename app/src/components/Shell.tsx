@@ -1,18 +1,21 @@
-// App frame (2026-11-19, direction D): icon rail (bottom tab bar on phone widths) + top bar with the page title,
-// back, credits and Upgrade. Pages render inside it. @anlim
+// App frame. 2026-11-20 (Londi picked direction B, "studio sidebar", with the icons2 set): a full sidebar on wide
+// screens (grouped pages, the project last worked on, a credits gauge, the account), the compact rail on mid widths,
+// a bottom tab bar on phones. Londi's rules hold throughout: no outlined boxes, no pills; the current page is a
+// tungsten tally light (the logo's recording dot) plus a warm wash and the glyph's orange accent; hover is light,
+// not a shape. Pages render inside it. @anlim
 import { ReactNode, useEffect, useRef, useState } from "react";
 import { Animated, Platform, Pressable, Text, useWindowDimensions, View } from "react-native";
 import { Notices } from "./Notices";
 import { router, usePathname } from "expo-router";
-import { api } from "../lib/api";
+import { api, HomeData } from "../lib/api";
 import { c, font } from "../lib/theme";
 import { Icon, IconName } from "./Icon";
 import { Logo } from "./Logo";
-import { NavGlow } from "./NavGlow";
+import { NavGlow, Wash } from "./NavGlow";
 export { Logo };
 
-type Item = { href: "/" | "/workspace" | "/storage" | "/review" | "/library" | "/billing"; label: string; icon: IconName;
-  match: (p: string) => boolean; phone: boolean };
+type Href = "/" | "/workspace" | "/storage" | "/review" | "/library" | "/billing";
+type Item = { href: Href; label: string; long?: string; icon: IconName; match: (p: string) => boolean; phone: boolean };
 // 2026-11-19 (Londi): Home (features, models, tools), Workspace (where things are made), Assets (everything made).
 const ITEMS: Item[] = [
   { href: "/", label: "Home", icon: "home", match: (p) => p === "/", phone: true },
@@ -20,89 +23,198 @@ const ITEMS: Item[] = [
     match: (p) => p.startsWith("/workspace") || p.startsWith("/shots") || p.startsWith("/shot/") || p.startsWith("/cut/") },
   { href: "/storage", label: "Assets", icon: "assets", match: (p) => p.startsWith("/storage"), phone: true },
   { href: "/review", label: "Review", icon: "review", match: (p) => p.startsWith("/review") || p.startsWith("/clip/"), phone: true },
-  { href: "/library", label: "Cast", icon: "cast", match: (p) => p.startsWith("/library"), phone: true },
+  { href: "/library", label: "Cast", long: "Cast & places", icon: "cast", match: (p) => p.startsWith("/library"), phone: true },
   { href: "/billing", label: "Credits", icon: "credits", match: (p) => p.startsWith("/billing"), phone: false },
 ];
-// rail geometry (the tally light's position is computed from it)
-const RAIL_W = 76, ITEM_H = 60, TAB_H = 58, GAP = 14, TALLY = 22, GROUP_BREAK = 4;   // Cast and Credits sit apart from the making pages
+// compact rail and tab bar geometry (the tally light's position is computed from it)
+const RAIL_W = 76, ITEM_H = 60, TAB_H = 58, GAP = 14, TALLY = 22, GROUP_BREAK = 4;   // Cast and Credits sit apart
+const SIDE_W = 248, ROW_H = 40;
+const CLIP_5S = 200;   // credits of a 5 s Kling 4.0 clip (40 cr/s, studio.models), for "about N clips" on the gauge
 const TITLES: [RegExp, string][] = [
   [/^\/$/, "Home"], [/^\/workspace/, "Workspace"], [/^\/storage/, "Assets"], [/^\/review/, "Review"],
   [/^\/clip\//, "Review a clip"], [/^\/shots/, "Scene board"], [/^\/shot\//, "Shot"], [/^\/cut\//, "Scene cut"],
-  [/^\/library/, "Cast & places"], [/^\/billing/, "Credits & plan"], [/^\/account/, "Account"],
+  [/^\/library/, "Cast & places"], [/^\/billing/, "Credits & plan"], [/^\/account/, "Account"], [/^\/refunds/, "Refund requests"],
 ];
+type Me = { email?: string; balance: number; reserved: number; plan_status: string | null; plan_id?: string | null;
+            plan_credits?: number; is_admin?: boolean };
 
 export function Shell({ children }: { children: ReactNode }) {
   const path = usePathname();
   const { width } = useWindowDimensions();
-  const narrow = width < 760;
-  const [me, setMe] = useState<{ email?: string; balance: number; reserved: number; plan_status: string | null; is_admin?: boolean } | null>(null);
+  const narrow = width < 760, wide = width >= 1100;
+  const [me, setMe] = useState<Me | null>(null);
   useEffect(() => { api.me().then(setMe).catch(() => setMe(null)); }, [path]);
+  // the sidebar's project card and Review count come from "home"; refreshed at most every 30 s
+  const [home, setHome] = useState<HomeData | null>(null);
+  const homeAt = useRef(0);
+  useEffect(() => {
+    if (!wide || Date.now() - homeAt.current < 30000) return;
+    homeAt.current = Date.now();
+    api.home().then(setHome).catch(() => {});
+  }, [path, wide]);
   const title = TITLES.find(([r]) => r.test(path))?.[1] ?? "anlim.ai";
   // the browser tab says where you are (2026-11-19: Stack titles did not reach the tab with the header hidden)
   useEffect(() => { if (Platform.OS === "web") document.title = title === "Home" ? "anlim.ai" : `${title} · anlim.ai`; }, [title]);
   const deep = /^\/(clip|shot|cut)\//.test(path) || path.startsWith("/shots");
   const hasPlan = me?.plan_status === "active" || me?.plan_status === "trialing";
+  const avail = me ? me.balance - me.reserved : 0;
+  const initial = (me?.email ?? "").trim().charAt(0).toUpperCase() || "·";
+  const [hover, setHover] = useState<string | null>(null);
+  const hv = (k: string) => hover === k;
+  const hoverProps = (k: string) => ({ onHoverIn: () => setHover(k), onHoverOut: () => setHover(null) });
+  const tone = (on: boolean, h: boolean) => (on ? c.ink : h ? "#E4E4E7" : c.muted);
 
-  // Rail (2026-11-20, Londi: "really well designed ... a very premium feel without ending up looking tacky"). No boxes
-  // and no outlines: the current page is a tungsten tally light on the rail's edge (the logo's recording dot), a warm
-  // glow behind its glyph and the glyph's solid fill; hover is light, not a shape. Mono caps labels, like a slate.
+  // ---- compact rail (mid widths) and phone tab bar ----
   const shown = ITEMS.filter((it) => !narrow || it.phone);
   const activeIdx = shown.findIndex((it) => it.match(path));
-  const [hover, setHover] = useState<string | null>(null);
-  const label = (txt: string, on: boolean, hv: boolean) => (
-    <Text style={[{ color: on ? c.ink : hv ? "#D4D4D8" : c.muted, fontSize: narrow ? 8.5 : 9, letterSpacing: 0.7,
+  const railLabel = (txt: string, on: boolean, h: boolean) => (
+    <Text style={[{ color: on ? c.ink : h ? "#D4D4D8" : c.muted, fontSize: narrow ? 8.5 : 9, letterSpacing: 0.7,
                     textTransform: "uppercase", fontWeight: "500" }, font.mono]} numberOfLines={1}>{txt}</Text>
   );
-  const glyph = (name: IconName, on: boolean, hv: boolean) => (
-    <View style={{ width: 44, height: 32, alignItems: "center", justifyContent: "center" }}>
-      <NavGlow tone={on ? "on" : hv ? "hover" : "off"} />
-      <Icon name={name} size={22} weight={1.6} active={on} color={on ? c.ink : hv ? "#D4D4D8" : c.muted} />
-    </View>
-  );
   const rail = shown.map((it, i) => {
-    const on = i === activeIdx, hv = hover === it.href && !on;
+    const on = i === activeIdx, h = hv(it.href) && !on;
     return (
       <View key={it.href} style={{ width: narrow ? undefined : RAIL_W, flex: narrow ? 1 : undefined }}>
         {!narrow && i === GROUP_BREAK && <View style={{ height: GAP }} />}
-        <Pressable onPress={() => router.navigate(it.href)} onHoverIn={() => setHover(it.href)} onHoverOut={() => setHover(null)}
+        <Pressable onPress={() => router.navigate(it.href)} {...hoverProps(it.href)}
           accessibilityRole="link" accessibilityLabel={it.label} accessibilityState={{ selected: on }}
           style={({ pressed }) => ({ height: narrow ? TAB_H : ITEM_H, alignItems: "center", justifyContent: "center", gap: 5,
                                      transform: [{ scale: pressed ? 0.95 : 1 }] })}>
-          {glyph(it.icon, on, hv)}
-          {label(it.label, on, hv)}
+          <View style={{ width: 44, height: 32, alignItems: "center", justifyContent: "center" }}>
+            <NavGlow tone={on ? "on" : h ? "hover" : "off"} />
+            <Icon name={it.icon} size={22} weight={1.7} active={on} color={tone(on, h)} />
+          </View>
+          {railLabel(it.label, on, h)}
         </Pressable>
       </View>
     );
   });
-  // the tally light slides to the current page; it hides on pages outside the rail (account, refunds)
   const tallyPos = useRef(new Animated.Value(0)).current;
   const [tabW, setTabW] = useState(0);
   useEffect(() => {
-    if (activeIdx < 0) return;
+    if (activeIdx < 0 || wide) return;
     const to = narrow ? activeIdx * tabW + (tabW - TALLY) / 2
       : activeIdx * ITEM_H + (activeIdx >= GROUP_BREAK ? GAP : 0) + (ITEM_H - TALLY) / 2;
     Animated.spring(tallyPos, { toValue: to, useNativeDriver: Platform.OS !== "web", stiffness: 260, damping: 26, mass: 0.9 }).start();
-  }, [activeIdx, narrow, tabW, tallyPos]);
+  }, [activeIdx, narrow, wide, tabW, tallyPos]);
+  const tallyStyle = { position: "absolute" as const, backgroundColor: c.accent, shadowColor: c.accent, shadowOpacity: 0.9,
+                       shadowRadius: 8, shadowOffset: { width: 0, height: 0 } };
   const tally = activeIdx < 0 ? null : (
-    <Animated.View pointerEvents="none" style={[{ position: "absolute", backgroundColor: c.accent, shadowColor: c.accent,
-        shadowOpacity: 0.9, shadowRadius: 8, shadowOffset: { width: 0, height: 0 } },
-      narrow ? { top: 0, left: 0, width: TALLY, height: 3, borderBottomLeftRadius: 3, borderBottomRightRadius: 3,
-                 transform: [{ translateX: tallyPos }] }
-             : { left: 0, top: 0, width: 3, height: TALLY, borderTopRightRadius: 3, borderBottomRightRadius: 3,
-                 transform: [{ translateY: tallyPos }] }]} />
+    <Animated.View pointerEvents="none" style={[tallyStyle,
+      narrow ? { top: 0, left: 0, width: TALLY, height: 3, borderBottomLeftRadius: 3, borderBottomRightRadius: 3, transform: [{ translateX: tallyPos }] }
+             : { left: 0, top: 0, width: 3, height: TALLY, borderTopRightRadius: 3, borderBottomRightRadius: 3, transform: [{ translateY: tallyPos }] }]} />
   );
-  const acctOn = path.startsWith("/account"), acctHv = hover === "/account" && !acctOn;
-  const initial = (me?.email ?? "").trim().charAt(0).toUpperCase() || "·";
 
-  // Top bar (2026-11-20): no hairline under it and no outlined pills; it separates from the page by value, and its
-  // controls are type with light on hover. Upgrade is the one filled control (accent, squared corners).
-  const hv = (k: string) => hover === k;
+  // ---- full sidebar (wide) ----
+  const sideRow = (key: string, icon: IconName, txt: string, on: boolean, go: () => void, meta?: string | null) => {
+    const h = hv(key) && !on;
+    return (
+      <Pressable key={key} onPress={go} {...hoverProps(key)} accessibilityRole="link" accessibilityLabel={txt} accessibilityState={{ selected: on }}
+        style={({ pressed }) => ({ height: ROW_H, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 12, borderRadius: 10,
+                                   backgroundColor: h ? "rgba(255,255,255,0.04)" : "transparent", transform: [{ scale: pressed ? 0.98 : 1 }] })}>
+        {on && <Wash />}
+        {on && <View pointerEvents="none" style={[tallyStyle, { left: -14, top: (ROW_H - 20) / 2, width: 3, height: 20,
+                                                                 borderTopRightRadius: 3, borderBottomRightRadius: 3 }]} />}
+        <Icon name={icon} size={19} weight={1.7} active={on} color={tone(on, h)} />
+        <Text style={{ color: on ? c.ink : h ? "#E4E4E7" : c.sub, fontSize: 14, fontWeight: on ? "600" : "500", flex: 1 }} numberOfLines={1}>{txt}</Text>
+        {meta ? <Text style={[{ color: on ? c.sub : c.muted, fontSize: 11 }, font.mono]}>{meta}</Text> : null}
+      </Pressable>
+    );
+  };
+  const section = (txt: string) => (
+    <Text style={[{ color: "#5A5A63", fontSize: 10, letterSpacing: 1.4, paddingTop: 20, paddingBottom: 8, paddingHorizontal: 12 }, font.mono]}>{txt}</Text>
+  );
+  const toReview = home?.counts.to_review ?? 0;
+  const last = home?.last ?? null;
+  // gauge: what is left of the month's plan credits, or of the balance when there is no plan
+  const cap = Math.max(me?.plan_credits ?? 0, avail, 1);
+  const pct = Math.max(0.03, Math.min(1, avail / cap));
+  const clips = Math.floor(avail / CLIP_5S);
+  const sidebar = (
+    <View style={{ width: SIDE_W, backgroundColor: c.rail, paddingTop: 18, paddingBottom: 14, paddingHorizontal: 14, zIndex: 2,
+                   shadowColor: "#000", shadowOpacity: 0.45, shadowRadius: 36, shadowOffset: { width: 14, height: 0 } }}>
+      <Pressable onPress={() => router.navigate("/")} accessibilityRole="link" accessibilityLabel="anlim.ai home"
+        style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 6, transform: [{ scale: pressed ? 0.98 : 1 }] })}>
+        <Logo size={30} />
+        <Text style={[{ color: c.ink, fontSize: 17 }, font.display]}>anlim<Text style={{ color: c.accent }}>.</Text>ai</Text>
+      </Pressable>
+
+      {last && (
+        <Pressable onPress={() => router.navigate({ pathname: "/workspace", params: { series: last.series_id, scene: last.scene_id } })}
+          {...hoverProps("proj")} accessibilityRole="link" accessibilityLabel={`Open ${last.series_name}`}
+          style={({ pressed }) => ({ marginTop: 18, padding: 10, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 10,
+                                     backgroundColor: hv("proj") ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.035)",
+                                     transform: [{ scale: pressed ? 0.98 : 1 }] })}>
+          <View style={{ width: 30, height: 30, borderRadius: 8, overflow: "hidden", backgroundColor: "#B4440A" }}>
+            <Wash solid />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={{ color: c.ink, fontSize: 13, fontWeight: "600" }} numberOfLines={1}>{last.series_name}</Text>
+            <Text style={[{ color: c.muted, fontSize: 9.5, letterSpacing: 0.8, textTransform: "uppercase", marginTop: 2 }, font.mono]} numberOfLines={1}>
+              Last worked on · {last.scene_title}
+            </Text>
+          </View>
+        </Pressable>
+      )}
+
+      {section("MAKE")}
+      {ITEMS.slice(0, 4).map((it) => sideRow(it.href, it.icon, it.label, it.match(path), () => router.navigate(it.href),
+        it.href === "/review" && toReview > 0 ? String(toReview) : null))}
+      {section("LIBRARY")}
+      {sideRow("/library", "cast", "Cast & places", ITEMS[4].match(path), () => router.navigate("/library"))}
+      {me?.is_admin && <>
+        {section("ADMIN")}
+        {sideRow("/refunds", "review", "Refund requests", path.startsWith("/refunds"), () => router.navigate("/refunds" as never))}
+      </>}
+
+      <View style={{ flex: 1 }} />
+
+      {me && (
+        <Pressable onPress={() => router.navigate("/billing")} {...hoverProps("gauge")} accessibilityRole="link"
+          accessibilityLabel={`${avail} credits available, about ${clips} five-second clips`}
+          style={({ pressed }) => ({ padding: 14, borderRadius: 12, transform: [{ scale: pressed ? 0.98 : 1 }],
+                                     backgroundColor: path.startsWith("/billing") ? "rgba(255,122,26,0.08)" : hv("gauge") ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.03)" })}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Icon name="credits" size={15} weight={1.6} active={path.startsWith("/billing")} color={c.muted} />
+            <Text style={[{ color: "#5A5A63", fontSize: 10, letterSpacing: 1.4, flex: 1 }, font.mono]}>CREDITS</Text>
+            <Text style={[{ color: c.ink, fontSize: 13, fontWeight: "600" }, font.mono]}>{avail.toLocaleString("en-US")}</Text>
+          </View>
+          <View style={{ height: 4, borderRadius: 2, backgroundColor: "#1E1E23", marginTop: 11, overflow: "hidden" }}>
+            <View style={{ width: `${pct * 100}%`, height: 4, borderRadius: 2, backgroundColor: c.accent,
+                           shadowColor: c.accent, shadowOpacity: 0.6, shadowRadius: 6, shadowOffset: { width: 0, height: 0 } }} />
+          </View>
+          <Text style={{ color: c.muted, fontSize: 11, marginTop: 8 }}>
+            {clips > 0 ? `About ${clips} clip${clips === 1 ? "" : "s"} at 5 s` : "Add credits to make clips"}
+          </Text>
+        </Pressable>
+      )}
+
+      <Pressable onPress={() => router.navigate("/account")} {...hoverProps("acct")} accessibilityRole="link" accessibilityLabel="Account"
+        accessibilityState={{ selected: path.startsWith("/account") }}
+        style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 8, paddingVertical: 10, marginTop: 10,
+                                   borderRadius: 10, backgroundColor: hv("acct") || path.startsWith("/account") ? "rgba(255,255,255,0.04)" : "transparent",
+                                   transform: [{ scale: pressed ? 0.98 : 1 }] })}>
+        <View style={{ width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "#24242A",
+                       shadowColor: "#000", shadowOpacity: 0.5, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } }}>
+          <Text style={{ color: c.ink, fontSize: 12, fontWeight: "600" }}>{initial}</Text>
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={{ color: c.ink, fontSize: 13, fontWeight: "500" }} numberOfLines={1}>{me?.email?.split("@")[0] ?? "Account"}</Text>
+          <Text style={{ color: c.muted, fontSize: 11 }} numberOfLines={1}>{hasPlan ? "Plan active" : "Free account"}</Text>
+        </View>
+      </Pressable>
+    </View>
+  );
+
+  // ---- top bar ----
+  // no hairline under it and no outlined pills; it separates from the page by value, and its controls are type with
+  // light on hover. Upgrade is the one filled control (accent, squared corners). The balance lives in the sidebar on wide screens.
   const top = (
     <View style={{ flexDirection: "row", alignItems: "center", gap: narrow ? 10 : 18, paddingHorizontal: narrow ? 14 : 28,
                    paddingVertical: narrow ? 10 : 14, backgroundColor: c.bg }}>
       {deep && (
         <Pressable onPress={() => (router.canGoBack() ? router.back() : router.navigate("/workspace"))} accessibilityRole="button"
-          accessibilityLabel="Back" onHoverIn={() => setHover("back")} onHoverOut={() => setHover(null)}
+          accessibilityLabel="Back" {...hoverProps("back")}
           style={({ pressed }) => ({ width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center",
                                      backgroundColor: hv("back") ? "#17171B" : "transparent", transform: [{ scale: pressed ? 0.94 : 1 }] })}>
           <Icon name="back" size={18} color={hv("back") ? c.ink : c.sub} />
@@ -111,23 +223,22 @@ export function Shell({ children }: { children: ReactNode }) {
       {narrow && !deep && <Logo size={28} />}
       <Text style={[{ color: c.ink, fontSize: narrow ? 17 : 19, textTransform: "uppercase", letterSpacing: 0.4 }, font.display]} numberOfLines={1}>{title}</Text>
       <View style={{ flex: 1 }} />
-      {me?.is_admin && (
-        <Pressable onPress={() => router.navigate("/refunds" as never)} accessibilityRole="link" accessibilityLabel="Refund requests"
-          onHoverIn={() => setHover("refunds")} onHoverOut={() => setHover(null)}>
+      {me?.is_admin && !wide && (
+        <Pressable onPress={() => router.navigate("/refunds" as never)} accessibilityRole="link" accessibilityLabel="Refund requests" {...hoverProps("refunds")}>
           <Text style={[{ color: hv("refunds") ? c.ink : c.muted, fontSize: 11, letterSpacing: 0.8, textTransform: "uppercase" }, font.mono]}>Refunds</Text>
         </Pressable>
       )}
-      {me && (
-        <Pressable onPress={() => router.navigate("/billing")} accessibilityRole="link" accessibilityLabel={`${me.balance - me.reserved} credits available`}
-          onHoverIn={() => setHover("bal")} onHoverOut={() => setHover(null)} style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
+      {me && !wide && (
+        <Pressable onPress={() => router.navigate("/billing")} accessibilityRole="link" accessibilityLabel={`${avail} credits available`}
+          {...hoverProps("bal")} style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
           <Icon name="credits" size={16} weight={1.6} color={hv("bal") ? c.ink : c.muted} />
           <Text style={[{ color: hv("bal") ? c.ink : c.sub, fontSize: 13, fontWeight: "600" }, font.mono]}>
-            {(me.balance - me.reserved).toLocaleString("en-US")}<Text style={{ color: c.muted, fontWeight: "400" }}> cr</Text>
+            {avail.toLocaleString("en-US")}<Text style={{ color: c.muted, fontWeight: "400" }}> cr</Text>
           </Text>
         </Pressable>
       )}
       {!hasPlan && (
-        <Pressable onPress={() => router.navigate("/billing")} accessibilityRole="link" onHoverIn={() => setHover("up")} onHoverOut={() => setHover(null)}
+        <Pressable onPress={() => router.navigate("/billing")} accessibilityRole="link" {...hoverProps("up")}
           style={({ pressed }) => ({ backgroundColor: hv("up") ? "#FF8A33" : c.accent, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8,
                                      transform: [{ scale: pressed ? 0.96 : 1 }], shadowColor: c.accent, shadowOpacity: hv("up") ? 0.45 : 0.25,
                                      shadowRadius: 14, shadowOffset: { width: 0, height: 0 } })}>
@@ -157,34 +268,32 @@ export function Shell({ children }: { children: ReactNode }) {
       </View>
     );
   }
+  const compact = (
+    <View style={{ width: RAIL_W, backgroundColor: c.rail, alignItems: "center", paddingTop: 18, paddingBottom: 14, zIndex: 2,
+                   shadowColor: "#000", shadowOpacity: 0.45, shadowRadius: 30, shadowOffset: { width: 10, height: 0 } }}>
+      <Pressable onPress={() => router.navigate("/")} accessibilityRole="link" accessibilityLabel="anlim.ai home"
+        style={({ pressed }) => ({ marginBottom: 26, transform: [{ scale: pressed ? 0.95 : 1 }] })}>
+        <Logo size={34} />
+      </Pressable>
+      <View accessibilityRole="tablist" style={{ width: RAIL_W }}>
+        {rail}
+        {tally}
+      </View>
+      <View style={{ flex: 1 }} />
+      <Pressable onPress={() => router.navigate("/account")} {...hoverProps("/account")} accessibilityRole="link" accessibilityLabel="Account"
+        style={({ pressed }) => ({ width: RAIL_W, height: ITEM_H, alignItems: "center", justifyContent: "center", gap: 6,
+                                   transform: [{ scale: pressed ? 0.95 : 1 }] })}>
+        <View style={{ width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center",
+                       backgroundColor: path.startsWith("/account") ? "#2A2A31" : hv("/account") ? "#24242A" : "#1C1C21" }}>
+          <Text style={{ color: c.ink, fontSize: 12, fontWeight: "600" }}>{initial}</Text>
+        </View>
+        {railLabel("Account", path.startsWith("/account"), hv("/account"))}
+      </Pressable>
+    </View>
+  );
   return (
     <View style={{ flex: 1, flexDirection: "row", backgroundColor: c.bg }}>
-      <View style={{ width: RAIL_W, backgroundColor: c.rail, alignItems: "center", paddingTop: 18, paddingBottom: 14, zIndex: 2,
-                     shadowColor: "#000", shadowOpacity: 0.45, shadowRadius: 30, shadowOffset: { width: 10, height: 0 } }}>
-        <Pressable onPress={() => router.navigate("/")} accessibilityRole="link" accessibilityLabel="anlim.ai home"
-          style={({ pressed }) => ({ marginBottom: 26, transform: [{ scale: pressed ? 0.95 : 1 }] })}>
-          <Logo size={34} />
-        </Pressable>
-        <View accessibilityRole="tablist" style={{ width: RAIL_W }}>
-          {rail}
-          {tally}
-        </View>
-        <View style={{ flex: 1 }} />
-        <Pressable onPress={() => router.navigate("/account")} onHoverIn={() => setHover("/account")} onHoverOut={() => setHover(null)}
-          accessibilityRole="link" accessibilityLabel="Account" accessibilityState={{ selected: acctOn }}
-          style={({ pressed }) => ({ width: RAIL_W, height: ITEM_H, alignItems: "center", justifyContent: "center", gap: 6,
-                                     transform: [{ scale: pressed ? 0.95 : 1 }] })}>
-          {acctOn && <View style={{ position: "absolute", left: 0, top: (ITEM_H - TALLY) / 2, width: 3, height: TALLY,
-                                    backgroundColor: c.accent, borderTopRightRadius: 3, borderBottomRightRadius: 3, shadowColor: c.accent,
-                                    shadowOpacity: 0.9, shadowRadius: 8, shadowOffset: { width: 0, height: 0 } }} />}
-          <View style={{ width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center",
-                         backgroundColor: acctOn ? "#2A2A31" : acctHv ? "#24242A" : "#1C1C21",
-                         shadowColor: "#000", shadowOpacity: 0.5, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } }}>
-            <Text style={{ color: acctOn || acctHv ? c.ink : "#D4D4D8", fontSize: 12, fontWeight: "600" }}>{initial}</Text>
-          </View>
-          {label("Account", acctOn, acctHv)}
-        </Pressable>
-      </View>
+      {wide ? sidebar : compact}
       <View style={{ flex: 1, minWidth: 0 }}>
         {top}
         <View style={{ flex: 1 }}>{children}<Notices /></View>

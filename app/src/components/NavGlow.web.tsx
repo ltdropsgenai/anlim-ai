@@ -9,3 +9,13 @@ export function NavGlow({ tone, size = 44 }: { tone: "on" | "hover" | "off"; siz
       opacity: tone === "off" ? 0 : 1, transition: "opacity 200ms ease" }} />
   );
 }
+
+// The current page's row in the sidebar: a tungsten wash that fades to nothing (no edge, no outline). `solid` is the
+// project swatch: a warm gradient square.
+export function Wash({ solid = false }: { solid?: boolean }) {
+  return (
+    <div aria-hidden="true" style={{ position: "absolute", inset: 0, borderRadius: solid ? 0 : 10, pointerEvents: "none",
+      background: solid ? "linear-gradient(135deg, #FF7A1A, #B4440A)"
+        : "linear-gradient(90deg, rgba(255,122,26,0.14), rgba(255,122,26,0) 85%)" }} />
+  );
+}
