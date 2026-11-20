@@ -68,7 +68,7 @@ export default function Review() {
       {items && (
         <>
           <Text style={[s.kicker, font.mono]}>NEEDS YOUR CALL · {waiting.length}</Text>
-          <Text style={s.lead}>Every clip is checked by anlim before you pay. You're only charged for the ones you keep.</Text>
+          <Text style={s.lead}>Every clip is checked by anlim. A clip that fails the check costs nothing; the others are charged when the check finishes.</Text>
           {waiting.length === 0 ? <Text style={s.empty}>Nothing waiting for you right now.</Text> : <Grid>{waiting.map((i) => <Card key={i.id} item={i} />)}</Grid>}
           {working.length > 0 && <>
             <Text style={[s.kicker, font.mono, { marginTop: 18 }]}>IN PROGRESS · {working.length}</Text>

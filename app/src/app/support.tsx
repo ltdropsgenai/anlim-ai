@@ -7,7 +7,7 @@ export default function Support() {
     <PublicFrame>
       <Doc title="Help & contact">
         <H>A clip didn't come out right</H>
-        <P>Open it in Review: the anlim check lists what it saw. Reject it and render again; a clip that fails the check costs nothing, and rejecting one it flagged gives the credits back.</P>
+        <P>Open it in Review: the anlim check lists what it saw. Render it again if it is not what you wanted. A clip that fails the check costs nothing; a clip that passes or is flagged is charged when the check finishes, kept or not, because the video model is paid for every render.</P>
         <H>My characters look different from shot to shot</H>
         <P>Give each character a clear, front-on reference picture in Cast & places, and start each shot from a frame anlim made in your location (New setup), not from a loose upload.</P>
         <H>Why is my clip watermarked?</H>

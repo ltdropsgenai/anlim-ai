@@ -76,7 +76,7 @@ export default function Welcome() {
           <Text style={[s.h2, font.display, s.center]}>Pay for what you make</Text>
           <Text style={[s.body, s.center, { maxWidth: 640, alignSelf: "center" }]}>
             Everything runs on credits. A clip costs credits per second of video; a made frame costs a few credits; scene cuts are free.
-            Reject a clip the check flagged and you get its credits back.
+            A clip that fails the anlim check costs nothing.
           </Text>
           {!plans && !planError && <ActivityIndicator style={{ marginVertical: 24 }} />}
           {planError && <Text style={[s.body, s.center]}>The price list could not load. Sign in to see it under Credits & plan.</Text>}

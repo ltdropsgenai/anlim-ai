@@ -170,16 +170,16 @@ export default function Review() {
 
             {done ? (
               <>
-                <Text style={[s.decided, font.display]}>{done === "approve" ? "Kept" : clip.settled === "charged" ? "Rejected" : "Rejected · credits back"}</Text>
+                <Text style={[s.decided, font.display]}>{done === "approve" ? "Kept" : "Rejected"}</Text>
                 <Pressable style={s.ghost} onPress={() => router.navigate("/review")} accessibilityRole="link"><Text style={{ color: c.ink }}>Back to Review</Text></Pressable>
               </>
             ) : decidable ? (
               <>
                 <Pressable style={[s.btn, { backgroundColor: c.accent }]} onPress={() => decide("approve")} disabled={busy} accessibilityRole="button">
-                  <Text style={s.btnText}>{clip.settled === "charged" ? "Keep it" : cost ? `Keep it · ${cost} cr` : "Keep it · free"}</Text>
+                  <Text style={s.btnText}>Keep it</Text>
                 </Pressable>
                 <Pressable style={s.ghost} onPress={() => decide("reject")} disabled={busy} accessibilityRole="button">
-                  <Text style={{ color: c.ink, fontWeight: "600", fontSize: 15 }}>{clip.settled === "charged" ? "Reject" : "Reject · credits back"}</Text>
+                  <Text style={{ color: c.ink, fontWeight: "600", fontSize: 15 }}>Reject</Text>
                 </Pressable>
                 <Text style={[s.label, { marginTop: 14 }]}>Rejecting? Say what's wrong (it helps the check learn)</Text>
                 <View style={s.chips}>

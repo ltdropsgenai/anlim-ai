@@ -209,6 +209,8 @@ async function stepChecking(g) {
     await db.unlock(g.id, { status: "failed", error: `checker FAIL: ${(res.reasons || []).slice(0, 3).join(" | ")}`.slice(0, 1000), finished_at: new Date() });
     await db.setShot(g.shot_id, "ready");
   } else {                                            // FLAG or NOT_REVIEWED: a person looks
+    // policy v2 (2026-11-20): a flagged clip is charged when the check finishes; only a FAIL gives credits back
+    await db.settle(g.id, "charge");
     await db.unlock(g.id, { status: "review", finished_at: new Date() });
     await db.setShot(g.shot_id, "review");
   }
@@ -223,6 +225,7 @@ async function handle(g) {
     const tries = (g.tries || 0) + 1;
     if (e.permanent || tries >= config.maxStepTries) {
       if (g.status === "checking") {                 // the clip exists; a person can still judge it
+        await db.settle(g.id, "charge");            // policy v2: the clip was made and delivered
         await db.unlock(g.id, { status: "review", error: `checker unavailable: ${e.message}`.slice(0, 1000), tries });
         await db.setShot(g.shot_id, "review");
         return log(g, `checker gave up after ${tries} tries; sent to review`);

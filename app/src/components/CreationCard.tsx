@@ -1,8 +1,8 @@
 // Result of a Home prompt (2026-11-20, Londi: "the initial prompt [makes] both a still image and/or a short video clip
 // ... Then, they have the option to start a project from their generated asset or just download it. Either way, a
 // default workspace is created along with an untitled project."). Polls studio-api "creation" for the shot until the
-// image (and the clip, when one was asked for) is done. Downloading a clip that waits for review keeps it, which is
-// when it is charged (creation_keep). @anlim
+// image (and the clip, when one was asked for) is done. Downloading a clip marks it kept (creation_keep); it was charged
+// when the check passed or flagged it (charging policy v2). @anlim
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
@@ -23,7 +23,7 @@ function stage(x: Creation | null, output: Output) {
   if (x.gen_status === "running") return { done: false, label: `Animating with ${x.model_label ?? "the video model"}… (usually 3 to 5 minutes)` };
   if (x.gen_status === "checking") return { done: false, label: "Checking the clip… you can watch it below." };
   if (x.gen_status === "failed") return { done: true, label: "The clip did not pass our check." };
-  return { done: true, label: x.gen_status === "succeeded" ? "Your clip is ready (checked ✓)." : "Your clip is ready. Have a look before you keep it." };
+  return { done: true, label: x.gen_status === "succeeded" ? "Your clip is ready (checked ✓)." : "Your clip is ready. Our check flagged something: have a look." };
 }
 
 export function CreationCard({ shotId, output, onAgain }: { shotId: string; output: Output; onAgain: () => void }) {
@@ -74,7 +74,7 @@ export function CreationCard({ shotId, output, onAgain }: { shotId: string; outp
         : x?.image_url ? <MediaView kind="still" url={x.image_url} /> : <View style={s.placeholder} />}
 
       {x?.gen_status === "failed" && x.gen_error ? (
-        <Text style={[s.note, { color: c.fail }]}>{x.gen_error.replace(/^checker FAIL: /, "").slice(0, 300)}. Nothing was charged for the clip.</Text>) : null}
+        <Text style={[s.note, { color: c.fail }]}>{x.gen_error.replace(/^checker FAIL: /, "").slice(0, 300)}. The clip was not charged.</Text>) : null}
       {x?.render_error && !x.gen_id ? <Text style={[s.note, { color: c.fail }]}>{x.render_error}</Text> : null}
       {x?.frame_error ? <Text style={[s.note, { color: c.fail }]}>{x.frame_error}</Text> : null}
       {x?.watermarked ? <Text style={s.note}>Free accounts see and download clips with a watermark. It goes away once you buy credits or a plan.</Text> : null}
@@ -90,8 +90,8 @@ export function CreationCard({ shotId, output, onAgain }: { shotId: string; outp
         {st.done ? <Btn label="Make another" onPress={onAgain} /> : null}
       </View>
       <Text style={s.small}>
-        {x?.gen_id ? "The clip is charged only if it passes our check or you keep or download it. The image used 20 credits."
-          : "The image used 20 credits. Animating it is priced on the next step; it is charged only if the clip passes our check or you keep it."}
+        {x?.gen_id ? "The image used 20 credits. The clip is charged when our check passes or flags it; a clip that fails the check costs nothing."
+          : "The image used 20 credits. Animating it costs credits per second; a clip that fails our check costs nothing."}
       </Text>
     </View>
   );

@@ -27,7 +27,7 @@ export default function Terms() {
         <Li>You can delete your account at any time in Account › Delete account. That removes your work and cancels any plan.</Li>
         <H>Credits and payment</H>
         <Li>Making frames and clips costs credits, shown before you start. Scene cuts are free. Audio made with your own ElevenLabs account uses your ElevenLabs credits, not anlim credits.</Li>
-        <Li>A clip that fails the anlim check costs nothing. If you reject a clip the check flagged, its credits come back. A clip that passed every check is charged when it passes.</Li>
+        <Li>Images (start and end frames, location plates) are charged when they are made, whether you keep them or not. A clip is charged when the anlim check passes or flags it, whether you keep it or not. A clip that fails the anlim check, or a render that does not finish, costs nothing.</Li>
         <Li>Payments are handled by Stripe. Plans renew monthly until you cancel in Credits & plan; cancelling stops the next renewal. Unused credits are not refunded in cash, except where the law requires it.</Li>
         <Li>Free accounts get watermarked clips and cuts; buying credits or a plan removes the watermark from everything you make.</Li>
         <H>What you make</H>
