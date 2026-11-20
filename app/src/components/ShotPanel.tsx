@@ -6,6 +6,7 @@ import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, Text
 import { Link, router, useFocusEffect } from "expo-router";
 import { api, CutoutJob, END_FRAME_CREDITS, FRAME_CREDITS, EndCheck, HeightCheck, KIND_NAMES, StagingCheck, MODEL_NAMES, QUALITY_NAMES, Shot, StartMode, StartSource, startFrameCredits, uploadStill } from "../lib/api";
 import { c, font } from "../lib/theme";
+import { autoNote, MODEL_NOTES } from "../lib/modelNotes";
 import { StillPicker } from "./StillPicker";
 
 const MAKING = ["queued", "running", "composing"];
@@ -497,6 +498,10 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
             </Pressable>
           ))}
         </View>
+        {(() => {   // 2026-11-20 (Londi): what the chosen model is good at, from our own tests
+          const n = model ? MODEL_NOTES[model] : autoNote(shot.route ? (shot.route.label ?? MODEL_NAMES[shot.route.model_id] ?? shot.route.model_id) : null);
+          return n ? <Text style={s.sub}>{n.best}{n.watch ? <Text style={{ color: c.muted }}> {n.watch}</Text> : null}</Text> : null;
+        })()}
         {shot.can_pick === false && <Text style={s.sub}>Picking a model comes with a paid account (buy credits or a plan). Free accounts use Auto.</Text>}
         {model && shot.route && model !== shot.route.model_id && (
           <Text style={s.warnBox}>

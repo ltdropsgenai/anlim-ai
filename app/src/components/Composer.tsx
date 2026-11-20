@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
 import { api, Look, Output, PromptModel, Series } from "../lib/api";
+import { autoNote, MODEL_NOTES } from "../lib/modelNotes";
 import { CreationCard } from "./CreationCard";
 import { c, font } from "../lib/theme";
 import { clearDraft, peekDraft, saveDraft } from "../lib/draft";
@@ -165,6 +166,18 @@ export function Composer({ narrow, guest = false, afterBanner = false }: { narro
           {!paid && <Text style={s.small}>Picking a model comes with a paid account.</Text>}
         </View>
       )}
+      {/* 2026-11-20 (Londi): say what the chosen model is good at, from our own tests */}
+      {output === "video" && !guest && fits.length > 0 && (() => {
+        const n = model ? MODEL_NOTES[model] : autoNote("Kling 4.0");
+        if (!n) return null;
+        return (
+          <View style={{ marginTop: 8, alignSelf: "center", maxWidth: 560, paddingHorizontal: 8 }}>
+            <Text style={{ color: c.sub, fontSize: 13, lineHeight: 19, textAlign: "center" }}>
+              {n.best}{n.watch ? <Text style={{ color: c.muted }}> {n.watch}</Text> : null}
+            </Text>
+          </View>
+        );
+      })()}
 
       {series.length > 0 && (
         <View style={[s.row, { marginTop: 12, justifyContent: "center" }]}>
