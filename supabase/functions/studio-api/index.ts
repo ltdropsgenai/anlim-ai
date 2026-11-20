@@ -248,7 +248,7 @@ async function handle(req: Request): Promise<Response> {
         const camera = CAMERA_WORDS.test(prompt) ? null : "locked";
         const [r] = await asUser(uid, (tx) => tx`select studio.quick_create(${prompt}, ${String(body.look || "cartoon")},
           ${Number(body.duration_s || 5)}::int, ${String(body.output || "video")}, ${camera},
-          ${body.series_id ? String(body.series_id) : null}::uuid, ${body.model ? String(body.model) : null}) as r`);
+          ${body.series_id ? String(body.series_id) : null}::uuid, ${body.model ? String(body.model) : null}::text) as r`);
         return json(r.r);
       }
       case "prompt_models": {
