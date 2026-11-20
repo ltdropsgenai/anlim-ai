@@ -2,7 +2,7 @@
 // slow motion, stops on hover). One muted reel (public/banner/anlim-reel.mp4, 1600x440, about 24 s, 2.5 MB): seven
 // clips made in anlim's held-out test of 2026-11-19 that Londi labelled PASS, slowed to 0.83x, cross-faded. It pauses
 // while pointed at, and does not play at all when the visitor asks for reduced motion (the poster frame shows). The
-// caption names the model and look of the clip on screen. No outline: it fades into the page at its edges. @anlim
+// caption (top left: the page headline overlaps the bottom fade) names the model and look of the clip on screen. No outline: it fades into the page at its edges. @anlim
 import { useEffect, useRef, useState } from "react";
 import { c } from "../lib/theme";
 
@@ -34,7 +34,7 @@ export function SplashBanner({ height = 300 }: { height?: number }) {
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none",
         background: `radial-gradient(120% 90% at 50% 40%, rgba(8,8,10,0) 55%, rgba(8,8,10,0.55) 100%),
                      linear-gradient(180deg, rgba(8,8,10,0) 55%, ${c.bg} 100%)` }} />
-      <div style={{ position: "absolute", left: 18, bottom: 14, display: "flex", alignItems: "center", gap: 8, pointerEvents: "none" }}>
+      <div style={{ position: "absolute", left: 18, top: 14, display: "flex", alignItems: "center", gap: 8, pointerEvents: "none" }}>
         <span style={{ width: 7, height: 7, borderRadius: 4, background: c.accent, boxShadow: "0 0 8px rgba(255,122,26,0.9)" }} />
         <span style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 11, letterSpacing: 1.1, color: "#D4D4D8",
                        textTransform: "uppercase", textShadow: "0 1px 6px rgba(0,0,0,0.8)" }}>Made in anlim · {CAPTIONS[idx]}</span>
