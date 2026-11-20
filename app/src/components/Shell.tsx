@@ -35,6 +35,8 @@ const TITLES: [RegExp, string][] = [
   [/^\/clip\//, "Review a clip"], [/^\/shots/, "Scene board"], [/^\/shot\//, "Shot"], [/^\/cut\//, "Scene cut"],
   [/^\/library/, "Cast & places"], [/^\/billing/, "Credits & plan"], [/^\/account/, "Account"], [/^\/refunds/, "Refund requests"],
 ];
+// 7685 -> "7.7k", 950 -> "950": the mini gauge's label
+const short = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n));
 type Me = { email?: string; balance: number; reserved: number; plan_status: string | null; plan_id?: string | null;
             plan_credits?: number; is_admin?: boolean };
 
@@ -77,7 +79,8 @@ export function Shell({ children }: { children: ReactNode }) {
   const tone = (on: boolean, h: boolean) => (on ? c.ink : h ? "#E4E4E7" : c.muted);
 
   // ---- compact rail (mid widths) and phone tab bar ----
-  const shown = ITEMS.filter((it) => !narrow || it.phone);
+  // the collapsed rail shows credits as a mini gauge at the bottom instead of a nav item (2026-11-20, Londi)
+  const shown = ITEMS.filter((it) => (narrow ? it.phone : it.href !== "/billing"));
   const activeIdx = shown.findIndex((it) => it.match(path));
   const railLabel = (txt: string, on: boolean, h: boolean) => (
     <Text style={[{ color: on ? c.ink : h ? "#D4D4D8" : c.muted, fontSize: narrow ? 8.5 : 9, letterSpacing: 0.7,
@@ -320,6 +323,22 @@ export function Shell({ children }: { children: ReactNode }) {
         {tally}
       </View>
       <View style={{ flex: 1 }} />
+      {me && (
+        <View style={{ width: RAIL_W, alignItems: "center", marginBottom: 6 }}>
+          <Pressable onPress={() => router.navigate("/billing")} {...hoverProps("mgauge")} accessibilityRole="link"
+            accessibilityLabel={`${avail} credits available, about ${clips} five-second clips`}
+            style={({ pressed }) => ({ width: 48, paddingVertical: 10, borderRadius: 10, alignItems: "center", gap: 8,
+                                       backgroundColor: path.startsWith("/billing") ? "rgba(255,122,26,0.08)" : hv("mgauge") ? "rgba(255,255,255,0.05)" : "transparent",
+                                       transform: [{ scale: pressed ? 0.95 : 1 }] })}>
+            <View style={{ width: 5, height: 44, borderRadius: 3, backgroundColor: "#1E1E23", justifyContent: "flex-end", overflow: "hidden" }}>
+              <View style={{ width: 5, height: `${pct * 100}%`, borderRadius: 3, backgroundColor: c.accent,
+                             shadowColor: c.accent, shadowOpacity: 0.7, shadowRadius: 6, shadowOffset: { width: 0, height: 0 } }} />
+            </View>
+            <Text style={[{ color: hv("mgauge") || path.startsWith("/billing") ? c.ink : c.sub, fontSize: 10, fontWeight: "600" }, font.mono]}>{short(avail)}</Text>
+          </Pressable>
+          {hv("mgauge") && tip("Credits", 84, `${avail.toLocaleString("en-US")} cr · about ${clips} clip${clips === 1 ? "" : "s"} at 5 s`)}
+        </View>
+      )}
       <Pressable onPress={() => router.navigate("/account")} {...hoverProps("/account")} accessibilityRole="link" accessibilityLabel="Account"
         style={({ pressed }) => ({ width: RAIL_W, height: ITEM_H, alignItems: "center", justifyContent: "center", gap: 6,
                                    transform: [{ scale: pressed ? 0.95 : 1 }] })}>
