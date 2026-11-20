@@ -165,7 +165,8 @@ export function Composer({ narrow, guest = false }: { narrow: boolean; guest?: b
         ))}
       </View>}
       <Text style={[s.small, { textAlign: "center", marginTop: 14 }]}>
-        {output === "image" ? "An image uses 20 credits." : `A ${len} s video uses about ${20 + CLIP_CREDITS_PER_S * len} credits: 20 for the image, the rest for the clip. If a clip is unusable, request a refund and tell us why.`}
+        {output === "image" ? "An image uses 20 credits." : picked && picked.has_cast ? `A ${len} s video uses about ${20 + CLIP_CREDITS_PER_S * len} credits: 20 for a start image of your cast, the rest for the clip. If a clip is unusable, request a refund and tell us why.`
+          : `A ${len} s video uses about ${CLIP_CREDITS_PER_S * len} credits, made straight from your words. If a clip is unusable, request a refund and tell us why.`}
         {guest ? " Press the arrow and create a free account to see it; new accounts get free starter credits." : picked ? ` It is added to ${picked.name}.` : " It is saved in a new Untitled project in your Workspace."}
       </Text>
     </View>

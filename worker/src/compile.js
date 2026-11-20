@@ -30,7 +30,7 @@ function heightOrder(chars) {
 
 // Bump on every prompt change; the worker prints it at start and saves it with each job (2026-11-12: a worker started
 // before a prompt change rendered 3 clips with the old prompt and nothing showed it).
-export const COMPILER_VERSION = "2026-11-20.1 (camera from the action; model adapters: Kling 3.0, Wan 2.7, Seedance 2.0; look: cartoon/photoreal; cast kinds; path rule, watchers, end frame, minimax static shot, walk end)";
+export const COMPILER_VERSION = "2026-11-20.2";
 
 // Actions that move a character across the floor (same idea as frame_check/passthrough_check.MOVES).
 const MOVES = /\b(walk|walks|walking|step|steps|run|runs|running|cross|crosses|goes|go to|moves? to|dances?)\b/i;
@@ -80,16 +80,20 @@ export function prompt(shot, chars) {
     : cameraFree(shot) ? "[CAMERA] As the action describes." : "[CAMERA] locked";
   return [
     minimax && isLocked(shot) ? "[Static shot]" : null,
-    shot.style_prompt ? `[STYLE] ${shot.style_prompt}` : null,
-    `[CAST] ${chars.map(castLine).join(" | ")}. ${heightOrder(chars)}`.trim(),
+    shot.style_prompt ? `[STYLE] ${shot.style_prompt}`
+      : shot.from_text ? `[STYLE] ${shot.look === "photoreal" ? "Photoreal live action: real-world lighting, lens and colour grade, not drawn or animated."
+                                                              : "Cartoon animation: a drawn, animated look, not photographic."}` : null,
+    chars.length ? `[CAST] ${chars.map(castLine).join(" | ")}. ${heightOrder(chars)}`.trim() : null,
     shot.location_name ? `[SET] ${shot.location_name}${shot.location_description ? ` - ${shot.location_description}` : ""}` : null,
     `[ACTION] ${shot.action}`,
     moving ? PATH_RULE : null,
     moving && chars.filter((c) => c.kind !== "object").length > 1 ? WATCH_RULE : null,
     WALKING.test(shot.action) ? WALK_END : null,
     camera,
-    `[RULES] Start exactly on the given first frame. Same characters, proportions and ${lookWords(shot.look)} throughout. ` +
-      "Nobody else appears. No text or letters. No sound.",
+    shot.from_text
+      ? "[RULES] Only what the action describes appears. No text or letters. No sound."
+      : `[RULES] Start exactly on the given first frame. Same characters, proportions and ${lookWords(shot.look)} throughout. ` +
+        "Nobody else appears. No text or letters. No sound.",
   ].filter(Boolean).join("\n");
 }
 
@@ -104,7 +108,11 @@ export function prompt(shot, chars) {
 //     (default 1080p), enable_prompt_expansion (default true rewrites our prompt)
 //   Seedance 2.0 (bytedance/seedance-2.0/image-to-video): image_url, end_image_url, duration "4".."15"|"auto" (string),
 //     resolution "720p", aspect_ratio "auto" (from the image), generate_audio (same price either way)
+//   Kling 4.0 text-to-video (kling/v4/text-to-video, 2026-11-20): prompt, duration 3..30, resolution "720p",
+//     aspect_ratio (default 16:9; Home's prompt stills are 16:9 too), no image fields
 const ADAPTERS = [
+  { match: /^kling\/v4\/text-to-video/, build: (p, s) => ({ prompt: p, duration: s.duration_s, resolution: s.resolution, aspect_ratio: "16:9" }) },
+  { match: /^mock\/t2v/, build: (p, s) => ({ prompt: p, duration: s.duration_s, resolution: s.resolution }) },
   { match: /^kling\/v4\//, build: (p, s, u) => ({ prompt: p, start_image_url: u, duration: s.duration_s, resolution: s.resolution }) },
   { match: /^minimax\//, build: (p, s, u) => ({ prompt: p, image_url: u, duration: s.duration_s, resolution: s.resolution,
                                                 prompt_expansion_mode: "disabled" }) },

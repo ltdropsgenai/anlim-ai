@@ -104,16 +104,26 @@ async function endFrameGate(g, shot, characters = []) {
          "Make the end frame again (or remove it) and render once more.";
 }
 
+// A clip made from the words alone (Home prompt, output video; studio.enqueue_generation sets route_kind 'text'):
+// the model's text-to-video endpoint, no start or end image (2026-11-20).
+const fromText = (g) => g.route_kind === "text";
+
 async function stepQueued(g) {
-  const { shot, characters } = await db.shotContext(g);
-  const blocked = await endFrameGate(g, shot, characters);
-  if (blocked) return fail(g, blocked);
-  const startUrl = await storage.signedUrl(shot.start_frame_path);
-  const endUrl = shot.end_frame_path ? await storage.signedUrl(shot.end_frame_path) : null;
+  const ctx = await db.shotContext(g);
+  const characters = ctx.characters;
+  const text = fromText(g);
+  if (text && !ctx.shot.t2v_endpoint) return fail(g, "this model cannot make a clip from words alone; nothing was charged");
+  const shot = text ? { ...ctx.shot, endpoint: ctx.shot.t2v_endpoint, from_text: true } : ctx.shot;
+  if (!text) {
+    const blocked = await endFrameGate(g, shot, characters);
+    if (blocked) return fail(g, blocked);
+  }
+  const startUrl = text ? null : await storage.signedUrl(shot.start_frame_path);
+  const endUrl = !text && shot.end_frame_path ? await storage.signedUrl(shot.end_frame_path) : null;
   const input = compile.providerInput(shot, characters, startUrl, endUrl);
   const sub = await providers[shot.provider].submit(shot.endpoint, input);
   // signed URLs expire; keep the request without them
-  const saved = { ...input, start_image_url: shot.start_frame_path, end_image_url: shot.end_frame_path || undefined,
+  const saved = { ...input, start_image_url: text ? undefined : shot.start_frame_path, end_image_url: endUrl ? shot.end_frame_path : undefined,
                   image_url: undefined, endpoint: shot.endpoint, compiler_version: compile.COMPILER_VERSION };
   await db.unlock(g.id, {
     status: "running", request: JSON.stringify(saved), provider_request_id: sub.requestId,
@@ -148,6 +158,17 @@ async function stepRunning(g) {
     await storage.upload(marked, previewPath);
   }
   await storage.upload(clip, objectPath);
+  // A clip made from words has no start frame: its own first frame becomes the shot's (the checker compares against
+  // it, the refund page shows it, and the next shot in the project can start from it). Not a creator-approved frame
+  // for the head count: confirmed_spec stays false for text clips (stepChecking).
+  if (fromText(g) && (!shot.start_frame_path || shot.start_frame_path.endsWith("/clip-first-frame.png"))) {
+    const first = path.join(dir, "clip-first-frame.png");
+    await run("ffmpeg", ["-y", "-v", "error", "-i", clip, "-frames:v", "1", first]);
+    const framePath = `${g.owner}/frames/gen-${g.id}/clip-first-frame.png`;
+    await storage.upload(first, framePath, "image/png");
+    await db.q("update studio.shots set start_frame_path = $2, start_frame_approved = true where id = $1", [g.shot_id, framePath]);
+    log(g, `first frame stored as the shot's start frame (${framePath})`);
+  }
   const usd = shot.usd_per_second * shot.duration_s;
   await db.unlock(g.id, { status: "checking", output_path: objectPath, preview_path: previewPath, provider_usd: usd,
                           next_poll_at: null, tries: 0 });
@@ -192,7 +213,7 @@ async function stepChecking(g) {
   if (!res) {
     // the creator approved the start still with this shot's cast list: the head count is confirmed
     const r = await postChecker("/check", { generation_id: g.id, spec, max_usd: config.checkerMaxUsd,
-                                             confirmed_spec: !!shot.start_frame_approved });
+                                             confirmed_spec: !!shot.start_frame_approved && !fromText(g) });
     res = r.json || { verdict: "ERROR", error: `checker HTTP ${r.status}` };
     if (!r.ok || res.verdict === "ERROR") throw new Error(`checker: ${res.error || r.status}`);
     await fs.writeFile(saved, JSON.stringify(res));

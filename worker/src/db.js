@@ -32,7 +32,7 @@ export const setShot = (shotId, status) => q("update studio.shots set status = $
 export async function shotContext(gen) {
   const [row] = await q(
     `select sh.*, sc.blocking, sc.title as scene_title, se.name as series_name, se.style_prompt, se.look,
-            l.name as location_name, l.description as location_description, m.endpoint, m.provider,
+            l.name as location_name, l.description as location_description, m.endpoint, m.t2v_endpoint, m.provider,
             m.resolution, m.usd_per_second
        from studio.shots sh join studio.scenes sc on sc.id = sh.scene_id join studio.series se on se.id = sc.series_id
        left join studio.locations l on l.id = sc.location_id join studio.models m on m.id = $2

@@ -246,14 +246,14 @@ async function handle(req: Request): Promise<Response> {
         const prompt = String(body.prompt || "");
         const camera = CAMERA_WORDS.test(prompt) ? null : "locked";
         const [r] = await asUser(uid, (tx) => tx`select studio.quick_create(${prompt}, ${String(body.look || "cartoon")},
-          ${Number(body.duration_s || 5)}::int, ${String(body.output || "image")}, ${camera},
+          ${Number(body.duration_s || 5)}::int, ${String(body.output || "video")}, ${camera},
           ${body.series_id ? String(body.series_id) : null}::uuid) as r`);
         return json(r.r);
       }
       case "creation": {
         const id = String(body.shot_id || "");
         const [x] = await asUser(uid, (tx) => tx`
-          select sh.id as shot_id, sh.action, sh.duration_s, sc.id as scene_id, se.id as series_id, se.name as series_name, se.look,
+          select sh.id as shot_id, sh.action, sh.duration_s, sh.from_text, sh.start_frame_path, sc.id as scene_id, se.id as series_id, se.name as series_name, se.look,
                  f.id as job_id, f.status as frame_status, f.composed_path, f.error as frame_error, f.then_render, f.render_error,
                  g.id as gen_id, g.status as gen_status, g.output_path, g.preview_path, g.error as gen_error, g.model_id,
                  g.credits_reserved, g.settled
@@ -267,10 +267,12 @@ async function handle(req: Request): Promise<Response> {
         const marked = !paid && !!x.preview_path;
         // the clip can be watched while it is checked; it can be downloaded (kept) once the check is done
         const ready = x.gen_status === "checking" || x.gen_status === "review" || x.gen_status === "succeeded";
-        const { composed_path, output_path, preview_path, ...rest } = x;
+        const { composed_path, output_path, preview_path, start_frame_path, ...rest } = x;
         return json({ ...rest, model_label: m?.label ?? null, watermarked: marked,
           image_url: x.frame_status === "ready" || x.frame_status === "approved" ? await sign(composed_path) : null,
-          video_url: ready && output_path ? await sign(marked ? preview_path : output_path) : null });
+          video_url: ready && output_path ? await sign(marked ? preview_path : output_path) : null,
+          // a clip made from words: its first frame, as the player's poster only (not offered as an image download)
+          poster_url: x.from_text && start_frame_path ? await sign(start_frame_path) : null });
       }
       case "creation_keep": {
         // keeping (or downloading) a clip that waits for review approves it: that is when it is charged
@@ -336,7 +338,8 @@ async function handle(req: Request): Promise<Response> {
           select se.id, se.name, se.look, se.quality, se.genre, se.style_prompt, coalesce(json_agg(json_build_object('id', sc.id, 'title', sc.title, 'ord', sc.ord, 'location_id', sc.location_id)
                    order by sc.ord) filter (where sc.id is not null), '[]') as scenes,
                  (select coalesce(json_agg(json_build_object('id', l.id, 'name', l.name, 'has_plate', l.layout_path is not null)
-                   order by l.name), '[]') from studio.locations l where l.series_id = se.id) as locations
+                   order by l.name), '[]') from studio.locations l where l.series_id = se.id) as locations,
+                 exists (select 1 from studio.characters ch where ch.series_id = se.id) as has_cast
             from studio.series se left join studio.scenes sc on sc.series_id = se.id
            group by se.id, se.name, se.look, se.quality, se.genre, se.style_prompt order by se.name`);
         return json({ items: rows });

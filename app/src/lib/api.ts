@@ -101,6 +101,7 @@ export type Cut = {
 export type Series = {
   id: string; name: string; look: Look; quality: Quality; genre: Genre | null; style_prompt: string | null; scenes: { id: string; title: string; ord: number; location_id: string | null }[];
   locations: { id: string; name: string; has_plate: boolean }[];
+  has_cast?: boolean;   // the project has characters: a Home video starts from an image of them (quick_create)
 };
 // Genre: optional, files and filters work in Assets; it changes nothing about how frames or clips are made (2026-11-19).
 export type Genre = "drama" | "comedy" | "action" | "kids" | "horror" | "romance" | "documentary" | "music_video" | "ad" | "explainer" | "other";
@@ -190,7 +191,7 @@ export type Creation = { shot_id: string; action: string; duration_s: number; sc
   look: Look; job_id: string | null; frame_status: string | null; frame_error: string | null; then_render: boolean | null;
   render_error: string | null; gen_id: string | null; gen_status: string | null; gen_error: string | null; model_id: string | null;
   model_label: string | null; credits_reserved: number | null; settled: boolean | null; watermarked: boolean;
-  image_url: string | null; video_url: string | null };
+  image_url: string | null; video_url: string | null; from_text?: boolean; poster_url?: string | null };
 
 export type AppNotification = { id: string; kind: string; title: string; body: string | null; link: string | null; created_at: string };
 export type AdminRefund = { id: string; generation_id: string; owner: string; email: string | null; reasons: string[]; note: string;
