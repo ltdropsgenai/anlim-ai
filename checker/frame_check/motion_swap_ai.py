@@ -133,7 +133,12 @@ def analyze(render, source, refs, who=None, key=None, log=print, model=MODEL):
         txt, usage = _call(model, key, SYSTEM, content, max_tokens=3000)
         ans = first_json(txt)
     except Exception as e:
-        res["why"] = f"the check could not run ({type(e).__name__})"; log(f"motion swap: {res['why']}: {e}"); return res
+        detail = ""
+        if hasattr(e, "read"):
+            try: detail = e.read().decode("utf-8", "replace")[:600]   # the API's own reason for a 400
+            except Exception: pass
+        res["why"] = f"the check could not run ({type(e).__name__})"; res["detail"] = detail
+        log(f"motion swap: {res['why']}: {e} {detail}"); return res
     p = PRICES.get(model, (0, 0, 0, 0))
     cost = (usage.get("input_tokens", 0) * p[0] + usage.get("output_tokens", 0) * p[3]) / 1e6
     issues, truth, sure, used_expected = judge(ans, mos)
