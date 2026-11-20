@@ -231,6 +231,7 @@ async function handle(req: Request): Promise<Response> {
         const models = await sql`select id, label, credits_per_second * ${sh.duration_s}::int as credits from studio.models
                                   where active and provider <> 'mock' and (looks is null or ${sh.look ?? "cartoon"} = any(looks))
                                   order by usd_per_second desc`;
+        const [{ paid: canPick }] = await sql`select studio.has_paid(${uid}) as paid`;   // free accounts use Auto (2026-11-20)
         // height check of the current start still when it was uploaded (frame_jobs kind 'height', 2026-11-16)
         const [hjob] = sh.start_frame_path ? await asUser(uid, (tx) => tx`
           select id, status, check_result, error from studio.frame_jobs
@@ -238,7 +239,7 @@ async function handle(req: Request): Promise<Response> {
         return json({ ...sh, start_url: await sign(sh.start_frame_path), end_url: await sign(sh.end_frame_path),
           job: job ? { ...job, composed_url: await sign(job.composed_path) } : null, route: route ?? null, route_error: routeError,
           start_job: sjob ? { ...sjob, composed_url: await sign(sjob.composed_path) } : null, context: ctx ?? null,
-          latest: gen ?? null, height_job: hjob ?? null, owner: uid, models });
+          latest: gen ?? null, height_job: hjob ?? null, owner: uid, models, can_pick: canPick });
       }
       // ---- quick create from the Home prompt (2026-11-20): an image, or an image and a clip, in a new "Untitled project"
       // (or the project the creator picked); the result card polls "creation" and offers download or the Workspace
@@ -247,8 +248,16 @@ async function handle(req: Request): Promise<Response> {
         const camera = CAMERA_WORDS.test(prompt) ? null : "locked";
         const [r] = await asUser(uid, (tx) => tx`select studio.quick_create(${prompt}, ${String(body.look || "cartoon")},
           ${Number(body.duration_s || 5)}::int, ${String(body.output || "video")}, ${camera},
-          ${body.series_id ? String(body.series_id) : null}::uuid) as r`);
+          ${body.series_id ? String(body.series_id) : null}::uuid, ${body.model ? String(body.model) : null}) as r`);
         return json(r.r);
+      }
+      case "prompt_models": {
+        // the video models a paid account may pick at the Home prompt (2026-11-20); free accounts use Auto
+        const [{ paid }] = await sql`select studio.has_paid(${uid}) as paid`;
+        const models = await sql`select id, label, credits_per_second, min_duration_s, max_duration_s, looks
+                                   from studio.models where active and provider <> 'mock' and t2v_endpoint is not null
+                                  order by usd_per_second desc`;
+        return json({ paid, models });
       }
       case "creation": {
         const id = String(body.shot_id || "");

@@ -53,6 +53,7 @@ export type Shot = {
   job: FrameJob | null;
   route: { kind: string; model_id: string; reason: string; evidence: string; label: string | null; credits: number } | null;
   quality: Quality; series_id: string; models: { id: string; label: string | null; credits: number }[];
+  can_pick?: boolean;   // false: a free account, Auto only (2026-11-20)
   route_error: string | null; latest: { id: string; status: string } | null; owner: string;
   start_job: StartJob | null; context: ShotContext | null;
   // height check of an uploaded start still (frame_jobs kind 'height', 2026-11-16)
@@ -123,6 +124,9 @@ export type Asset = {
 };
 export type AssetQuery = { kind?: AssetKind | null; series_id?: string | null; look?: Look | null; genre?: Genre | null;
   status?: AssetStatus | null; q?: string; sort?: "newest" | "oldest"; limit?: number; offset?: number };
+// Video models a paid account may pick at the Home prompt (studio-api prompt_models, 2026-11-20)
+export type PromptModel = { id: string; label: string | null; credits_per_second: number; min_duration_s: number; max_duration_s: number;
+  looks: Look[] | null };
 export type HomeData = {
   models: { id: string; label: string | null; resolution: string; credits_per_second: number; min_duration_s: number; max_duration_s: number;
             auto_for: { look: Look; kind: string }[] }[];
@@ -236,8 +240,9 @@ export const api = {
   setSeriesGenre: (seriesId: string, genre: Genre | null) => call<{ ok: true }>({ op: "series_genre", series_id: seriesId, genre }),
   assets: (q: AssetQuery) => call<{ items: Asset[]; total: number; counts: Record<string, number> }>({ op: "assets", ...q }),
   home: () => call<HomeData>({ op: "home" }),
-  quickCreate: (prompt: string, look: Look, durationS: number, output: Output, seriesId: string | null) =>
-    call<QuickCreated>({ op: "quick_create", prompt, look, duration_s: durationS, output, series_id: seriesId }),
+  quickCreate: (prompt: string, look: Look, durationS: number, output: Output, seriesId: string | null, model: string | null = null) =>
+    call<QuickCreated>({ op: "quick_create", prompt, look, duration_s: durationS, output, series_id: seriesId, model }),
+  promptModels: () => call<{ paid: boolean; models: PromptModel[] }>({ op: "prompt_models" }),
   creation: (shotId: string) => call<Creation>({ op: "creation", shot_id: shotId }),
   keepCreation: (generationId: string) => call<{ ok: true }>({ op: "creation_keep", generation_id: generationId }),
   // refunds (2026-11-20): credits back at once, reviewed by anlim, may be reversed with a reason

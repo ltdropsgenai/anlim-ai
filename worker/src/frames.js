@@ -344,7 +344,8 @@ async function stepRunning(j) {
 async function renderNow(j) {
   try {
     await db.q("select studio.decide_frame($1, 'approve')", [j.id]);
-    const [g] = await db.q("select studio.enqueue_generation($1, null) as id", [j.shot_id]);
+    // render_model: the model a paid creator picked at the Home prompt (null = Auto), 2026-11-20
+    const [g] = await db.q("select studio.enqueue_generation($1, $2) as id", [j.shot_id, j.render_model || null]);
     log(j, `render started (${g.id})`);
   } catch (e) {
     await db.updateFrame(j.id, { render_error: String(e.message || e).slice(0, 500) });

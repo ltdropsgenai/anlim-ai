@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
-import { api, Look, Output, Series } from "../lib/api";
+import { api, Look, Output, PromptModel, Series } from "../lib/api";
 import { CreationCard } from "./CreationCard";
 import { c, font } from "../lib/theme";
 import { clearDraft, peekDraft, saveDraft } from "../lib/draft";
@@ -38,9 +38,14 @@ export function Composer({ narrow, guest = false }: { narrow: boolean; guest?: b
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [focus, setFocus] = useState(false);
+  // 2026-11-20 (Londi): paid accounts pick the video model; free accounts use Auto (the server enforces it too)
+  const [models, setModels] = useState<PromptModel[]>([]);
+  const [paid, setPaid] = useState(false);
+  const [model, setModel] = useState<string | null>(null);   // null = Auto
   const input = useRef<{ focus: () => void } | null>(null);
 
   useEffect(() => { if (!guest) api.series().then(setSeries).catch(() => setSeries([])); }, [guest]);
+  useEffect(() => { if (!guest) api.promptModels().then((r) => { setModels(r.models); setPaid(r.paid); }).catch(() => {}); }, [guest]);
   // a prompt typed before signing up: make it now, on the new account (once; the draft is cleared first)
   useEffect(() => {
     if (guest) return;
@@ -54,6 +59,12 @@ export function Composer({ narrow, guest = false }: { narrow: boolean; guest?: b
   // adding to an existing project uses that project's look; the toggle is for new projects
   const effLook: Look = picked ? picked.look : look;
   const ready = text.trim().length >= 8 && !busy;
+  // models that can make this video: the look and the length must fit
+  const fits = useMemo(() => models.filter((m) => (!m.looks || m.looks.includes(effLook)) && len >= m.min_duration_s && len <= m.max_duration_s),
+    [models, effLook, len]);
+  useEffect(() => { if (model && !fits.some((m) => m.id === model)) setModel(null); }, [fits, model]);
+  const chosen = models.find((m) => m.id === model) ?? null;
+  const perS = chosen?.credits_per_second ?? CLIP_CREDITS_PER_S;
 
   async function go() {
     if (!ready) return;
@@ -63,13 +74,13 @@ export function Composer({ narrow, guest = false }: { narrow: boolean; guest?: b
       router.navigate({ pathname: "/login", params: { mode: "signup" } });
       return;
     }
-    await make(text.trim(), look, len, output, picked);
+    await make(text.trim(), look, len, output, picked, output === "video" ? model : null);
   }
 
-  async function make(action: string, lk: Look, ln: number, out: Output, p: Series | null) {
+  async function make(action: string, lk: Look, ln: number, out: Output, p: Series | null, m: string | null = null) {
     setBusy(true); setError(null);
     try {
-      const r = await api.quickCreate(action, lk, ln, out, p ? p.id : null);
+      const r = await api.quickCreate(action, lk, ln, out, p ? p.id : null, m);
       setMade({ shot: r.shot_id, output: out });
       if (!p) api.series().then(setSeries).catch(() => {});      // the new Untitled project shows in "Add to"
     } catch (e) {
@@ -137,6 +148,24 @@ export function Composer({ narrow, guest = false }: { narrow: boolean; guest?: b
         </View>
       </View>
 
+      {output === "video" && !guest && fits.length > 0 && (
+        <View style={[s.row, { marginTop: 12, justifyContent: "center" }]} accessibilityRole="radiogroup" accessibilityLabel="Video model">
+          <Text style={[s.small, font.mono]}>MODEL</Text>
+          {[{ id: null as string | null, label: "Auto", credits_per_second: CLIP_CREDITS_PER_S }, ...fits].map((m) => {
+            const on = model === m.id, locked = m.id !== null && !paid;
+            return (
+              <Pressable key={m.id ?? "auto"} disabled={locked} onPress={() => setModel(m.id)} style={[s.chip, on && s.chipOn, locked && { opacity: 0.4 }]}
+                accessibilityRole="radio" accessibilityState={{ checked: on, disabled: locked }}>
+                <Text style={{ color: on ? c.ink : c.sub, fontSize: 12 }} numberOfLines={1}>
+                  {m.id === null ? "Auto" : `${m.label ?? m.id} · ${m.credits_per_second * len} cr`}
+                </Text>
+              </Pressable>
+            );
+          })}
+          {!paid && <Text style={s.small}>Picking a model comes with a paid account.</Text>}
+        </View>
+      )}
+
       {series.length > 0 && (
         <View style={[s.row, { marginTop: 12, justifyContent: "center" }]}>
           <Text style={[s.small, font.mono]}>ADD TO</Text>
@@ -165,8 +194,8 @@ export function Composer({ narrow, guest = false }: { narrow: boolean; guest?: b
         ))}
       </View>}
       <Text style={[s.small, { textAlign: "center", marginTop: 14 }]}>
-        {output === "image" ? "An image uses 20 credits." : picked && picked.has_cast ? `A ${len} s video uses about ${20 + CLIP_CREDITS_PER_S * len} credits: 20 for a start image of your cast, the rest for the clip. If a clip is unusable, request a refund and tell us why.`
-          : `A ${len} s video uses about ${CLIP_CREDITS_PER_S * len} credits, made straight from your words. If a clip is unusable, request a refund and tell us why.`}
+        {output === "image" ? "An image uses 20 credits." : picked && picked.has_cast ? `A ${len} s video uses about ${20 + perS * len} credits: 20 for a start image of your cast, the rest for the clip. If a clip is unusable, request a refund and tell us why.`
+          : `A ${len} s video uses about ${perS * len} credits, made straight from your words. If a clip is unusable, request a refund and tell us why.`}
         {guest ? " Press the arrow and create a free account to see it; new accounts get free starter credits." : picked ? ` It is added to ${picked.name}.` : " It is saved in a new Untitled project in your Workspace."}
       </Text>
     </View>

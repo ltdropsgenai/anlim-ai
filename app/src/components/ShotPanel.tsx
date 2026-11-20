@@ -488,14 +488,16 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
         <View style={s.row}>
           <Text style={s.label}>Model</Text>
           {[null, ...(shot.models ?? []).map((x) => x.id)].map((m) => (
-            <Pressable key={m ?? "auto"} onPress={() => setModel(m)} style={[s.chip, model === m && s.chipOn]} accessibilityRole="radio"
-              accessibilityState={{ checked: model === m }}>
+            <Pressable key={m ?? "auto"} onPress={() => setModel(m)} disabled={m !== null && shot.can_pick === false}
+              style={[s.chip, model === m && s.chipOn, m !== null && shot.can_pick === false && { opacity: 0.4 }]} accessibilityRole="radio"
+              accessibilityState={{ checked: model === m, disabled: m !== null && shot.can_pick === false }}>
               <Text style={model === m ? { color: c.onAccent } : { color: c.ink }}>
                 {m === null ? `Auto${shot.route ? ` (${shot.route.label ?? MODEL_NAMES[shot.route.model_id] ?? shot.route.model_id})` : ""}` : modelLabel(m)}
               </Text>
             </Pressable>
           ))}
         </View>
+        {shot.can_pick === false && <Text style={s.sub}>Picking a model comes with a paid account (buy credits or a plan). Free accounts use Auto.</Text>}
         {model && shot.route && model !== shot.route.model_id && (
           <Text style={s.warnBox}>
             {modelLabel(model)} is not Auto's pick for {KIND_NAMES[shot.route.kind] ?? shot.route.kind}. What the tests showed: {shot.route.evidence}
