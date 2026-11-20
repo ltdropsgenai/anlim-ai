@@ -38,7 +38,7 @@ export default function Welcome() {
     <PublicFrame signedIn={signedIn}>
       <View style={[s.page, narrow && { padding: 16 }]}>
         <SplashBanner height={narrow ? 180 : 340} />
-        <View style={[s.hero, narrow && { paddingVertical: 32 }, { marginTop: narrow ? -40 : -96, paddingTop: 0 }]}>
+        <View style={[s.hero, narrow && { paddingVertical: 32 }, { marginTop: narrow ? -24 : -44, paddingTop: 0 }]}>
           <Text style={[s.kicker, font.mono, { color: c.accent }]}>AI VIDEO STUDIO FOR CREATORS</Text>
           <Text style={[s.h1, font.display, narrow && { fontSize: 36, lineHeight: 40 }]}>Make AI video where your cast stays the same.</Text>
           <Text style={s.lead}>Cartoon or photoreal. Write each shot, and anlim makes the frames, picks the model, renders the clip and checks it before you keep it.</Text>
