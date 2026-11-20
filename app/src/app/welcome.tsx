@@ -9,6 +9,8 @@ import { c, font } from "../lib/theme";
 import { FEATURES } from "../lib/marketing";
 import { Grid } from "../components/Grid";
 import { Icon } from "../components/Icon";
+import { Ambient, FloatCard, StepMark } from "../components/FloatCard";
+import { Mark } from "../components/Mark";
 import { PublicFrame } from "../components/PublicFrame";
 import { SplashBanner } from "../components/SplashBanner";
 
@@ -23,6 +25,8 @@ const money = (cents: number) => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}
 export default function Welcome() {
   const { width } = useWindowDimensions();
   const narrow = width < 760;
+  // 2026-11-20: the step rail only reads when all four steps sit in one row (4 x 220 + 3 x 16 gap + 56 page padding)
+  const oneRow = !narrow && width >= 984;
   const { at } = useLocalSearchParams<{ at?: string }>();
   const [plans, setPlans] = useState<PricePlan[] | null>(null);
   const [planError, setPlanError] = useState(false);
@@ -53,27 +57,33 @@ export default function Welcome() {
           <Text style={[s.small, { marginTop: 12, textAlign: "center" }]}>Free starter credits when you confirm your email. No card needed.</Text>
         </View>
 
+        {/* 2026-11-20 (Londi: no square boxes with logos): glass cards over a soft light; the steps share one lit rail on
+            wide screens (a phone keeps just the numbered light), the features carry bespoke marks */}
         <Text style={[s.kicker, font.mono, s.center]}>HOW IT WORKS</Text>
-        <Grid min={220} gap={14}>
-          {STEPS.map(([t, b], i) => (
-            <View key={t} style={[s.card, { padding: 20, minHeight: 150 }]}>
-              <Text style={[{ color: c.accent, fontSize: 13 }, font.mono]}>0{i + 1}</Text>
-              <Text style={[s.h3, font.display]}>{t}</Text>
-              <Text style={s.body}>{b}</Text>
-            </View>
-          ))}
-        </Grid>
+        <Ambient>
+          <Grid min={220} gap={16}>
+            {STEPS.map(([t, b], i) => (
+              <FloatCard key={t} style={{ padding: 24, paddingTop: 28, minHeight: narrow ? 0 : 170 }}>
+                <StepMark n={i + 1} rail={oneRow} first={i === 0} last={i === STEPS.length - 1} gap={16} />
+                <Text style={[s.h3, font.display, { marginTop: 26 }]}>{t}</Text>
+                <Text style={s.body}>{b}</Text>
+              </FloatCard>
+            ))}
+          </Grid>
+        </Ambient>
 
         <Text style={[s.kicker, font.mono, s.center, { marginTop: 40 }]}>WHAT YOU GET</Text>
-        <Grid min={300} gap={14}>
-          {FEATURES.map((f) => (
-            <View key={f.title} style={[s.card, { padding: 20, minHeight: 160 }]}>
-              <View style={s.iconBox}><Icon name={f.icon} size={20} color={c.accent} /></View>
-              <Text style={[s.h3, font.display]}>{f.title}</Text>
-              <Text style={s.body}>{f.body}</Text>
-            </View>
-          ))}
-        </Grid>
+        <Ambient>
+          <Grid min={300} gap={16}>
+            {FEATURES.map((f) => (
+              <FloatCard key={f.title} hover style={{ padding: 24, minHeight: 196 }}>
+                <Mark name={f.mark} />
+                <Text style={[s.h3, font.display, { marginTop: 0 }]}>{f.title}</Text>
+                <Text style={s.body}>{f.body}</Text>
+              </FloatCard>
+            ))}
+          </Grid>
+        </Ambient>
 
         <View nativeID="pricing">
           <Text style={[s.kicker, font.mono, s.center, { marginTop: 40 }]}>PRICING</Text>
@@ -88,11 +98,11 @@ export default function Welcome() {
             <Text style={[s.h3, font.display, { marginTop: 22 }]}>Monthly plans</Text>
             <Grid min={240} gap={14}>
               {monthly.map((p) => (
-                <View key={p.id} style={[s.card, { padding: 20 }]}>
+                <FloatCard key={p.id} style={{ padding: 22 }}>
                   <Text style={[{ color: c.ink, fontSize: 18 }, font.display]}>{p.name}</Text>
                   <Text style={[{ color: c.ink, fontSize: 32, marginTop: 6 }, font.display]}>{money(p.price_cents)}<Text style={{ color: c.sub, fontSize: 14 }}> / month</Text></Text>
                   <Text style={[s.body, font.mono]}>{p.credits.toLocaleString()} CREDITS A MONTH</Text>
-                </View>
+                </FloatCard>
               ))}
             </Grid>
           </>)}
@@ -100,22 +110,26 @@ export default function Welcome() {
             <Text style={[s.h3, font.display, { marginTop: 22 }]}>Credit packs</Text>
             <Grid min={200} gap={14}>
               {packs.map((p) => (
-                <View key={p.id} style={[s.card, { padding: 18 }]}>
+                <FloatCard key={p.id} compact style={{ padding: 18 }}>
                   <Text style={[{ color: c.ink, fontSize: 16 }, font.display]}>{p.name}</Text>
                   <Text style={[{ color: c.ink, fontSize: 26, marginTop: 4 }, font.display]}>{money(p.price_cents)}</Text>
                   <Text style={[s.body, font.mono]}>{p.credits.toLocaleString()} CREDITS · ONE TIME</Text>
-                </View>
+                </FloatCard>
               ))}
             </Grid>
           </>)}
         </View>
 
-        <View style={[s.card, { padding: 28, alignItems: "center", marginTop: 40, gap: 10 }]}>
-          <Text style={[s.h2, font.display, s.center, { marginTop: 0 }]}>Your first scene is on us</Text>
-          <Text style={[s.body, s.center]}>Confirm your email and your starter credits are waiting.</Text>
-          <Pressable style={({ pressed }) => [s.cta, pressed && s.pressed]} onPress={() => router.navigate(signedIn ? "/" : "/start")} accessibilityRole="link">
-            <Text style={s.ctaText}>{signedIn ? "Open the studio" : "Create your account"}</Text>
-          </Pressable>
+        <View style={{ marginTop: 40 }}>
+          <Ambient>
+            <FloatCard style={{ padding: 28, alignItems: "center", gap: 10 }}>
+              <Text style={[s.h2, font.display, s.center, { marginTop: 0 }]}>Your first scene is on us</Text>
+              <Text style={[s.body, s.center]}>Confirm your email and your starter credits are waiting.</Text>
+              <Pressable style={({ pressed }) => [s.cta, pressed && s.pressed]} onPress={() => router.navigate(signedIn ? "/" : "/start")} accessibilityRole="link">
+                <Text style={s.ctaText}>{signedIn ? "Open the studio" : "Create your account"}</Text>
+              </Pressable>
+            </FloatCard>
+          </Ambient>
         </View>
       </View>
     </PublicFrame>
@@ -135,13 +149,10 @@ const s = StyleSheet.create({
   small: { color: c.muted, fontSize: 13 },
   row: { flexDirection: "row", alignItems: "center", gap: 12, flexWrap: "wrap" },
   // 2026-11-20 (Londi's rules: no pills, no outlined boxes): the one filled control is squared off and lit; the
-  // second action is type; cards are raised surfaces (value and shadow), not hairline boxes.
+  // second action is type; cards are glass surfaces (components/FloatCard), not hairline boxes.
   cta: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: c.accent, borderRadius: 10, paddingHorizontal: 22, paddingVertical: 14,
          shadowColor: c.accent, shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 0 } },
   pressed: { transform: [{ scale: 0.97 }], opacity: 0.92 },
   ctaText: { color: c.onAccent, fontWeight: "700", fontSize: 16 },
   ghost: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 14 },
-  card: { backgroundColor: "#0F0F13", borderRadius: 16,
-          shadowColor: "#000", shadowOpacity: 0.5, shadowRadius: 28, shadowOffset: { width: 0, height: 14 } },
-  iconBox: { width: 40, height: 40, borderRadius: 12, backgroundColor: "#2A1608", alignItems: "center", justifyContent: "center" },
 });
