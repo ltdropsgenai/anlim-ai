@@ -132,10 +132,12 @@ export default function Login() {
 
 const s = StyleSheet.create({
   page: { flex: 1, alignItems: "center", justifyContent: "center", padding: 16, backgroundColor: c.bg },
-  card: { width: "100%", maxWidth: 400, backgroundColor: c.card, borderRadius: 14, padding: 24, borderWidth: 1, borderColor: c.line, gap: 12 },
+  // 2026-11-20 (no outlined boxes): a raised surface; the fields are filled wells, not outlined boxes
+  card: { width: "100%", maxWidth: 400, backgroundColor: "#0F0F13", borderRadius: 16, padding: 24, gap: 12,
+          shadowColor: "#000", shadowOpacity: 0.55, shadowRadius: 32, shadowOffset: { width: 0, height: 16 } },
   title: { fontSize: 24, fontWeight: "700", color: c.ink },
   sub: { color: c.sub, marginBottom: 4, fontSize: 16 },
-  input: { borderWidth: 1, borderColor: c.line, borderRadius: 8, padding: 12, fontSize: 16, color: c.ink, backgroundColor: c.field },
+  input: { borderRadius: 10, padding: 13, fontSize: 16, color: c.ink, backgroundColor: "#18181D" },
   error: { color: c.fail }, hint: { color: c.sub, fontSize: 13 },
   notice: { color: c.ink, backgroundColor: c.passBg, borderRadius: 8, padding: 10 },
   button: { backgroundColor: c.accent, borderRadius: 8, padding: 14, alignItems: "center", marginTop: 4 },

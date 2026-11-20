@@ -41,10 +41,12 @@ export default function Welcome() {
           <Text style={[s.h1, font.display, narrow && { fontSize: 36, lineHeight: 40 }]}>Make AI video where your cast stays the same.</Text>
           <Text style={s.lead}>Cartoon or photoreal. Write each shot, and anlim makes the frames, picks the model, renders the clip and checks it before you keep it.</Text>
           <View style={[s.row, { marginTop: 24, justifyContent: "center" }]}>
-            <Pressable style={s.cta} onPress={() => router.navigate(signedIn ? "/" : "/start")} accessibilityRole="link">
+            <Pressable style={({ pressed }) => [s.cta, pressed && s.pressed]} onPress={() => router.navigate(signedIn ? "/" : "/start")} accessibilityRole="link">
               <Text style={s.ctaText}>{signedIn ? "Open the studio" : "Start free"}</Text><Icon name="arrow" size={18} color={c.onAccent} />
             </Pressable>
-            {!signedIn && <Pressable style={s.ghost} onPress={() => router.navigate("/login")} accessibilityRole="link"><Text style={{ color: c.ink, fontWeight: "600" }}>Sign in</Text></Pressable>}
+            {!signedIn && <Pressable style={({ pressed }) => [s.ghost, pressed && s.pressed]} onPress={() => router.navigate("/login")} accessibilityRole="link">
+              <Text style={{ color: c.ink, fontWeight: "600", fontSize: 16 }}>Sign in</Text><Icon name="arrow" size={16} color={c.sub} />
+            </Pressable>}
           </View>
           <Text style={[s.small, { marginTop: 12, textAlign: "center" }]}>Free starter credits when you confirm your email. No card needed.</Text>
         </View>
@@ -109,7 +111,7 @@ export default function Welcome() {
         <View style={[s.card, { padding: 28, alignItems: "center", marginTop: 40, gap: 10 }]}>
           <Text style={[s.h2, font.display, s.center, { marginTop: 0 }]}>Your first scene is on us</Text>
           <Text style={[s.body, s.center]}>Confirm your email and your starter credits are waiting.</Text>
-          <Pressable style={s.cta} onPress={() => router.navigate(signedIn ? "/" : "/start")} accessibilityRole="link">
+          <Pressable style={({ pressed }) => [s.cta, pressed && s.pressed]} onPress={() => router.navigate(signedIn ? "/" : "/start")} accessibilityRole="link">
             <Text style={s.ctaText}>{signedIn ? "Open the studio" : "Create your account"}</Text>
           </Pressable>
         </View>
@@ -130,9 +132,14 @@ const s = StyleSheet.create({
   body: { color: c.sub, fontSize: 14, lineHeight: 21, marginTop: 6 },
   small: { color: c.muted, fontSize: 13 },
   row: { flexDirection: "row", alignItems: "center", gap: 12, flexWrap: "wrap" },
-  cta: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: c.accent, borderRadius: 999, paddingHorizontal: 22, paddingVertical: 14 },
+  // 2026-11-20 (Londi's rules: no pills, no outlined boxes): the one filled control is squared off and lit; the
+  // second action is type; cards are raised surfaces (value and shadow), not hairline boxes.
+  cta: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: c.accent, borderRadius: 10, paddingHorizontal: 22, paddingVertical: 14,
+         shadowColor: c.accent, shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 0 } },
+  pressed: { transform: [{ scale: 0.97 }], opacity: 0.92 },
   ctaText: { color: c.onAccent, fontWeight: "700", fontSize: 16 },
-  ghost: { borderWidth: 1, borderColor: c.line, backgroundColor: c.field, borderRadius: 999, paddingHorizontal: 20, paddingVertical: 13 },
-  card: { backgroundColor: c.card, borderWidth: 1, borderColor: c.line, borderRadius: 16 },
+  ghost: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 14 },
+  card: { backgroundColor: "#0F0F13", borderRadius: 16,
+          shadowColor: "#000", shadowOpacity: 0.5, shadowRadius: 28, shadowOffset: { width: 0, height: 14 } },
   iconBox: { width: 40, height: 40, borderRadius: 12, backgroundColor: "#2A1608", alignItems: "center", justifyContent: "center" },
 });
