@@ -19,6 +19,7 @@ export type Clip = {
   watermarked: boolean;   // free account: clip_url is the watermarked copy (2026-11-18)
   model_id: string; route_kind: string | null; route_reason: string | null;   // route_kind null = the creator chose the model
   shot_id: string;
+  refund: { status: "pending" | "upheld" | "reversed"; created_at: string; decision_note: string | null } | null;   // 2026-11-20
 };
 
 export type ShotRow = {
@@ -191,8 +192,14 @@ export type Creation = { shot_id: string; action: string; duration_s: number; sc
   model_label: string | null; credits_reserved: number | null; settled: boolean | null; watermarked: boolean;
   image_url: string | null; video_url: string | null };
 
+export type AppNotification = { id: string; kind: string; title: string; body: string | null; link: string | null; created_at: string };
+export type AdminRefund = { id: string; generation_id: string; owner: string; email: string | null; reasons: string[]; note: string;
+  at_s: number | null; credits: number; checker_verdict: string | null; status: "pending" | "upheld" | "reversed"; created_at: string;
+  decided_at: string | null; decision_note: string | null; action: string; model_id: string; qc_reasons: string[] | null;
+  owner_requests: number; owner_reversed: number; clip_url: string | null; start_url: string | null };
+
 export const api = {
-  me: () => call<{ user_id: string; email: string; balance: number; reserved: number; plan_credits: number;
+  me: () => call<{ user_id: string; email: string; balance: number; reserved: number; plan_credits: number; is_admin?: boolean; debt?: number;
                    plan_id: string | null; plan_status: string | null;
                    welcome_status: WelcomeStatus }>({ op: "me" }),
   // billing (studio-billing Edge Function: Stripe Checkout and billing portal)
@@ -232,6 +239,13 @@ export const api = {
     call<QuickCreated>({ op: "quick_create", prompt, look, duration_s: durationS, output, series_id: seriesId }),
   creation: (shotId: string) => call<Creation>({ op: "creation", shot_id: shotId }),
   keepCreation: (generationId: string) => call<{ ok: true }>({ op: "creation_keep", generation_id: generationId }),
+  // refunds (2026-11-20): credits back at once, reviewed by anlim, may be reversed with a reason
+  requestRefund: (generationId: string, reasons: string[], note: string, atS: number | null) =>
+    call<{ ok: true; id: string }>({ op: "refund_request", generation_id: generationId, reasons, note, at_s: atS }),
+  notifications: () => call<{ items: AppNotification[] }>({ op: "notifications" }).then((r) => r.items),
+  readNotifications: (ids: string[]) => call<{ ok: true }>({ op: "notifications_read", ids }),
+  adminRefunds: (status: "pending" | "upheld" | "reversed" | null) => call<{ items: AdminRefund[] }>({ op: "admin_refunds", status }).then((r) => r.items),
+  decideRefund: (id: string, decision: "uphold" | "reverse", note: string) => call<{ ok: true }>({ op: "admin_refund_decide", id, decision, note }),
   setSeriesQuality: (seriesId: string, quality: Quality) => call<{ ok: true }>({ op: "series_quality", series_id: seriesId, quality }),
   // managing work (2026-11-19)
   renameSeries: (id: string, name: string) => call<{ ok: true }>({ op: "series_rename", series_id: id, name }),

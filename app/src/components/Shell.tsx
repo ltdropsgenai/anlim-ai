@@ -32,7 +32,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const path = usePathname();
   const { width } = useWindowDimensions();
   const narrow = width < 760;
-  const [me, setMe] = useState<{ balance: number; reserved: number; plan_status: string | null } | null>(null);
+  const [me, setMe] = useState<{ balance: number; reserved: number; plan_status: string | null; is_admin?: boolean } | null>(null);
   useEffect(() => { api.me().then(setMe).catch(() => setMe(null)); }, [path]);
   const title = TITLES.find(([r]) => r.test(path))?.[1] ?? "anlim.ai";
   // the browser tab says where you are (2026-11-19: Stack titles did not reach the tab with the header hidden)
@@ -65,6 +65,12 @@ export function Shell({ children }: { children: ReactNode }) {
       {narrow && !deep && <Logo size={30} />}
       <Text style={[{ color: c.ink, fontSize: narrow ? 18 : 20, textTransform: "uppercase" }, font.display]} numberOfLines={1}>{title}</Text>
       <View style={{ flex: 1 }} />
+      {me?.is_admin && (
+        <Pressable onPress={() => router.navigate("/refunds" as never)} accessibilityRole="link" accessibilityLabel="Refund requests"
+          style={{ borderWidth: 1, borderColor: c.line, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}>
+          <Text style={{ color: c.sub, fontSize: 13 }}>Refunds</Text>
+        </Pressable>
+      )}
       {me && (
         <Pressable onPress={() => router.navigate("/billing")} accessibilityRole="link" accessibilityLabel={`${me.balance - me.reserved} credits available`}
           style={{ borderWidth: 1, borderColor: c.line, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}>

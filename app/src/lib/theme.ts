@@ -20,4 +20,4 @@ export const verdictColor = (v: string | null) =>
   v === "PASS" ? c.pass : v === "FAIL" ? c.fail : v === "FLAG" || v === "NOT_REVIEWED" ? c.flag : c.muted;
 // plain words (direction B): what the check means for the creator, not the checker's term
 export const verdictLabel = (v: string | null) =>
-  v === "NOT_REVIEWED" ? "Take a look" : v === "FLAG" ? "Your call" : v === "PASS" ? "Checked ✓" : v === "FAIL" ? "Didn't pass" : "Not checked";
+  v === "NOT_REVIEWED" ? "Take a look" : v === "FLAG" ? "Your call" : v === "PASS" ? "Checked ✓" : v === "FAIL" ? "Problem found" : "Not checked";

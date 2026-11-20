@@ -205,11 +205,15 @@ async function stepChecking(g) {
     await db.unlock(g.id, { status: "succeeded", finished_at: new Date() });
     await db.setShot(g.shot_id, "review");
   } else if (res.verdict === "FAIL") {
-    await db.settle(g.id, "release");
-    await db.unlock(g.id, { status: "failed", error: `checker FAIL: ${(res.reasons || []).slice(0, 3).join(" | ")}`.slice(0, 1000), finished_at: new Date() });
-    await db.setShot(g.shot_id, "ready");
+    // 2026-11-20 (Londi): no automatic fails. A FAIL is the strongest flag: the clip was made and is charged; the
+    // checker's findings are shown, and the creator can request a refund with a reason (studio.request_refund).
+    await db.settle(g.id, "charge");
+    await db.unlock(g.id, { status: "review", error: `checker found: ${(res.reasons || []).slice(0, 3).join(" | ")}`.slice(0, 1000),
+                            finished_at: new Date() });
+    await db.setShot(g.shot_id, "review");
   } else {                                            // FLAG or NOT_REVIEWED: a person looks
-    // policy v2 (2026-11-20): a flagged clip is charged when the check finishes; only a FAIL gives credits back
+    // policy v2 (2026-11-20): a flagged clip is charged when the check finishes; credits come back only through a
+    // refund request the creator explains (studio.request_refund)
     await db.settle(g.id, "charge");
     await db.unlock(g.id, { status: "review", finished_at: new Date() });
     await db.setShot(g.shot_id, "review");

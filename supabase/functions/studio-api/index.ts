@@ -125,11 +125,12 @@ async function handle(req: Request): Promise<Response> {
       case "me": {
         const [acc] = await asUser(uid, async (tx) => {
           await tx`select studio.refresh_my_plan()`;           // a month boundary nobody else has crossed yet
-          return tx`select balance, reserved, plan_credits, plan_id, plan_status, welcome_status from studio.accounts where owner = ${uid}`;
+          return tx`select balance, reserved, plan_credits, plan_id, plan_status, welcome_status, debt, studio.is_admin() as is_admin
+                      from studio.accounts where owner = ${uid}`;
         });
         return json({ user_id: uid, email: who.user.email, balance: acc?.balance ?? 0, reserved: acc?.reserved ?? 0,
           plan_credits: acc?.plan_credits ?? 0, plan_id: acc?.plan_id ?? null, plan_status: acc?.plan_status ?? null,
-          welcome_status: acc?.welcome_status ?? null });
+          welcome_status: acc?.welcome_status ?? null, debt: acc?.debt ?? 0, is_admin: !!acc?.is_admin });
       }
       case "queue": {
         // newest first; "review" = waiting for the creator. Includes the latest checker run and decision.
@@ -158,7 +159,9 @@ async function handle(req: Request): Promise<Response> {
                  sh.action, sh.camera, sh.start_frame_path, sh.duration_s, sc.title as scene_title, se.name as series_name,
                  q.verdict, q.flags, q.raw -> 'reasons' as reasons, q.raw -> 'action' as action_check,
                  q.review_usd, q.verify_usd, q.action_usd, q.passthrough_usd, q.raw -> 'passthrough' as passthrough, q.models,
-                 (select r.decision from studio.reviews r where r.generation_id = g.id order by r.created_at desc limit 1) as decision
+                 (select r.decision from studio.reviews r where r.generation_id = g.id order by r.created_at desc limit 1) as decision,
+                 (select json_build_object('status', rr.status, 'created_at', rr.created_at, 'decision_note', rr.decision_note)
+                    from studio.refund_requests rr where rr.generation_id = g.id) as refund
             from studio.generations g
             join studio.shots sh on sh.id = g.shot_id join studio.scenes sc on sc.id = sh.scene_id
             join studio.series se on se.id = sc.series_id
@@ -275,6 +278,36 @@ async function handle(req: Request): Promise<Response> {
         const [g] = await asUser(uid, (tx) => tx`select status from studio.generations where id = ${id}`);
         if (!g) return json({ error: "not found" }, 404);
         if (g.status === "review") await asUser(uid, (tx) => tx`select studio.review_generation(${id}, 'approve', ${[]}, ${"kept from the Home result"})`);
+        return json({ ok: true });
+      }
+      // ---- refunds (2026-11-20): the creator explains, the credits come back at once, an admin confirms or reverses
+      case "refund_request": {
+        const reasons = Array.isArray(body.reasons) ? body.reasons.map(String).slice(0, 10) : [];
+        const at = body.at_s == null || body.at_s === "" ? null : Number(body.at_s);
+        const [r] = await asUser(uid, (tx) => tx`select studio.request_refund(${String(body.generation_id || "")}, ${reasons},
+          ${String(body.note || "")}, ${at != null && isFinite(at) ? at : null}) as id`);
+        return json({ ok: true, id: r.id });
+      }
+      case "notifications": {
+        const rows = await asUser(uid, (tx) => tx`
+          select id, kind, title, body, link, created_at from studio.notifications where read_at is null order by created_at desc limit 10`);
+        return json({ items: rows });
+      }
+      case "notifications_read": {
+        const ids = Array.isArray(body.ids) ? body.ids.map(String).filter((x) => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 50) : [];
+        await asUser(uid, (tx) => tx`select studio.mark_notifications_read(${ids}::uuid[])`);
+        return json({ ok: true });
+      }
+      case "admin_refunds": {
+        // studio.admin_refunds refuses anyone who is not in studio.admins; the clip links are signed here (service role)
+        const st = body.status == null ? null : String(body.status);
+        const rows = await asUser(uid, (tx) => tx`select * from studio.admin_refunds(${st})`);
+        const items = await Promise.all(rows.map(async ({ output_path, start_frame_path, ...r }) => ({ ...r,
+          clip_url: await sign(output_path), start_url: await sign(start_frame_path) })));
+        return json({ items });
+      }
+      case "admin_refund_decide": {
+        await asUser(uid, (tx) => tx`select studio.decide_refund(${String(body.id || "")}, ${String(body.decision || "")}, ${body.note ? String(body.note) : null})`);
         return json({ ok: true });
       }
       case "end_frame": {

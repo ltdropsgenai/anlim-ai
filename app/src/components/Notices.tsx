@@ -26,8 +26,24 @@ function toNotice(a: Activity): Notice {
     go: () => router.navigate({ pathname: "/cut/[scene]", params: { scene: a.scene_id } }) };
 }
 
+// Messages from anlim that stay until read (2026-11-20: refund confirmed / reversed): shown on top, dismissed on click.
+type Sticky = { id: string; title: string; body: string | null; link: string | null };
+
 export function Notices() {
   const [list, setList] = useState<Notice[]>([]);
+  const [sticky, setSticky] = useState<Sticky[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const load = () => api.notifications().then((n) => alive && setSticky(n.slice(0, 3))).catch(() => {});
+    load();
+    const t = setInterval(load, 60000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  const dismiss = (n: Sticky, go: boolean) => {
+    setSticky((l) => l.filter((x) => x.id !== n.id));
+    api.readNotifications([n.id]).catch(() => {});
+    if (go && n.link) router.navigate(n.link as never);
+  };
   const since = useRef(Date.now());
   const seen = useRef(new Set<string>());
   useEffect(() => {
@@ -49,9 +65,21 @@ export function Notices() {
     const t = setInterval(tick, 20000);
     return () => { alive = false; clearInterval(t); };
   }, []);
-  if (!list.length) return null;
+  if (!list.length && !sticky.length) return null;
   return (
     <View style={{ position: "absolute", right: 16, bottom: 16, gap: 8, maxWidth: 380, width: "92%", alignItems: "flex-end" }} pointerEvents="box-none">
+      {sticky.map((n) => (
+        <View key={n.id} accessibilityLiveRegion="polite"
+          style={{ backgroundColor: c.card2, borderWidth: 1, borderColor: c.line, borderLeftWidth: 3, borderLeftColor: c.flag, borderRadius: 12,
+                   paddingVertical: 12, paddingHorizontal: 14, width: "100%", gap: 6 }}>
+          <Text style={{ color: c.ink, fontWeight: "700", fontSize: 14 }}>{n.title}</Text>
+          {n.body ? <Text style={{ color: c.sub, fontSize: 13 }}>{n.body}</Text> : null}
+          <View style={{ flexDirection: "row", gap: 14 }}>
+            {n.link ? <Pressable onPress={() => dismiss(n, true)} accessibilityRole="link"><Text style={{ color: c.link, fontSize: 13 }}>Open the clip</Text></Pressable> : null}
+            <Pressable onPress={() => dismiss(n, false)} accessibilityRole="button"><Text style={{ color: c.muted, fontSize: 13 }}>Dismiss</Text></Pressable>
+          </View>
+        </View>
+      ))}
       {list.map((n) => (
         <Pressable key={n.key} onPress={() => { setList((l) => l.filter((x) => x.key !== n.key)); n.go(); }} accessibilityRole="button"
           accessibilityLiveRegion="polite"

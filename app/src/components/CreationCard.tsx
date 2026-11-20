@@ -22,7 +22,7 @@ function stage(x: Creation | null, output: Output) {
   if (!x.gen_id || x.gen_status === "queued") return { done: false, label: "Starting the clip…" };
   if (x.gen_status === "running") return { done: false, label: `Animating with ${x.model_label ?? "the video model"}… (usually 3 to 5 minutes)` };
   if (x.gen_status === "checking") return { done: false, label: "Checking the clip… you can watch it below." };
-  if (x.gen_status === "failed") return { done: true, label: "The clip did not pass our check." };
+  if (x.gen_status === "failed") return { done: true, label: x.gen_error === "refund requested" ? "Refund requested for this clip." : "The clip didn't finish. Nothing was charged for it." };
   return { done: true, label: x.gen_status === "succeeded" ? "Your clip is ready (checked ✓)." : "Your clip is ready. Our check flagged something: have a look." };
 }
 
@@ -73,8 +73,10 @@ export function CreationCard({ shotId, output, onAgain }: { shotId: string; outp
       {x?.video_url ? <MediaView kind="clip" url={x.video_url} poster={x.image_url} />
         : x?.image_url ? <MediaView kind="still" url={x.image_url} /> : <View style={s.placeholder} />}
 
-      {x?.gen_status === "failed" && x.gen_error ? (
-        <Text style={[s.note, { color: c.fail }]}>{x.gen_error.replace(/^checker FAIL: /, "").slice(0, 300)}. The clip was not charged.</Text>) : null}
+      {x?.gen_status === "review" && x.gen_error?.startsWith("checker found: ") ? (
+        <Text style={[s.note, { color: c.flag }]}>Our check found: {x.gen_error.slice(15, 300)}</Text>) : null}
+      {x?.gen_status === "failed" && x.gen_error && x.gen_error !== "refund requested" ? (
+        <Text style={[s.note, { color: c.fail }]}>{x.gen_error.slice(0, 300)}</Text>) : null}
       {x?.render_error && !x.gen_id ? <Text style={[s.note, { color: c.fail }]}>{x.render_error}</Text> : null}
       {x?.frame_error ? <Text style={[s.note, { color: c.fail }]}>{x.frame_error}</Text> : null}
       {x?.watermarked ? <Text style={s.note}>Free accounts see and download clips with a watermark. It goes away once you buy credits or a plan.</Text> : null}
@@ -86,12 +88,13 @@ export function CreationCard({ shotId, output, onAgain }: { shotId: string; outp
           onPress={() => run("vid", async () => { if (x.gen_id) await api.keepCreation(x.gen_id); await downloadFile(x.video_url!, `${name}.mp4`); })} /> : null}
         {st.done && x?.image_url && (!x.gen_id || x.gen_status === "failed") ?
           <Btn label={x.gen_id ? "Try the clip again" : "Animate this image"} primary={!x.gen_id} busy={work === "animate"} onPress={animate} /> : null}
+        {clipDone && x?.gen_id ? <Btn label="Something wrong? Request a refund" onPress={() => router.navigate({ pathname: "/clip/[id]", params: { id: x.gen_id! } })} /> : null}
         {x ? <Btn label="Start a project from this" onPress={openWorkspace} /> : null}
         {st.done ? <Btn label="Make another" onPress={onAgain} /> : null}
       </View>
       <Text style={s.small}>
-        {x?.gen_id ? "The image used 20 credits. The clip is charged when our check passes or flags it; a clip that fails the check costs nothing."
-          : "The image used 20 credits. Animating it costs credits per second; a clip that fails our check costs nothing."}
+        {x?.gen_id ? "The image used 20 credits; the clip is charged when it is made. If it is unusable, request a refund and tell us why."
+          : "The image used 20 credits. Animating it costs credits per second, charged when the clip is made."}
       </Text>
     </View>
   );

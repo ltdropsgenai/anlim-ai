@@ -19,11 +19,13 @@ type Tone = "ok" | "call" | "busy" | "bad" | "idle";
 // what the creator needs to know about a clip, in plain words
 function status(i: QueueItem): { text: string; tone: Tone; line: string } {
   if (i.decision === "approve") return { text: "✓ Kept", tone: "ok", line: "You kept this clip." };
-  if (i.decision === "reject") return { text: "Rejected", tone: "idle", line: "You rejected it; the credits went back." };
+  if (i.decision === "reject") return { text: "Rejected", tone: "idle", line: "You rejected it. To get credits back, request a refund on the clip page." };
   if (["queued", "running"].includes(i.status)) return { text: "Rendering", tone: "busy", line: "The video model is making it." };
   if (i.status === "checking") return { text: "Checking", tone: "busy", line: "anlim check is going through every frame." };
   if (i.status === "failed")
-    return { text: "Didn't pass", tone: "bad", line: i.verdict === "FAIL" ? "The check found a real problem. Credits back." : "The render didn't finish. Credits back." };
+    return i.error === "refund requested" ? { text: "Refund requested", tone: "idle", line: "Credits back; we're looking at it." }
+      : { text: "Didn't finish", tone: "bad", line: "The render didn't finish. Nothing was charged." };
+  if (i.verdict === "FAIL") return { text: "! Problem found", tone: "bad", line: "The check found a problem. Look before you use it; request a refund if it's unusable." };
   if (i.verdict === "PASS") return { text: "✓ Checked", tone: "call", line: "Passed every check. Keep it?" };
   if (i.verdict === "NOT_REVIEWED") return { text: "! Take a look", tone: "call", line: "The check couldn't finish; watch it yourself." };
   return { text: "! Your call", tone: "call", line: i.flag_count ? `${i.flag_count} moment${i.flag_count === 1 ? "" : "s"} to look at.` : "Something to look at." };

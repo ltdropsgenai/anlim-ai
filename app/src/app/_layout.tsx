@@ -89,6 +89,7 @@ export default function RootLayout() {
       <Stack.Screen name="terms" options={{ title: "Terms" }} />
       <Stack.Screen name="privacy" options={{ title: "Privacy" }} />
       <Stack.Screen name="support" options={{ title: "Help & contact" }} />
+      <Stack.Screen name="refunds" options={{ title: "Refund requests" }} />
     </Stack>
   );
   return bare ? stack : <Shell>{stack}</Shell>;
