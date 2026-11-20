@@ -218,8 +218,10 @@ async function handle(req: Request): Promise<Response> {
         const [gen] = await asUser(uid, (tx) => tx`
           select id, status from studio.generations where shot_id = ${id} order by created_at desc limit 1`);
         // every model a creator may pick by hand, with its price for this shot's length (override chips)
+        // models.looks (2026-11-20): Seedance 2.0 is cartoon only (fal refuses real-person likenesses)
         const models = await sql`select id, label, credits_per_second * ${sh.duration_s}::int as credits from studio.models
-                                  where active and provider <> 'mock' order by usd_per_second desc`;
+                                  where active and provider <> 'mock' and (looks is null or ${sh.look ?? "cartoon"} = any(looks))
+                                  order by usd_per_second desc`;
         // height check of the current start still when it was uploaded (frame_jobs kind 'height', 2026-11-16)
         const [hjob] = sh.start_frame_path ? await asUser(uid, (tx) => tx`
           select id, status, check_result, error from studio.frame_jobs
@@ -472,7 +474,7 @@ async function handle(req: Request): Promise<Response> {
       // ---- Home: what anlim can do, the models it uses, and where the creator left off (2026-11-19)
       case "home": {
         const models = await sql`
-          select m.id, m.label, m.resolution, m.credits_per_second, m.min_duration_s, m.max_duration_s,
+          select m.id, m.label, m.resolution, m.credits_per_second, m.min_duration_s, m.max_duration_s, m.looks,
                  coalesce((select json_agg(json_build_object('look', r.look, 'kind', r.kind) order by r.look, r.kind)
                              from studio.model_routes r where r.model_id = m.id), '[]') as auto_for
             from studio.models m where m.active and m.provider <> 'mock' order by m.credits_per_second desc`;

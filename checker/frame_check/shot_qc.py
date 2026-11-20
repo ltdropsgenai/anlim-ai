@@ -173,10 +173,19 @@ def run(spec, log=print):
     start_ok = False                      # True when frame 0 is confirmed to be the approved still
     if spec.get("start_frame"):
         r = start_frame_check(clip, spec["start_frame"]); ran.append("start_frame")
-        start_ok = not r.get("error") and r.get("blocks_differ_pct", 100) <= START_LIMIT and not (r.get("reframe") and (
-            abs(r["reframe"]["scale"] - 1) > 0.03 or abs(r["reframe"]["shift_x"]) > 0.03 or abs(r["reframe"]["shift_y"]) > 0.03))
+        rf = r.get("reframe")
+        moved = bool(rf) and (abs(rf["scale"] - 1) > 0.03 or abs(rf["shift_x"]) > 0.03 or abs(rf["shift_y"]) > 0.03)
+        # 2026-11-20 (held-out test): Seedance 2.0 starts every clip on a centred crop of the still (scale x1.067,
+        # shift 0.003): its own aspect handling, nothing in the picture changes and Londi passed those clips. A small
+        # centred crop (up to x1.10, centre within 1% of the width) is a note, not a gate B failure. Off-centre or
+        # larger re-framings still fail (Phase 0 Seedance 2.5 started x1.5).
+        crop = moved and 1.0 <= rf["scale"] <= REFRAME_CROP_MAX and abs(rf["shift_x"]) <= 0.01 and abs(rf["shift_y"]) <= 0.01
+        start_ok = not r.get("error") and r.get("blocks_differ_pct", 100) <= START_LIMIT and (not moved or crop)
         if r.get("error"): notes.append("start frame: " + r["error"])
-        elif r.get("reframe") and (abs(r["reframe"]["scale"] - 1) > 0.03 or abs(r["reframe"]["shift_x"]) > 0.03 or abs(r["reframe"]["shift_y"]) > 0.03):
+        elif crop and r.get("blocks_differ_pct", 100) <= START_LIMIT:
+            notes.append(f"start frame: the model starts on a centred crop of the approved still (x{rf['scale']}); "
+                         "the picture is the same, its edges are trimmed")
+        elif moved:
             code["B"].append(f"starts on a re-framed version of the approved still (scale x{r['reframe']['scale']}, shift "
                              f"{r['reframe']['shift_x']:+.3f} / {r['reframe']['shift_y']:+.3f} of the width)")
         elif r["blocks_differ_pct"] > START_LIMIT:
@@ -367,6 +376,7 @@ def run(spec, log=print):
 CAM_FAIL = 0.05
 START_LIMIT = 8.0    # was 5.0: two good clips (P026 5.45%, P054 5.11%) failed on it in the 55-clip benchmark
 START_NOTE = 4.0
+REFRAME_CROP_MAX = 1.10   # centred crop a model may apply to the start still (Seedance 2.0: x1.067) - a note, not a FAIL
 
 if __name__ == "__main__":
     run(json.load(open(sys.argv[1], encoding="utf-8")))

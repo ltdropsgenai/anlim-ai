@@ -30,7 +30,7 @@ function heightOrder(chars) {
 
 // Bump on every prompt change; the worker prints it at start and saves it with each job (2026-11-12: a worker started
 // before a prompt change rendered 3 clips with the old prompt and nothing showed it).
-export const COMPILER_VERSION = "2026-11-19.1 (model adapters: Kling 3.0, Wan 2.7, Seedance 2.0; look: cartoon/photoreal; cast kinds; path rule, watchers, end frame, minimax static shot, walk end)";
+export const COMPILER_VERSION = "2026-11-20.1 (camera from the action; model adapters: Kling 3.0, Wan 2.7, Seedance 2.0; look: cartoon/photoreal; cast kinds; path rule, watchers, end frame, minimax static shot, walk end)";
 
 // Actions that move a character across the floor (same idea as frame_check/passthrough_check.MOVES).
 const MOVES = /\b(walk|walks|walking|step|steps|run|runs|running|cross|crosses|goes|go to|moves? to|dances?)\b/i;
@@ -51,7 +51,18 @@ const WATCH_RULE = "[REACT] Every character who is not moving follows the moving
 // Hailuo's prompting guide recommends opening with "[Static shot]" and restating it in words
 // (hailuoai.video/pages/blog/camera-movement-prompt-cheatsheet); it does not name H3, so this is under test.
 // MiniMax only: Kling's prompt is unchanged.
-const isLocked = (shot) => !shot.camera || /lock|static/i.test(shot.camera);
+const isLocked = (shot) => !cameraFree(shot) && (!shot.camera || /lock|static/i.test(shot.camera));
+
+// 2026-11-20 (held-out test): a Home prompt has no camera field, so every model was told "camera locked" and the
+// checker failed clips whose camera moved - even when the prompt itself asked for "a slow push-in" or "a tracking
+// shot" (MiniMax espresso, Wan / Seedance Tokyo alley). When the action describes the camera, the camera follows
+// the action's words: no lock line, no locked-camera check.
+const CAMERA_WORDS = new RegExp("\\bcamera\\s+(?:\\w+ly\\s+)?(?:track|follow|move|glide|pan|tilt|orbit|rise|pull|push|zoom|" +
+  "dolly|dollie|crane|circle|swoop|sweep|fly|flie|race|dive|rack|settle)\\w*|\\btracking shot|\\bpush[- ]in|" +
+  "\\bpull[- ]?(?:back|out)\\b|\\bdolly\\b|\\bpanning\\b|\\bpans? (?:left|right|across|to)|\\btilts? (?:up|down)|" +
+  "\\bzoom[- ](?:in|out)\\b|\\borbit(?:s|ing)?\\b|\\bcrane shot|\\bhandheld|\\b(?:drone|aerial|fpv) shot|\\bdolly zoom", "i");
+export const describesCamera = (text) => CAMERA_WORDS.test(text || "");
+const cameraFree = (shot) => !shot.camera && describesCamera(shot.action);
 const MINIMAX_STATIC = "[CAMERA] Locked-off tripod: the camera stays completely still for the whole shot - no zoom, " +
   "no push-in or pull-out, no pan, no tilt. The framing, the room and the furniture stay exactly as in the first frame.";
 
@@ -65,7 +76,8 @@ const WALK_END = "[END] The movement is finished well before the clip ends: for 
 export function prompt(shot, chars) {
   const moving = MOVES.test(shot.action);
   const minimax = /^minimax\//.test(shot.endpoint || "");
-  const camera = minimax && isLocked(shot) ? MINIMAX_STATIC : shot.camera ? `[CAMERA] ${shot.camera}` : "[CAMERA] locked";
+  const camera = minimax && isLocked(shot) ? MINIMAX_STATIC : shot.camera ? `[CAMERA] ${shot.camera}`
+    : cameraFree(shot) ? "[CAMERA] As the action describes." : "[CAMERA] locked";
   return [
     minimax && isLocked(shot) ? "[Static shot]" : null,
     shot.style_prompt ? `[STYLE] ${shot.style_prompt}` : null,
@@ -134,7 +146,7 @@ export function checkerSpec(shot, chars, clip, out, startFrameLocal, fps = 24) {
     people: peopleCount(chars),
     subjects: subjects(chars),
     start_frame: startFrameLocal,
-    camera: !shot.camera || /lock|static/i.test(shot.camera) ? "locked" : undefined,
+    camera: isLocked(shot) ? "locked" : undefined,     // a camera the action describes is not checked as locked
     fps,                                  // the clip's own rate (Wan 2.7 delivers 30 fps; was always 24)
     frame_check: {},
   };
