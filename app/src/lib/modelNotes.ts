@@ -52,8 +52,8 @@ export const motionFamily = (id: string) => id.startsWith("genjutsu-light") ? "g
 
 // What people use motion transfer for: shown on the Motion transfer screen.
 export const MOTION_USES: { title: string; text: string }[] = [
-  { title: "Perform as anyone", text: "Film yourself dancing, acting or presenting, then become your cartoon character, mascot or avatar." },
-  { title: "Restyle your footage", text: "Turn a phone video, a skit or a music-video take into anime, a 3D cartoon or a painted look." },
+  { title: "Perform as anyone", text: "Film yourself dancing, acting or presenting, then become your cartoon character, mascot, avatar or another (consenting) person." },
+  { title: "Restyle your footage", text: "Turn a phone video, a skit or a music-video take into anime, a 3D cartoon, a painted look, or a different real-looking cast." },
   { title: "Move the scene", text: "Keep the action and the camera, change where it happens: a stage, a rooftop, a classroom, another world." },
   { title: "Keep a cast consistent", text: "Reuse the same character images across clips so your people look the same in every episode." },
 ];

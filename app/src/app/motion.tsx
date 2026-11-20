@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { router } from "expo-router";
-import { api, MotionModel, uploadMotionFile } from "../lib/api";
+import { api, Look, MotionModel, uploadMotionFile } from "../lib/api";
 import { c, font } from "../lib/theme";
 import { MOTION_NOTES, MOTION_USES, motionFamily } from "../lib/modelNotes";
 import { StillPicker } from "../components/StillPicker";
@@ -40,6 +40,7 @@ export default function Motion() {
   const [refs, setRefs] = useState<Picked[]>([]);
   const [who, setWho] = useState("");
   const [family, setFamily] = useState("genjutsu");
+  const [look, setLook] = useState<Look>("cartoon");   // labels the new project; the model takes the look from the images
   const [res, setRes] = useState("720p");
   const [agreed, setAgreed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -85,6 +86,9 @@ export default function Motion() {
       for (const r of refs) refPaths.push(await uploadMotionFile(me.user_id, "ref", r.file, r.file.type));
       setBusy("Starting…");
       const r = await api.motionCreate(sourcePath, refPaths, who.trim(), Math.round(secs * 1000) / 1000, model.id, null);
+      // the project is made as cartoon; a photoreal recast labels it photoreal (studio-api will pass the look to the
+      // 7-argument studio.motion_create on its next deploy)
+      if (look === "photoreal") await api.updateSeries(r.series_id, "photoreal").catch(() => {});
       setMade(r.shot_id);
     } catch (e) { setErr((e as Error).message); }
     finally { setBusy(null); }
@@ -95,7 +99,7 @@ export default function Motion() {
   if (Platform.OS !== "web") return (
     <View style={[s.page, { padding: 24 }]}>
       <Text style={[s.kicker, font.mono]}>MOTION TRANSFER</Text>
-      <Text style={[s.h1, font.display, { fontSize: 28 }]}>Recast a clip as your own cartoon</Text>
+      <Text style={[s.h1, font.display, { fontSize: 28 }]}>Recast a clip with your own characters</Text>
       <Text style={s.lead}>Motion transfer works in the web app for now: open anlim.ai on a computer.</Text>
     </View>
   );
@@ -107,8 +111,8 @@ export default function Motion() {
       <View style={{ maxWidth: 1120, width: "100%", alignSelf: "center", gap: 26 }}>
         <View style={{ gap: 8 }}>
           <Text style={[s.kicker, font.mono]}>MOTION TRANSFER</Text>
-          <Text style={[s.h1, font.display, narrow && { fontSize: 30 }]}>Recast a clip as your own cartoon</Text>
-          <Text style={s.lead}>The motion, camera moves and cuts stay exactly as shot. The cast, the place and the style come from your images.</Text>
+          <Text style={[s.h1, font.display, narrow && { fontSize: 30 }]}>Recast a clip with your own characters</Text>
+          <Text style={s.lead}>The motion, camera moves and cuts stay exactly as shot. The cast, the place and the look come from your images: cartoon, or real-looking people.</Text>
         </View>
 
         <View style={[s.uses, narrow && { flexDirection: "column" }]}>
@@ -144,7 +148,17 @@ export default function Motion() {
               </View>
 
               <View style={s.card}>
-                <Text style={s.h2}><Text style={[s.num, font.mono]}>02  </Text>Cast and place</Text>
+                <View style={s.cardHead}>
+                  <Text style={s.h2}><Text style={[s.num, font.mono]}>02  </Text>Cast and place</Text>
+                  <View style={s.seg} accessibilityRole="radiogroup" accessibilityLabel="Look">
+                    {(["cartoon", "photoreal"] as Look[]).map((l) => (
+                      <Pressable key={l} onPress={() => setLook(l)} accessibilityRole="radio" accessibilityState={{ checked: l === look }}
+                        style={[s.segBtn, l === look && s.segOn]}>
+                        <Text style={{ color: l === look ? c.ink : c.sub, fontSize: 13, fontWeight: l === look ? "600" : "500" }}>{l === "cartoon" ? "Cartoon" : "Photoreal"}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
                 <View style={s.thumbs}>
                   {refs.map((r, i) => (
                     <View key={r.url} style={s.thumbBox}>
@@ -159,7 +173,9 @@ export default function Motion() {
                       style={s.addTile} textStyle={s.addText} />
                   )}
                 </View>
-                <Text style={s.hint}>Up to 8 images. One image can hold the whole cast and the setting. Give each person in the clip someone to become, with a similar build, so the motion maps cleanly.</Text>
+                <Text style={s.hint}>{look === "photoreal"
+                  ? "Up to 8 images: photos of the people to put in the clip, and the place. Use only people who have agreed to it. A similar build to the person they replace keeps the motion clean."
+                  : "Up to 8 images. One image can hold the whole cast and the setting. Give each person in the clip someone to become, with a similar build, so the motion maps cleanly."}</Text>
               </View>
 
               <View style={s.card}>
@@ -215,7 +231,7 @@ export default function Motion() {
               {avail != null && <Text style={[s.meta, font.mono]}>You have {avail.toLocaleString()} credits</Text>}
               <Pressable onPress={() => setAgreed(!agreed)} accessibilityRole="checkbox" accessibilityState={{ checked: agreed }} style={s.agree}>
                 <View style={[s.box, agreed && s.boxOn]}>{agreed ? <Text style={{ color: c.onAccent, fontSize: 12, fontWeight: "800" }}>✓</Text> : null}</View>
-                <Text style={{ color: c.sub, fontSize: 13, lineHeight: 19, flex: 1 }}>I made this footage or have the right to use it.</Text>
+                <Text style={{ color: c.sub, fontSize: 13, lineHeight: 19, flex: 1 }}>I made this footage or have the right to use it, and anyone shown in my images has agreed to appear.</Text>
               </Pressable>
               <Pressable onPress={go} disabled={!!why || !!busy} accessibilityRole="button"
                 style={[s.cta, (why || busy) ? s.ctaOff : null]}>
