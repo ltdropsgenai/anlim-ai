@@ -17,6 +17,7 @@ export const config = {
   localStorageDir: process.env.LOCAL_STORAGE_DIR || path.join(os.tmpdir(), "studio-storage"),
   bucket: process.env.STORAGE_BUCKET || "studio",
   falKey: process.env.FAL_KEY || "",
+  higgsfieldKey: process.env.HIGGSFIELD_KEY || "",   // "id:secret" from open.higgsfield.ai (motion transfer)
   checkerUrl: process.env.CHECKER_URL || "http://127.0.0.1:8787",
   checkerToken: need("CHECKER_TOKEN"),
   checkerMaxUsd: Number(process.env.CHECKER_MAX_USD || "0.15"),   // per-clip checking budget (design doc)
@@ -27,6 +28,7 @@ export const config = {
   idleMs: Number(process.env.WORKER_IDLE_MS || "5000"),
   pollMs: Number(process.env.PROVIDER_POLL_MS || "15000"),
   providerTimeoutMin: Number(process.env.PROVIDER_TIMEOUT_MIN || "20"),
+  motionTimeoutMin: Number(process.env.MOTION_TIMEOUT_MIN || "60"),   // Genjutsu took 7.7-13 min for 12 s (2026-11-20 tests)
   maxStepTries: Number(process.env.MAX_STEP_TRIES || "5"),
   checkerMaxCrashes: Number(process.env.CHECKER_MAX_CRASHES || "2"),   // checks of one clip that may die with the machine
   endFrameGate: process.env.END_FRAME_GATE || "block",   // block | warn | off (end-frame drift check before submit)

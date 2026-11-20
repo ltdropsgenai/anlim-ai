@@ -16,13 +16,16 @@ const slug = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(
 function stage(x: Creation | null, output: Output) {
   if (!x) return { done: false, label: "Starting…" };
   if (x.frame_status === "failed") return { done: true, label: "The image could not be made." };
-  if (!x.image_url && !x.from_text) return { done: false, label: "Drawing the image… (usually under a minute)" };
+  if (!x.image_url && !x.from_text && !x.motion) return { done: false, label: "Drawing the image… (usually under a minute)" };
   if (output === "image" && !x.gen_id) return { done: true, label: "Your image is ready." };
   if (x.render_error && !x.gen_id) return { done: true, label: "The image is ready; the clip did not start." };
   if (!x.gen_id || x.gen_status === "queued") return { done: false, label: "Starting the clip…" };
-  if (x.gen_status === "running") return { done: false, label: `Animating with ${x.model_label ?? "the video model"}… (usually 3 to 5 minutes)` };
+  if (x.gen_status === "running") return { done: false, label: x.motion
+    ? `Recasting your clip with ${x.model_label ?? "the model"}… (usually 8 to 15 minutes; you can leave this page)`
+    : `Animating with ${x.model_label ?? "the video model"}… (usually 3 to 5 minutes)` };
   if (x.gen_status === "checking") return { done: false, label: "Checking the clip… you can watch it below." };
   if (x.gen_status === "failed") return { done: true, label: x.gen_error === "refund requested" ? "Refund requested for this clip." : "The clip didn't finish. Nothing was charged for it." };
+  if (x.motion) return { done: true, label: "Your clip is ready. Watch the close-ups for swapped faces or clothes." };
   return { done: true, label: x.gen_status === "succeeded" ? "Your clip is ready (checked ✓)." : "Your clip is ready. Our check flagged something: have a look." };
 }
 
@@ -86,14 +89,15 @@ export function CreationCard({ shotId, output, onAgain }: { shotId: string; outp
         {x?.image_url ? <Btn label="Download image" busy={work === "img"} onPress={() => run("img", () => downloadFile(x.image_url!, `${name}.png`))} /> : null}
         {x?.video_url ? <Btn label={checking ? "Download clip (after the check)" : "Download clip"} primary disabled={!clipDone} busy={work === "vid"}
           onPress={() => run("vid", async () => { if (x.gen_id) await api.keepCreation(x.gen_id); await downloadFile(x.video_url!, `${name}.mp4`); })} /> : null}
-        {st.done && (x?.image_url || x?.from_text) && (!x.gen_id || x.gen_status === "failed") ?
+        {st.done && !x?.motion && (x?.image_url || x?.from_text) && (!x.gen_id || x.gen_status === "failed") ?
           <Btn label={x.gen_id ? "Try the clip again" : "Animate this image"} primary={!x.gen_id} busy={work === "animate"} onPress={animate} /> : null}
         {clipDone && x?.gen_id ? <Btn label="Something wrong? Request a refund" onPress={() => router.navigate({ pathname: "/clip/[id]", params: { id: x.gen_id! } })} /> : null}
         {x ? <Btn label="Start a project from this" onPress={openWorkspace} /> : null}
         {st.done ? <Btn label="Make another" onPress={onAgain} /> : null}
       </View>
       <Text style={s.small}>
-        {x?.from_text ? "The clip is charged when it is made. If it is unusable, request a refund and tell us why."
+        {x?.motion ? "Charged per second of your source clip, rounded up, when the clip is made. If it is unusable, request a refund and tell us why."
+          : x?.from_text ? "The clip is charged when it is made. If it is unusable, request a refund and tell us why."
           : x?.gen_id ? "The image used 20 credits; the clip is charged when it is made. If it is unusable, request a refund and tell us why."
           : "The image used 20 credits. Animating it costs credits per second, charged when the clip is made."}
       </Text>

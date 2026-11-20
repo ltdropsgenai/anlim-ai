@@ -195,7 +195,10 @@ export type Creation = { shot_id: string; action: string; duration_s: number; sc
   look: Look; job_id: string | null; frame_status: string | null; frame_error: string | null; then_render: boolean | null;
   render_error: string | null; gen_id: string | null; gen_status: string | null; gen_error: string | null; model_id: string | null;
   model_label: string | null; credits_reserved: number | null; settled: boolean | null; watermarked: boolean;
-  image_url: string | null; video_url: string | null; from_text?: boolean; poster_url?: string | null };
+  image_url: string | null; video_url: string | null; from_text?: boolean; motion?: boolean; poster_url?: string | null };
+// Motion transfer (2026-11-20): a model the creator picks to recast their own clip (studio.models kind 'motion')
+export type MotionModel = { id: string; label: string | null; resolution: string; credits_per_second: number;
+  min_duration_s: number; max_duration_s: number };
 
 export type AppNotification = { id: string; kind: string; title: string; body: string | null; link: string | null; created_at: string };
 export type AdminRefund = { id: string; generation_id: string; owner: string; email: string | null; reasons: string[]; note: string;
@@ -243,6 +246,10 @@ export const api = {
   quickCreate: (prompt: string, look: Look, durationS: number, output: Output, seriesId: string | null, model: string | null = null) =>
     call<QuickCreated>({ op: "quick_create", prompt, look, duration_s: durationS, output, series_id: seriesId, model }),
   promptModels: () => call<{ paid: boolean; models: PromptModel[] }>({ op: "prompt_models" }),
+  motionModels: () => call<{ paid: boolean; models: MotionModel[] }>({ op: "motion_models" }),
+  motionCreate: (sourcePath: string, refPaths: string[], prompt: string, seconds: number, model: string, seriesId: string | null) =>
+    call<{ series_id: string; scene_id: string; shot_id: string; generation_id: string; series_name: string; seconds: number; credits: number }>(
+      { op: "motion_create", source_path: sourcePath, ref_paths: refPaths, prompt, seconds, model, series_id: seriesId }),
   creation: (shotId: string) => call<Creation>({ op: "creation", shot_id: shotId }),
   keepCreation: (generationId: string) => call<{ ok: true }>({ op: "creation_keep", generation_id: generationId }),
   // refunds (2026-11-20): credits back at once, reviewed by anlim, may be reversed with a reason
@@ -314,6 +321,17 @@ export async function uploadMusic(owner: string, file: Blob, name: string, type:
   const ext = (name.split(".").pop() || "mp3").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5) || "mp3";
   const path = `${owner}/music/track-${Date.now()}.${ext}`;
   const { error } = await supabase.storage.from("studio").upload(path, file, { contentType: type || "audio/mpeg", upsert: false });
+  if (error) throw new Error(`Upload failed: ${error.message}`);
+  return path;
+}
+
+// Motion transfer files (2026-11-20): the source clip and reference images, to <owner>/motion/ (storage policy
+// studio_files_write allows mp4 / mov / webm and png / jpg / webp there).
+export async function uploadMotionFile(owner: string, kind: "source" | "ref", file: Blob, type: string): Promise<string> {
+  const ext = type === "video/quicktime" ? "mov" : type === "video/webm" ? "webm" : type.startsWith("video/") ? "mp4"
+    : type === "image/jpeg" ? "jpg" : type === "image/webp" ? "webp" : "png";
+  const path = `${owner}/motion/${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
+  const { error } = await supabase.storage.from("studio").upload(path, file, { contentType: type, upsert: false });
   if (error) throw new Error(`Upload failed: ${error.message}`);
   return path;
 }

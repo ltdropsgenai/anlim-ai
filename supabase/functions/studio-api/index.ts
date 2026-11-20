@@ -229,7 +229,7 @@ async function handle(req: Request): Promise<Response> {
         // every model a creator may pick by hand, with its price for this shot's length (override chips)
         // models.looks (2026-11-20): Seedance 2.0 is cartoon only (fal refuses real-person likenesses)
         const models = await sql`select id, label, credits_per_second * ${sh.duration_s}::int as credits from studio.models
-                                  where active and provider <> 'mock' and (looks is null or ${sh.look ?? "cartoon"} = any(looks))
+                                  where active and provider <> 'mock' and kind = 'clip' and (looks is null or ${sh.look ?? "cartoon"} = any(looks))
                                   order by usd_per_second desc`;
         const [{ paid: canPick }] = await sql`select studio.has_paid(${uid}) as paid`;   // free accounts use Auto (2026-11-20)
         // height check of the current start still when it was uploaded (frame_jobs kind 'height', 2026-11-16)
@@ -251,6 +251,22 @@ async function handle(req: Request): Promise<Response> {
           ${body.series_id ? String(body.series_id) : null}::uuid, ${body.model ? String(body.model) : null}::text) as r`);
         return json(r.r);
       }
+      // Motion transfer (2026-11-20): the creator's clip recast with their reference images; paid accounts only.
+      case "motion_models": {
+        const [{ paid }] = await sql`select studio.has_paid(${uid}) as paid`;
+        const [{ admin }] = await sql`select exists (select 1 from studio.admins where user_id = ${uid}) as admin`;
+        const models = await sql`select id, label, resolution, credits_per_second, min_duration_s, max_duration_s
+                                   from studio.models where active and kind = 'motion' and (provider <> 'mock' or ${admin})
+                                  order by provider = 'mock', max_duration_s desc, credits_per_second desc`;
+        return json({ paid, models });
+      }
+      case "motion_create": {
+        const refs = Array.isArray(body.ref_paths) ? body.ref_paths.map((x: unknown) => String(x)).slice(0, 8) : [];
+        const [r] = await asUser(uid, (tx) => tx`select studio.motion_create(${String(body.source_path || "")}, ${refs}::text[],
+          ${String(body.prompt || "")}, ${Number(body.seconds || 0)}::numeric, ${String(body.model || "")},
+          ${body.series_id ? String(body.series_id) : null}::uuid) as r`);
+        return json(r.r);
+      }
       case "prompt_models": {
         // the video models a paid account may pick at the Home prompt (2026-11-20); free accounts use Auto
         const [{ paid }] = await sql`select studio.has_paid(${uid}) as paid`;
@@ -262,7 +278,7 @@ async function handle(req: Request): Promise<Response> {
       case "creation": {
         const id = String(body.shot_id || "");
         const [x] = await asUser(uid, (tx) => tx`
-          select sh.id as shot_id, sh.action, sh.duration_s, sh.from_text, sh.start_frame_path, sc.id as scene_id, se.id as series_id, se.name as series_name, se.look,
+          select sh.id as shot_id, sh.action, sh.duration_s, sh.from_text, sh.motion_source_path is not null as motion, sh.start_frame_path, sc.id as scene_id, se.id as series_id, se.name as series_name, se.look,
                  f.id as job_id, f.status as frame_status, f.composed_path, f.error as frame_error, f.then_render, f.render_error,
                  g.id as gen_id, g.status as gen_status, g.output_path, g.preview_path, g.error as gen_error, g.model_id,
                  g.credits_reserved, g.settled
@@ -281,7 +297,7 @@ async function handle(req: Request): Promise<Response> {
           image_url: x.frame_status === "ready" || x.frame_status === "approved" ? await sign(composed_path) : null,
           video_url: ready && output_path ? await sign(marked ? preview_path : output_path) : null,
           // a clip made from words: its first frame, as the player's poster only (not offered as an image download)
-          poster_url: x.from_text && start_frame_path ? await sign(start_frame_path) : null });
+          poster_url: (x.from_text || x.motion) && start_frame_path ? await sign(start_frame_path) : null });
       }
       case "creation_keep": {
         // keeping (or downloading) a clip that waits for review approves it: that is when it is charged
@@ -572,7 +588,7 @@ async function handle(req: Request): Promise<Response> {
           select m.id, m.label, m.resolution, m.credits_per_second, m.min_duration_s, m.max_duration_s, m.looks,
                  coalesce((select json_agg(json_build_object('look', r.look, 'kind', r.kind) order by r.look, r.kind)
                              from studio.model_routes r where r.model_id = m.id), '[]') as auto_for
-            from studio.models m where m.active and m.provider <> 'mock' order by m.credits_per_second desc`;
+            from studio.models m where m.active and m.provider <> 'mock' and m.kind = 'clip' order by m.credits_per_second desc`;
         const [counts] = await asUser(uid, (tx) => tx`
           select (select count(*) from studio.series)::int as series,
                  (select count(*) from studio.shots)::int as shots,

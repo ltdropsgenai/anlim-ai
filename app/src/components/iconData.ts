@@ -2,7 +2,7 @@
 // the same glyphs from one source (2026-11-20: native showed placeholder characters). Attribute names are the camelCase
 // SVG props both renderers accept. @anlim
 export type IconName = "studio" | "review" | "cast" | "credits" | "account" | "back" | "cut" | "home" | "workspace" | "assets"
-  | "play" | "music" | "image" | "search" | "check" | "spark" | "arrow" | "fold" | "unfold";
+  | "play" | "music" | "image" | "search" | "check" | "spark" | "arrow" | "fold" | "unfold" | "motion";
 export type Prim = { t: "path" | "rect" | "circle"; p: Record<string, string | number> };
 
 // Plain line icons: stroke only.
@@ -27,6 +27,11 @@ export const LINE: Partial<Record<IconName, Prim[]>> = {
 // Home a clapperboard, Workspace edit tracks and a playhead, Assets a contact sheet, Review a viewfinder with the
 // tally light, Cast two busts with the lead in front, Credits a ticket stub.
 export const NAV: Partial<Record<IconName, { b: Prim[]; s: Prim[]; a: Prim[] }>> = {
+  // Motion transfer (2026-11-20): the source clip behind, the recast frame in front, the recast character's head lit
+  motion: { b: [{t: "rect", p: {"x": 3, "y": 4.5, "width": 12, "height": 9, "rx": 1.8}}],
+    s: [{t: "rect", p: {"x": 3, "y": 4.5, "width": 12, "height": 9, "rx": 1.8}}, {t: "rect", p: {"x": 9, "y": 10.5, "width": 12, "height": 9, "rx": 1.8}},
+        {t: "path", p: {"d": "M14 19.5v-1.6a2.2 2.2 0 0 1 4.4 0v1.6"}}],
+    a: [{t: "circle", p: {"cx": 16.2, "cy": 14.6, "r": 1.7, "stroke": "none"}}] },
   home: { b: [{t: "rect", p: {"x": 3, "y": 9.5, "width": 18, "height": 10.5, "rx": 2}}],
     s: [{t: "rect", p: {"x": 3, "y": 9.5, "width": 18, "height": 10.5, "rx": 2}}, {t: "path", p: {"d": "M7.5 14.5h5"}}],
     a: [{t: "path", p: {"d": "M3.6 8.2 3.2 6.5a1.5 1.5 0 0 1 1.1-1.8l12.6-3a1.5 1.5 0 0 1 1.8 1.1l.4 1.7z", "stroke": "none"}}] },

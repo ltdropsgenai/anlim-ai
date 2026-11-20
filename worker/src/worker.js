@@ -20,13 +20,14 @@ import * as storage from "./storage.js";
 import * as compile from "./compile.js";
 import * as fal from "./providers/fal.js";
 import * as mock from "./providers/mock.js";
+import * as higgsfield from "./providers/higgsfield.js";
 import * as frames from "./frames.js";
 import { watermark, VAULT } from "./watermark.js";
 import * as assemble from "./assemble.js";
 import * as audio from "./audio.js";
 
 const run = promisify(execFile);
-const providers = { fal, mock };
+const providers = { fal, mock, higgsfield };
 const log = (g, msg) => console.log(`${new Date().toISOString()} [${String(g.id).slice(0, 8)}] ${msg}`);
 const later = (ms) => new Date(Date.now() + ms);
 
@@ -107,9 +108,32 @@ async function endFrameGate(g, shot, characters = []) {
 // A clip made from the words alone (Home prompt, output video; studio.enqueue_generation sets route_kind 'text'):
 // the model's text-to-video endpoint, no start or end image (2026-11-20).
 const fromText = (g) => g.route_kind === "text";
+// Motion transfer (2026-11-20): the creator's source clip recast with their reference images (studio.motion_create).
+const isMotion = (g) => g.route_kind === "motion";
+
+async function submitMotion(g, shot) {
+  const videoUrl = await storage.signedUrl(shot.motion_source_path, 7200);
+  const imageUrls = [];
+  for (const p of shot.motion_ref_paths || []) imageUrls.push(await storage.signedUrl(p, 7200));
+  const input = { video_url: videoUrl, image_urls: imageUrls, prompt: shot.action === "Motion transfer" ? "" : (shot.action || ""),
+                  resolution: shot.resolution };
+  const sub = await providers[shot.provider].submit(shot.endpoint, input);
+  const saved = { video_url: shot.motion_source_path, image_urls: shot.motion_ref_paths, prompt: input.prompt,
+                  resolution: input.resolution, endpoint: shot.endpoint };
+  await db.unlock(g.id, {
+    status: "running", request: JSON.stringify(saved), provider_request_id: sub.requestId,
+    provider_status_url: sub.statusUrl, provider_response_url: sub.responseUrl,
+    submitted_at: new Date(), next_poll_at: later(config.pollMs), tries: 0,
+  });
+  log(g, `motion transfer submitted to ${shot.provider} (${sub.requestId}), ${imageUrls.length} reference image(s)`);
+}
 
 async function stepQueued(g) {
   const ctx = await db.shotContext(g);
+  if (isMotion(g)) {
+    if (!ctx.shot.motion_source_path) return fail(g, "the source clip is missing; nothing was charged");
+    return submitMotion(g, ctx.shot);
+  }
   const characters = ctx.characters;
   const text = fromText(g);
   if (text && !ctx.shot.t2v_endpoint) return fail(g, "this model cannot make a clip from words alone; nothing was charged");
@@ -137,15 +161,20 @@ async function stepRunning(g) {
   const { shot } = await db.shotContext(g);
   const p = await providers[shot.provider].poll(g);
   if (p.state === "pending") {
-    if (Date.now() - new Date(g.submitted_at).getTime() > config.providerTimeoutMin * 60000)
-      return fail(g, `provider timeout after ${config.providerTimeoutMin} min`);
+    const limit = isMotion(g) ? config.motionTimeoutMin : config.providerTimeoutMin;
+    if (Date.now() - new Date(g.submitted_at).getTime() > limit * 60000)
+      return fail(g, `provider timeout after ${limit} min`);
     return db.unlock(g.id, { next_poll_at: later(config.pollMs) });
   }
   if (p.state === "failed") return fail(g, `provider: ${p.error}`);
   const dir = path.join(config.workDir, g.id);
   const raw = path.join(dir, "raw.mp4"), clip = path.join(dir, "clip.mp4");
   await fetchTo(p.videoUrl, raw);
-  await run("ffmpeg", ["-y", "-v", "error", "-i", raw, "-map", "0:v:0", "-c", "copy", "-an", clip]);  // models add speech; strip it
+  if (isMotion(g)) {      // motion transfer keeps the source clip's own sound (the creator's audio)
+    await run("ffmpeg", ["-y", "-v", "error", "-i", raw, "-map", "0:v:0", "-map", "0:a?", "-c", "copy", clip]);
+  } else {
+    await run("ffmpeg", ["-y", "-v", "error", "-i", raw, "-map", "0:v:0", "-c", "copy", "-an", clip]);  // models add speech; strip it
+  }
   // Free accounts (never bought credits or a plan) see a watermarked copy; the clean clip goes to a folder they
   // can't read and is shown once they pay (studio.has_paid, watermark.js). output_path is always the clean clip.
   const [{ paid }] = await db.q("select studio.has_paid($1) as paid", [g.owner]);
@@ -161,7 +190,7 @@ async function stepRunning(g) {
   // A clip made from words has no start frame: its own first frame becomes the shot's (the checker compares against
   // it, the refund page shows it, and the next shot in the project can start from it). Not a creator-approved frame
   // for the head count: confirmed_spec stays false for text clips (stepChecking).
-  if (fromText(g) && (!shot.start_frame_path || shot.start_frame_path.endsWith("/clip-first-frame.png"))) {
+  if ((fromText(g) || isMotion(g)) && (!shot.start_frame_path || shot.start_frame_path.endsWith("/clip-first-frame.png"))) {
     const first = path.join(dir, "clip-first-frame.png");
     await run("ffmpeg", ["-y", "-v", "error", "-i", clip, "-frames:v", "1", first]);
     const framePath = `${g.owner}/frames/gen-${g.id}/clip-first-frame.png`;
@@ -176,6 +205,15 @@ async function stepRunning(g) {
 }
 
 async function stepChecking(g) {
+  if (isMotion(g)) {
+    // Motion transfer clips keep the source's camera cuts, which the clip checker reads as faults; until it has a
+    // motion mode (swap check across cuts), the clip goes to review unchecked and is charged like any made clip.
+    await db.settle(g.id, "charge");
+    await db.unlock(g.id, { status: "review", finished_at: new Date(),
+      error: "not checked: motion transfer clips are not checked automatically yet; look for swapped faces or costumes" });
+    await db.setShot(g.shot_id, "review");
+    return log(g, "motion transfer: sent to review unchecked");
+  }
   const { shot, characters } = await db.shotContext(g);
   const dir = path.join(config.workDir, g.id);
   const clip = path.join(dir, "clip.mp4");

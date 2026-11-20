@@ -14,20 +14,22 @@ import { Logo } from "./Logo";
 import { NavGlow, Wash } from "./NavGlow";
 export { Logo };
 
-type Href = "/" | "/workspace" | "/storage" | "/review" | "/library" | "/billing";
+type Href = "/" | "/workspace" | "/motion" | "/storage" | "/review" | "/library" | "/billing";
 type Item = { href: Href; label: string; long?: string; icon: IconName; match: (p: string) => boolean; phone: boolean };
 // 2026-11-19 (Londi): Home (features, models, tools), Workspace (where things are made), Assets (everything made).
 const ITEMS: Item[] = [
   { href: "/", label: "Home", icon: "home", match: (p) => p === "/", phone: true },
   { href: "/workspace", label: "Workspace", icon: "workspace", phone: true,
     match: (p) => p.startsWith("/workspace") || p.startsWith("/shots") || p.startsWith("/shot/") || p.startsWith("/cut/") },
+  // 2026-11-20: motion transfer; not in the phone tab bar (five tabs already), reached from Home on a phone
+  { href: "/motion", label: "Motion", long: "Motion transfer", icon: "motion", match: (p) => p.startsWith("/motion"), phone: false },
   { href: "/storage", label: "Assets", icon: "assets", match: (p) => p.startsWith("/storage"), phone: true },
   { href: "/review", label: "Review", icon: "review", match: (p) => p.startsWith("/review") || p.startsWith("/clip/"), phone: true },
   { href: "/library", label: "Cast", long: "Cast & places", icon: "cast", match: (p) => p.startsWith("/library"), phone: true },
   { href: "/billing", label: "Credits", icon: "credits", match: (p) => p.startsWith("/billing"), phone: false },
 ];
 // compact rail and tab bar geometry (the tally light's position is computed from it)
-const RAIL_W = 72, ITEM_H = 52, TAB_H = 58, GAP = 14, TALLY = 22, GROUP_BREAK = 4;   // Cast and Credits sit apart
+const RAIL_W = 72, ITEM_H = 52, TAB_H = 58, GAP = 14, TALLY = 22, GROUP_BREAK = 5;   // Cast and Credits sit apart (index of Cast in the rail)
 const SIDE_W = 248, ROW_H = 40;
 const CLIP_5S = 200;   // credits of a 5 s Kling 4.0 clip (40 cr/s, studio.models), for "about N clips" on the gauge
 const TITLES: [RegExp, string][] = [
@@ -191,10 +193,10 @@ export function Shell({ children }: { children: ReactNode }) {
       )}
 
       {section("MAKE")}
-      {ITEMS.slice(0, 4).map((it) => sideRow(it.href, it.icon, it.label, it.match(path), () => router.navigate(it.href),
+      {ITEMS.slice(0, 5).map((it) => sideRow(it.href, it.icon, it.long ?? it.label, it.match(path), () => router.navigate(it.href),
         it.href === "/review" && toReview > 0 ? String(toReview) : null))}
       {section("LIBRARY")}
-      {sideRow("/library", "cast", "Cast & places", ITEMS[4].match(path), () => router.navigate("/library"))}
+      {sideRow("/library", "cast", "Cast & places", ITEMS[5].match(path), () => router.navigate("/library"))}
       {me?.is_admin && <>
         {section("ADMIN")}
         {sideRow("/refunds", "review", "Refund requests", path.startsWith("/refunds"), () => router.navigate("/refunds" as never))}
