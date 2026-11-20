@@ -11,7 +11,7 @@ primary_region = "ord"
 
 [env]
   WORKER_ID = "fly-1"
-  CHECKER_MAX_JOBS = "2"
+  CHECKER_MAX_JOBS = "1"   # 2 checks at once ran the 2 GB machine out of memory (OOM restarts every ~20 min, 2026-11-19)
 
 # Always on: one machine, restarted if it stops.
 [[restart]]
