@@ -181,6 +181,16 @@ async function call<T>(body: Record<string, unknown>, fn = "studio-api"): Promis
   return j as T;
 }
 
+// Quick create from the Home prompt (2026-11-20): an image, or an image and a clip, in an "Untitled project"
+export type Output = "image" | "video";
+export type QuickCreated = { series_id: string; scene_id: string; shot_id: string; job_id: string; series_name: string;
+  output: Output; clip_credits: number };
+export type Creation = { shot_id: string; action: string; duration_s: number; scene_id: string; series_id: string; series_name: string;
+  look: Look; job_id: string | null; frame_status: string | null; frame_error: string | null; then_render: boolean | null;
+  render_error: string | null; gen_id: string | null; gen_status: string | null; gen_error: string | null; model_id: string | null;
+  model_label: string | null; credits_reserved: number | null; settled: boolean | null; watermarked: boolean;
+  image_url: string | null; video_url: string | null };
+
 export const api = {
   me: () => call<{ user_id: string; email: string; balance: number; reserved: number; plan_credits: number;
                    plan_id: string | null; plan_status: string | null;
@@ -218,6 +228,10 @@ export const api = {
   setSeriesGenre: (seriesId: string, genre: Genre | null) => call<{ ok: true }>({ op: "series_genre", series_id: seriesId, genre }),
   assets: (q: AssetQuery) => call<{ items: Asset[]; total: number; counts: Record<string, number> }>({ op: "assets", ...q }),
   home: () => call<HomeData>({ op: "home" }),
+  quickCreate: (prompt: string, look: Look, durationS: number, output: Output, seriesId: string | null) =>
+    call<QuickCreated>({ op: "quick_create", prompt, look, duration_s: durationS, output, series_id: seriesId }),
+  creation: (shotId: string) => call<Creation>({ op: "creation", shot_id: shotId }),
+  keepCreation: (generationId: string) => call<{ ok: true }>({ op: "creation_keep", generation_id: generationId }),
   setSeriesQuality: (seriesId: string, quality: Quality) => call<{ ok: true }>({ op: "series_quality", series_id: seriesId, quality }),
   // managing work (2026-11-19)
   renameSeries: (id: string, name: string) => call<{ ok: true }>({ op: "series_rename", series_id: id, name }),

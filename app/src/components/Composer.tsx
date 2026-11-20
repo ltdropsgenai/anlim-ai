@@ -1,11 +1,12 @@
 // Home composer (2026-11-19, Londi: "the homepage should be similar to what all other tools show... 'What are we
-// working on today?' with a prompt window"). The prompt becomes a real shot: in a new project (series + "Scene 1")
-// or added to the latest scene of a project the creator picks; its start frame is drawn from the prompt right away
-// (start-frame mode "prompt", 20 credits) and the Workspace opens on it. @anlim
+// working on today?' with a prompt window"). 2026-11-20: the prompt makes an image, or an image and a short clip
+// (studio.quick_create), in a new "Untitled project" or the project the creator picks; the result shows here with
+// download and "start a project from this" (CreationCard). Not every creator is working on a project. @anlim
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
-import { api, Look, Series } from "../lib/api";
+import { api, Look, Output, Series } from "../lib/api";
+import { CreationCard } from "./CreationCard";
 import { c, font } from "../lib/theme";
 import { clearDraft, peekDraft, saveDraft } from "../lib/draft";
 
@@ -24,18 +25,14 @@ const IDEAS: Record<Look, string[]> = {
   ],
 };
 const LENGTHS = [5, 10];
-
-// "A small fox tiptoes across..." -> "A small fox tiptoes across a snowy" (series names stay short)
-function nameFrom(prompt: string) {
-  const words = prompt.replace(/\s+/g, " ").trim().split(" ").slice(0, 6).join(" ");
-  const n = words.length > 48 ? words.slice(0, 48).trim() : words;
-  return n ? n[0].toUpperCase() + n.slice(1) : "Untitled project";
-}
+const CLIP_CREDITS_PER_S = 40;   // Kling 4.0, Auto's pick (studio.models); the server checks the real price
 
 export function Composer({ narrow, guest = false }: { narrow: boolean; guest?: boolean }) {
   const [text, setText] = useState("");
   const [look, setLook] = useState<Look>("cartoon");
   const [len, setLen] = useState(5);
+  const [output, setOutput] = useState<Output>("video");
+  const [made, setMade] = useState<{ shot: string; output: Output } | null>(null);
   const [series, setSeries] = useState<Series[]>([]);
   const [target, setTarget] = useState<string | null>(null);   // null = new project
   const [busy, setBusy] = useState(false);
@@ -50,8 +47,8 @@ export function Composer({ narrow, guest = false }: { narrow: boolean; guest?: b
     const d = peekDraft();
     if (!d) return;
     clearDraft();
-    setText(d.text); setLook(d.look); setLen(d.len);
-    make(d.text, d.look, d.len, null);
+    setText(d.text); setLook(d.look); setLen(d.len); setOutput(d.output ?? "video");
+    make(d.text, d.look, d.len, d.output ?? "video", null);
   }, [guest]);   // eslint-disable-line react-hooks/exhaustive-deps
   const picked = useMemo(() => series.find((x) => x.id === target) ?? null, [series, target]);
   // adding to an existing project uses that project's look; the toggle is for new projects
@@ -62,32 +59,22 @@ export function Composer({ narrow, guest = false }: { narrow: boolean; guest?: b
     if (!ready) return;
     if (guest) {
       // visitors: keep the prompt, ask for an account; the shot is made as soon as they are signed in
-      saveDraft({ text: text.trim(), look, len });
+      saveDraft({ text: text.trim(), look, len, output });
       router.navigate({ pathname: "/login", params: { mode: "signup" } });
       return;
     }
-    await make(text.trim(), look, len, picked);
+    await make(text.trim(), look, len, output, picked);
   }
 
-  async function make(action: string, lk: Look, ln: number, p: Series | null) {
+  async function make(action: string, lk: Look, ln: number, out: Output, p: Series | null) {
     setBusy(true); setError(null);
     try {
-      let seriesId: string, sceneId: string;
-      if (p) {
-        seriesId = p.id;
-        const last = [...p.scenes].sort((a, b) => b.ord - a.ord)[0];
-        sceneId = last ? last.id : (await api.createScene(seriesId, "Scene 1")).id;
-      } else {
-        seriesId = (await api.createSeries(nameFrom(action), lk)).id;
-        sceneId = (await api.createScene(seriesId, "Scene 1")).id;
-      }
-      const shot = await api.createShot(sceneId, action, ln);
-      // draw the first frame right away (20 credits); if that is refused (e.g. not enough credits) the shot still
-      // opens and the Workspace offers the same option
-      try { await api.requestStartFrame(shot.id, "prompt"); } catch { /* shown in the Workspace */ }
-      router.navigate({ pathname: "/workspace", params: { series: seriesId, scene: sceneId, shot: shot.id } });
+      const r = await api.quickCreate(action, lk, ln, out, p ? p.id : null);
+      setMade({ shot: r.shot_id, output: out });
+      if (!p) api.series().then(setSeries).catch(() => {});      // the new Untitled project shows in "Add to"
     } catch (e) {
       setError((e as Error).message);
+    } finally {
       setBusy(false);
     }
   }
@@ -95,7 +82,7 @@ export function Composer({ narrow, guest = false }: { narrow: boolean; guest?: b
   return (
     <View style={[s.wrap, narrow && { paddingTop: 28 }]}>
       <Text style={[s.h1, font.display, narrow && { fontSize: 30, lineHeight: 34 }]}>What are we making today?</Text>
-      <Text style={s.lead}>Describe a shot. anlim draws its first frame and opens it in your Workspace, ready to animate.</Text>
+      <Text style={s.lead}>Describe a shot. anlim makes the image or the clip; download it, or keep building it as a project.</Text>
 
       <View style={[s.box, focus && { borderColor: c.accent }]}>
         <TextInput
@@ -116,6 +103,14 @@ export function Composer({ narrow, guest = false }: { narrow: boolean; guest?: b
         />
         <View style={s.bar}>
           <View style={[s.row, { flex: 1 }]}>
+            <View style={s.seg} accessibilityRole="radiogroup" accessibilityLabel="Make">
+              {(["image", "video"] as Output[]).map((o) => (
+                <Pressable key={o} onPress={() => setOutput(o)} style={[s.segItem, output === o && s.segOn]}
+                  accessibilityRole="radio" accessibilityState={{ checked: output === o }}>
+                  <Text style={{ color: output === o ? c.onAccent : c.ink, fontSize: 13, fontWeight: "600" }}>{o === "image" ? "Image" : "Video"}</Text>
+                </Pressable>
+              ))}
+            </View>
             <View style={s.seg} accessibilityRole="radiogroup" accessibilityLabel="Look">
               {(["cartoon", "photoreal"] as Look[]).map((l) => {
                 const on = effLook === l, locked = !!picked;
@@ -127,16 +122,16 @@ export function Composer({ narrow, guest = false }: { narrow: boolean; guest?: b
                 );
               })}
             </View>
-            <View style={s.seg} accessibilityRole="radiogroup" accessibilityLabel="Shot length">
+            {output === "video" && <View style={s.seg} accessibilityRole="radiogroup" accessibilityLabel="Clip length">
               {LENGTHS.map((n) => (
                 <Pressable key={n} onPress={() => setLen(n)} style={[s.segItem, len === n && s.segOn]} accessibilityRole="radio" accessibilityState={{ checked: len === n }}>
                   <Text style={[{ color: len === n ? c.onAccent : c.ink, fontSize: 12 }, font.mono]}>{n} S</Text>
                 </Pressable>
               ))}
-            </View>
+            </View>}
           </View>
           <Pressable onPress={go} disabled={!ready} style={[s.send, !ready && { opacity: 0.35 }]} accessibilityRole="button"
-            accessibilityLabel={guest ? "Create an account and make this shot" : "Create this shot"}>
+            accessibilityLabel={guest ? `Create an account and make this ${output}` : `Make this ${output}`}>
             <Text style={{ color: c.onAccent, fontSize: 20, fontWeight: "800", lineHeight: 22 }}>{busy ? "…" : "↑"}</Text>
           </Pressable>
         </View>
@@ -156,20 +151,22 @@ export function Composer({ narrow, guest = false }: { narrow: boolean; guest?: b
         </View>
       )}
 
-      {busy && <Text style={{ color: c.link, marginTop: 12, textAlign: "center" }}>Setting up your shot and starting its first frame…</Text>}
+      {busy && <Text style={{ color: c.link, marginTop: 12, textAlign: "center" }}>Starting…</Text>}
       {error && <Text style={{ color: c.fail, marginTop: 12, textAlign: "center" }}>{error}</Text>}
 
-      <View style={[s.row, { marginTop: 18, justifyContent: "center" }]}>
+      {made && <CreationCard key={made.shot} shotId={made.shot} output={made.output} onAgain={() => { setMade(null); setText(""); input.current?.focus(); }} />}
+
+      {!made && <View style={[s.row, { marginTop: 18, justifyContent: "center" }]}>
         {IDEAS[effLook].slice(narrow ? 2 : 0).map((idea) => (
           <Pressable key={idea} style={s.idea} onPress={() => { setText(idea); input.current?.focus(); }} accessibilityRole="button"
             accessibilityLabel={`Use idea: ${idea}`}>
             <Text style={{ color: c.sub, fontSize: 13 }} numberOfLines={1}>{idea}</Text>
           </Pressable>
         ))}
-      </View>
+      </View>}
       <Text style={[s.small, { textAlign: "center", marginTop: 14 }]}>
-        {guest ? "Press the arrow and create a free account to see your first frame. New accounts get free starter credits; the first frame uses 20."
-          : "The first frame uses 20 credits. Rendering the clip is a separate step, priced before you start."}
+        {output === "image" ? "An image uses 20 credits." : `A ${len} s video uses about ${20 + CLIP_CREDITS_PER_S * len} credits: 20 for the image, the rest for the clip, which is charged only if it passes our check or you keep it.`}
+        {guest ? " Press the arrow and create a free account to see it; new accounts get free starter credits." : picked ? ` It is added to ${picked.name}.` : " It is saved in a new Untitled project in your Workspace."}
       </Text>
     </View>
   );

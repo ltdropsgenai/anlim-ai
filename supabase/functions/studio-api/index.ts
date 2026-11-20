@@ -237,6 +237,46 @@ async function handle(req: Request): Promise<Response> {
           start_job: sjob ? { ...sjob, composed_url: await sign(sjob.composed_path) } : null, context: ctx ?? null,
           latest: gen ?? null, height_job: hjob ?? null, owner: uid, models });
       }
+      // ---- quick create from the Home prompt (2026-11-20): an image, or an image and a clip, in a new "Untitled project"
+      // (or the project the creator picked); the result card polls "creation" and offers download or the Workspace
+      case "quick_create": {
+        const prompt = String(body.prompt || "");
+        const camera = CAMERA_WORDS.test(prompt) ? null : "locked";
+        const [r] = await asUser(uid, (tx) => tx`select studio.quick_create(${prompt}, ${String(body.look || "cartoon")},
+          ${Number(body.duration_s || 5)}::int, ${String(body.output || "image")}, ${camera},
+          ${body.series_id ? String(body.series_id) : null}::uuid) as r`);
+        return json(r.r);
+      }
+      case "creation": {
+        const id = String(body.shot_id || "");
+        const [x] = await asUser(uid, (tx) => tx`
+          select sh.id as shot_id, sh.action, sh.duration_s, sc.id as scene_id, se.id as series_id, se.name as series_name, se.look,
+                 f.id as job_id, f.status as frame_status, f.composed_path, f.error as frame_error, f.then_render, f.render_error,
+                 g.id as gen_id, g.status as gen_status, g.output_path, g.preview_path, g.error as gen_error, g.model_id,
+                 g.credits_reserved, g.settled
+            from studio.shots sh join studio.scenes sc on sc.id = sh.scene_id join studio.series se on se.id = sc.series_id
+            left join lateral (select * from studio.frame_jobs where shot_id = sh.id and kind = 'start' order by created_at desc limit 1) f on true
+            left join lateral (select * from studio.generations where shot_id = sh.id order by created_at desc limit 1) g on true
+           where sh.id = ${id}`);
+        if (!x) return json({ error: "not found" }, 404);
+        const [m] = x.model_id ? await sql`select label from studio.models where id = ${x.model_id}` : [];
+        const [{ paid }] = await sql`select studio.has_paid(${uid}) as paid`;
+        const marked = !paid && !!x.preview_path;
+        // the clip can be watched while it is checked; it can be downloaded (kept) once the check is done
+        const ready = x.gen_status === "checking" || x.gen_status === "review" || x.gen_status === "succeeded";
+        const { composed_path, output_path, preview_path, ...rest } = x;
+        return json({ ...rest, model_label: m?.label ?? null, watermarked: marked,
+          image_url: x.frame_status === "ready" || x.frame_status === "approved" ? await sign(composed_path) : null,
+          video_url: ready && output_path ? await sign(marked ? preview_path : output_path) : null });
+      }
+      case "creation_keep": {
+        // keeping (or downloading) a clip that waits for review approves it: that is when it is charged
+        const id = String(body.generation_id || "");
+        const [g] = await asUser(uid, (tx) => tx`select status from studio.generations where id = ${id}`);
+        if (!g) return json({ error: "not found" }, 404);
+        if (g.status === "review") await asUser(uid, (tx) => tx`select studio.review_generation(${id}, 'approve', ${[]}, ${"kept from the Home result"})`);
+        return json({ ok: true });
+      }
       case "end_frame": {
         const id = String(body.shot_id || ""), instruction = String(body.instruction || "");
         const [r] = await asUser(uid, (tx) => tx`select studio.request_end_frame(${id}, ${instruction}) as job_id`);

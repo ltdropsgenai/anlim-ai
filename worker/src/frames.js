@@ -337,6 +337,21 @@ async function stepRunning(j) {
   log(j, "edit stored; composing");
 }
 
+// Home "Video" (2026-11-20, Londi: the first prompt makes a still and/or a short clip). The creator asked for a clip,
+// not a frame to review, so the drawn frame is approved and the render starts at once with Auto's model. A refusal
+// (not enough credits, a length the model cannot make) is kept on the frame job and shown on the result card; the
+// still stays theirs either way.
+async function renderNow(j) {
+  try {
+    await db.q("select studio.decide_frame($1, 'approve')", [j.id]);
+    const [g] = await db.q("select studio.enqueue_generation($1, null) as id", [j.shot_id]);
+    log(j, `render started (${g.id})`);
+  } catch (e) {
+    await db.updateFrame(j.id, { render_error: String(e.message || e).slice(0, 500) });
+    log(j, `render not started: ${e.message}`);
+  }
+}
+
 async function stepComposing(j) {
   const { shot, characters, platePaths, look } = await db.frameContext(j);
   const dir = path.join(config.workDir, "frames", j.id);
@@ -353,7 +368,9 @@ async function stepComposing(j) {
     const check = { verdict: staging?.verdict === "OK" ? "PASS" : "FLAG", drift: [], why: "drawn from your description", staging };
     await db.updateFrame(j.id, { status: "ready", composed_path: composedPath, check_result: JSON.stringify(check),
       locked_by: null, locked_until: null });
-    return log(j, "start frame from the description ready");
+    log(j, "start frame from the description ready");
+    if (j.then_render) await renderNow(j);
+    return;
   }
   const base = await baseStill(j, shot);
   const raw = path.join(dir, "raw.png"), out = path.join(dir, "out.png");
