@@ -4,6 +4,7 @@
 // download and "start a project from this" (CreationCard). Not every creator is working on a project. @anlim
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { FloatCard } from "./FloatCard";
 import { router } from "expo-router";
 import { api, Look, Output, PromptModel, Series } from "../lib/api";
 import { autoNote, MODEL_NOTES } from "../lib/modelNotes";
@@ -96,7 +97,7 @@ export function Composer({ narrow, guest = false, afterBanner = false }: { narro
       <Text style={[s.h1, font.display, narrow && { fontSize: 30, lineHeight: 34 }]}>What are we making today?</Text>
       <Text style={s.lead}>Describe a shot. anlim makes the image or the clip; download it, or keep building it as a project.</Text>
 
-      <View style={[s.box, focus && { borderColor: c.accent }]}>
+      <FloatCard float style={[s.box, focus && { borderColor: c.accent }]}>
         <TextInput
           ref={input as never}
           style={[s.input, Platform.OS === "web" && ({ outlineStyle: "none" } as object)]}
@@ -147,7 +148,7 @@ export function Composer({ narrow, guest = false, afterBanner = false }: { narro
             <Text style={{ color: c.onAccent, fontSize: 20, fontWeight: "800", lineHeight: 22 }}>{busy ? "…" : "↑"}</Text>
           </Pressable>
         </View>
-      </View>
+      </FloatCard>
 
       {output === "video" && !guest && fits.length > 0 && (
         <View style={[s.row, { marginTop: 12, justifyContent: "center" }]} accessibilityRole="radiogroup" accessibilityLabel="Video model">
@@ -219,7 +220,7 @@ const s = StyleSheet.create({
   wrap: { width: "100%", maxWidth: 860, alignSelf: "center", paddingTop: 56, paddingBottom: 8 },
   h1: { color: c.ink, fontSize: 46, lineHeight: 50, textAlign: "center" },
   lead: { color: c.sub, fontSize: 16, lineHeight: 24, textAlign: "center", marginTop: 12, marginBottom: 26, maxWidth: 620, alignSelf: "center" },
-  box: { backgroundColor: c.card, borderWidth: 1, borderColor: c.line, borderRadius: 24, padding: 18 },
+  box: { borderWidth: 1, borderColor: "transparent", borderRadius: 24, padding: 18 },   // the surface is FloatCard's
   input: { color: c.ink, fontSize: 17, lineHeight: 25, minHeight: 96, maxHeight: 260, textAlignVertical: "top", padding: 4 },
   bar: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 10 },
   row: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },

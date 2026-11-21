@@ -4,10 +4,12 @@ import { ReactNode } from "react";
 import { StyleProp, View, ViewStyle } from "react-native";
 import { font } from "../lib/theme";
 
-export function FloatCard({ children, style, compact = false, hover = false }:
-  { children: ReactNode; style?: StyleProp<ViewStyle>; compact?: boolean; hover?: boolean }) {
+// `float` (2026-11-20, Londi: the prompt box should "appear 3D and ... floating on the background"): a deeper, two-part
+// shadow, a brighter top edge and a slow drift that stops while the creator types (anlim-float CSS in _layout.tsx)
+export function FloatCard({ children, style, compact = false, hover = false, float = false }:
+  { children: ReactNode; style?: StyleProp<ViewStyle>; compact?: boolean; hover?: boolean; float?: boolean }) {
   return (
-    <div className={`anlim-glass${compact ? " anlim-glass--compact" : ""}${hover ? " anlim-glass--hover" : ""}`}>
+    <div className={`anlim-glass${compact ? " anlim-glass--compact" : ""}${hover ? " anlim-glass--hover" : ""}${float ? " anlim-float" : ""}`}>
       <View style={[{ flexGrow: 1 }, style]}>{children}</View>
     </div>
   );

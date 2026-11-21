@@ -5,7 +5,7 @@ import { StyleProp, Text, View, ViewStyle } from "react-native";
 import { c, font } from "../lib/theme";
 
 export function FloatCard({ children, style, compact = false }:
-  { children: ReactNode; style?: StyleProp<ViewStyle>; compact?: boolean; hover?: boolean }) {
+  { children: ReactNode; style?: StyleProp<ViewStyle>; compact?: boolean; hover?: boolean; float?: boolean }) {
   return (
     <View style={{ backgroundColor: "#141418", borderRadius: compact ? 14 : 20,
       shadowColor: "#000", shadowOpacity: 0.6, shadowRadius: compact ? 16 : 28, shadowOffset: { width: 0, height: compact ? 8 : 16 }, elevation: compact ? 4 : 8 }}>
