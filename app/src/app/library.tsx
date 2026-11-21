@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { api, FRAME_CREDITS, Genre, GENRE_NAMES, Kind, Library, Look, Series, ShotRow, uploadImage, Quality, QUALITY_NAMES, QUALITY_HELP } from "../lib/api";
-import { c, font } from "../lib/theme";
+import { c, font, pageBg } from "../lib/theme";
 import { StillPicker } from "../components/StillPicker";
 
 const MAKING = ["queued", "running", "composing"];
@@ -74,7 +74,7 @@ export default function LibraryScreen() {
   const withStill = shots.filter((r) => r.series_id === sid && r.has_start_frame);
 
   return (
-    <ScrollView style={{ backgroundColor: c.bg }} contentContainerStyle={s.page}>
+    <ScrollView style={{ backgroundColor: pageBg }} contentContainerStyle={s.page}>
       <View style={s.row}>
         {series.map((x) => (
           <Pressable key={x.id} onPress={() => { setSid(x.id); setLib(null); setStyle(null); }} style={[s.chip, x.id === sid && s.chipOn]} accessibilityRole="tab"

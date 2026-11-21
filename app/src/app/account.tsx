@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Link, router } from "expo-router";
 import { supabase } from "../lib/supabase";
-import { c } from "../lib/theme";
+import { c, pageBg } from "../lib/theme";
 import { Connections } from "../components/Connections";
 import { DangerZone } from "../components/DangerZone";
 import { PhoneCheck } from "../components/PhoneCheck";
@@ -27,7 +27,7 @@ export default function Account() {
     if (error) setError(error.message);
   }
   return (
-    <ScrollView style={{ backgroundColor: c.bg }} contentContainerStyle={s.page}>
+    <ScrollView style={{ backgroundColor: pageBg }} contentContainerStyle={s.page}>
       <View style={s.card}>
         <Text style={s.label}>Signed in as</Text>
         <Text style={s.big}>{email ?? " "}</Text>

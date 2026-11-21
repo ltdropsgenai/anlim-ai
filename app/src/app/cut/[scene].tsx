@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Link, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { api, Cut, CutFormat } from "../../lib/api";
-import { c, font } from "../../lib/theme";
+import { c, font, pageBg } from "../../lib/theme";
 import { Music, SoundPanel } from "../../components/SoundPanel";
 import { downloadFile } from "../../lib/download";
 import { ClipPlayer } from "../../components/ClipPlayer";
@@ -56,7 +56,7 @@ export default function SceneCut() {
 
   if (!cuts) return error ? <Text style={[s.err, { padding: 16 }]}>{error}</Text> : <ActivityIndicator style={{ marginTop: 40 }} />;
   return (
-    <ScrollView style={{ backgroundColor: c.bg }} contentContainerStyle={s.page}>
+    <ScrollView style={{ backgroundColor: pageBg }} contentContainerStyle={s.page}>
       <Text style={s.title}>{title ?? "Scene"}: the cut</Text>
       <Text style={s.sub}>Joins every approved clip in this scene, in shot order, frame-exact. Shots without an approved clip are left out and listed. Making a cut is free.</Text>
 

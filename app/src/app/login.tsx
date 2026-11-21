@@ -6,7 +6,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 
 import { router, useLocalSearchParams } from "expo-router";
 import { Captcha, CAPTCHA_ON } from "../components/Captcha";
 import { appUrl, authFlags, supabase } from "../lib/supabase";
-import { c } from "../lib/theme";
+import { c, pageBg } from "../lib/theme";
 import { Logo } from "../components/Logo";
 import { peekDraft } from "../lib/draft";
 
@@ -131,7 +131,7 @@ export default function Login() {
 }
 
 const s = StyleSheet.create({
-  page: { flex: 1, alignItems: "center", justifyContent: "center", padding: 16, backgroundColor: c.bg },
+  page: { flex: 1, alignItems: "center", justifyContent: "center", padding: 16, backgroundColor: pageBg },
   // 2026-11-20 (no outlined boxes): a raised surface; the fields are filled wells, not outlined boxes
   card: { width: "100%", maxWidth: 400, backgroundColor: "#0F0F13", borderRadius: 16, padding: 24, gap: 12,
           shadowColor: "#000", shadowOpacity: 0.55, shadowRadius: 32, shadowOffset: { width: 0, height: 16 } },

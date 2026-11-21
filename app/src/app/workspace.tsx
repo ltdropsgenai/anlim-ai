@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { api, Genre, GENRE_NAMES, Look, MODEL_NAMES, QueueItem, Series, ShotRow } from "../lib/api";
-import { c, font, verdictColor, verdictLabel } from "../lib/theme";
+import { c, font, verdictColor, verdictLabel, pageBg } from "../lib/theme";
 import { chip, GEN, pad2, TONE } from "../lib/shotStatus";
 import { AddShot } from "../components/AddShot";
 import { ShotPanel } from "../components/ShotPanel";
@@ -266,10 +266,10 @@ export default function Workspace() {
     </ScrollView>
   );
 
-  if (narrow) return <View style={{ flex: 1, backgroundColor: c.bg }}>{project}</View>;
+  if (narrow) return <View style={{ flex: 1, backgroundColor: pageBg }}>{project}</View>;
 
   return (
-    <View style={{ flex: 1, flexDirection: "row", backgroundColor: c.bg }}>
+    <View style={{ flex: 1, flexDirection: "row", backgroundColor: pageBg }}>
       {project}
       <View style={{ flex: 1, minWidth: 0 }}>
         {shotId ? <ShotPanel key={shotId} id={shotId} onRendered={load} onDeleted={() => { pick({ shot: "" }); load(); }} />

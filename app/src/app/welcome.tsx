@@ -39,7 +39,7 @@ export default function Welcome() {
   const monthly = (plans ?? []).filter((p) => p.kind === "plan" && p.billing_interval === "month");
 
   return (
-    <PublicFrame signedIn={signedIn} sun>
+    <PublicFrame signedIn={signedIn}>
       <View style={[s.page, narrow && { padding: 16 }]}>
         <SplashBanner height={narrow ? 180 : 340} />
         <View style={[s.hero, narrow && { paddingVertical: 32 }, { marginTop: narrow ? -24 : -44, paddingTop: 0 }]}>

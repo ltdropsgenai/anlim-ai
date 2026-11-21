@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 // anlim.ai Pro studio theme (2026-11-19, Londi: direction D's look with B's plain wording). @anlim
 // Near-black studio surfaces, one tungsten-orange accent (no competitor uses it: Higgsfield is lime, OpenArt magenta),
 // status colours tuned for a dark background. Text contrast: ink 18:1, sub 8:1, muted 5.6:1 on the card colour.
@@ -9,6 +10,9 @@ export const c = {
   flag: "#FDE68A", flagBg: "#2E2608", flagLine: "#6B5512",
   fail: "#FCA5A5", failBg: "#2A1214", failLine: "#6B2A2E",
 };
+// Page backgrounds (2026-11-20): transparent on the web so the sun light (components/SunLight) shows through; native
+// pages keep the solid background.
+export const pageBg = Platform.OS === "web" ? "transparent" : c.bg;
 // Fonts: Space Grotesk for display, Inter for text, JetBrains Mono for slates, timecodes and credits. Loaded on the
 // web from Google Fonts (_layout); native falls back to the system font. Plain objects (not StyleSheet) on purpose:
 // on the web they become inline styles, which win over the base text font rule.

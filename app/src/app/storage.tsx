@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { api, Asset, AssetKind, ASSET_KIND_NAMES, AssetQuery, AssetStatus, Genre, GENRE_NAMES, Look, Series } from "../lib/api";
-import { c, font, verdictLabel } from "../lib/theme";
+import { c, font, verdictLabel, pageBg } from "../lib/theme";
 import { Grid } from "../components/Grid";
 import { Icon, IconName } from "../components/Icon";
 import { MediaView } from "../components/MediaView";
@@ -180,7 +180,7 @@ export default function Assets() {
   const active = [f.series_id, f.look, f.genre, f.status].filter(Boolean).length;
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.bg }}>
+    <View style={{ flex: 1, backgroundColor: pageBg }}>
       <ScrollView contentContainerStyle={[s.page, narrow && { padding: 14 }]}>
         <View style={[s.row, { gap: 10 }]}>
           <View style={s.search}>

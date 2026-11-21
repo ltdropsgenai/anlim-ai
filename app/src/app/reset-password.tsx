@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
 import { authFlags, supabase } from "../lib/supabase";
-import { c } from "../lib/theme";
+import { c, pageBg } from "../lib/theme";
 
 export default function ResetPassword() {
   const [password, setPassword] = useState("");
@@ -47,7 +47,7 @@ export default function ResetPassword() {
 }
 
 const s = StyleSheet.create({
-  page: { flex: 1, alignItems: "center", justifyContent: "center", padding: 16, backgroundColor: c.bg },
+  page: { flex: 1, alignItems: "center", justifyContent: "center", padding: 16, backgroundColor: pageBg },
   card: { width: "100%", maxWidth: 400, backgroundColor: c.card, borderRadius: 14, padding: 24, borderWidth: 1, borderColor: c.line, gap: 12 },
   title: { fontSize: 22, fontWeight: "700", color: c.ink },
   input: { borderWidth: 1, borderColor: c.line, borderRadius: 8, padding: 12, fontSize: 16, color: c.ink, backgroundColor: c.field },

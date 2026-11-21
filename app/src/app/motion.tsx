@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { router } from "expo-router";
 import { api, Look, MotionModel, uploadMotionFile } from "../lib/api";
-import { c, font } from "../lib/theme";
+import { c, font, pageBg } from "../lib/theme";
 import { MOTION_NOTES, MOTION_USES, motionFamily } from "../lib/modelNotes";
 import { StillPicker } from "../components/StillPicker";
 import { MediaView } from "../components/MediaView";
@@ -262,7 +262,7 @@ function Row({ k, v }: { k: string; v: string }) {
 
 const shadow = { shadowColor: "#000", shadowOpacity: 0.45, shadowRadius: 20, shadowOffset: { width: 0, height: 12 } };
 const s = StyleSheet.create({
-  page: { flex: 1, backgroundColor: c.bg },
+  page: { flex: 1, backgroundColor: pageBg },
   kicker: { color: c.accent, fontSize: 12, letterSpacing: 1.6 },
   h1: { color: c.ink, fontSize: 38, lineHeight: 42 },
   lead: { color: c.sub, fontSize: 15, lineHeight: 22, maxWidth: 640 },

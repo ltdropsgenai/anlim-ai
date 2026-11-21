@@ -1,10 +1,11 @@
 // Root layout: sends signed-out visitors to /login; a password-reset link lands on /reset-password. @anlim
 import { useEffect, useState } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
-import { Stack, router, useSegments } from "expo-router";
+import { DarkTheme, Stack, ThemeProvider, router, useSegments } from "expo-router";
 import type { Session } from "@supabase/supabase-js";
 import { authFlags, supabase } from "../lib/supabase";
-import { c } from "../lib/theme";
+import { c, pageBg } from "../lib/theme";
+import { SunStage } from "../components/SunLight";
 import { Shell } from "../components/Shell";
 
 // Web: the studio fonts and page-level styles (dark scrollbars, base text font). Native keeps the system font.
@@ -30,7 +31,7 @@ input,textarea{color-scheme:dark}
 .anlim-ambient{position:relative;isolation:isolate}
 .anlim-ambient::before{content:"";position:absolute;z-index:-1;pointer-events:none;left:0;right:0;top:-40px;bottom:-40px;background:radial-gradient(50% 50% at 50% 55%,rgba(255,122,26,.13),rgba(255,122,26,.04) 55%,rgba(255,122,26,0))}
 @media (prefers-reduced-motion:reduce){.anlim-glass{transition:none}.anlim-glass--hover:hover{transform:none}}
-.anlim-stage{position:relative;flex:1;display:flex;flex-direction:column;min-height:0;isolation:isolate;overflow:hidden;background:${c.bg};--flash:.3}
+.anlim-stage{position:relative;flex:1;display:flex;flex-direction:column;min-height:0;min-width:0;isolation:isolate;overflow:hidden;background:${c.bg};--flash:.3}
 .anlim-sun{position:absolute;inset:0;z-index:-1;pointer-events:none;overflow:hidden}
 .anlim-sun>*{position:absolute;left:var(--sx);top:var(--sy)}
 .anlim-sun__pulse{width:0;height:0;will-change:transform,opacity;transform:scale(calc(.78 + .35*var(--flash)));opacity:calc(.2 + .8*var(--flash))}
@@ -95,7 +96,7 @@ export default function RootLayout() {
 
   const bare = PUBLIC.includes(seg) || seg === "reset-password" || !session;   // no studio frame on public pages
   const stack = (
-    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bg } }}>
+    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: pageBg } }}>
       <Stack.Screen name="index" options={{ title: "anlim.ai" }} />
       <Stack.Screen name="workspace" options={{ title: "Workspace · anlim.ai" }} />
       <Stack.Screen name="storage" options={{ title: "Assets · anlim.ai" }} />
@@ -117,5 +118,8 @@ export default function RootLayout() {
       <Stack.Screen name="refunds" options={{ title: "Refund requests" }} />
     </Stack>
   );
-  return bare ? stack : <Shell>{stack}</Shell>;
+  // 2026-11-20 (Londi): the sun light sits behind every page. Studio pages get it from the Shell (behind the page,
+  // not the sidebar); public pages get it here. The navigator's own background is transparent on the web so it shows.
+  const theme = { ...DarkTheme, colors: { ...DarkTheme.colors, background: pageBg, card: c.bg } };
+  return <ThemeProvider value={theme}>{bare ? <SunStage>{stack}</SunStage> : <Shell>{stack}</Shell>}</ThemeProvider>;
 }

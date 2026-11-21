@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { AdminRefund, api, MODEL_NAMES } from "../lib/api";
-import { c, font } from "../lib/theme";
+import { c, font, pageBg } from "../lib/theme";
 import { MediaView } from "../components/MediaView";
 
 type Tab = "pending" | "upheld" | "reversed";
@@ -21,7 +21,7 @@ export default function Refunds() {
   useEffect(load, [load]);
 
   return (
-    <ScrollView style={{ backgroundColor: c.bg }} contentContainerStyle={{ padding: 16, maxWidth: 1100, width: "100%", alignSelf: "center" }}>
+    <ScrollView style={{ backgroundColor: pageBg }} contentContainerStyle={{ padding: 16, maxWidth: 1100, width: "100%", alignSelf: "center" }}>
       <Text style={[s.h1, font.display]}>Refund requests</Text>
       <Text style={s.sub}>The credits are already back with the creator. Confirm if you can see the problem; otherwise reverse it and say why (the creator reads your note).</Text>
       <View style={s.tabs}>

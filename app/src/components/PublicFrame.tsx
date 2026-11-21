@@ -2,17 +2,15 @@
 import { ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { router } from "expo-router";
-import { c, font } from "../lib/theme";
+import { c, font, pageBg } from "../lib/theme";
 import { Logo } from "./Logo";
 import { OPERATOR } from "../lib/legal";
-import { SunStage } from "./SunLight";
 
-// `sun` (2026-11-20): the page sits in front of the distant sun light (welcome page)
-export function PublicFrame({ children, signedIn, sun }: { children: ReactNode; signedIn?: boolean; sun?: boolean }) {
+export function PublicFrame({ children, signedIn }: { children: ReactNode; signedIn?: boolean }) {
   const { width } = useWindowDimensions();
   const narrow = width < 700;
   const page = (
-    <ScrollView style={{ flex: 1, backgroundColor: sun ? "transparent" : c.bg }} contentContainerStyle={{ minHeight: "100%" }}>
+    <ScrollView style={{ flex: 1, backgroundColor: pageBg }} contentContainerStyle={{ minHeight: "100%" }}>
       <View style={[s.bar, narrow && { paddingHorizontal: 16 }]}>
         <Pressable onPress={() => router.navigate("/welcome")} accessibilityRole="link" accessibilityLabel="anlim.ai" style={s.row}>
           <Logo size={32} />
@@ -40,7 +38,7 @@ export function PublicFrame({ children, signedIn, sun }: { children: ReactNode; 
       </View>
     </ScrollView>
   );
-  return sun ? <SunStage>{page}</SunStage> : page;
+  return page;
 }
 
 // A readable column for long text (Terms, Privacy, Help).

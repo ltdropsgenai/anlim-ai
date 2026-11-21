@@ -8,7 +8,8 @@ import { Animated, Platform, Pressable, Text, useWindowDimensions, View } from "
 import { Notices } from "./Notices";
 import { router, usePathname } from "expo-router";
 import { api, HomeData } from "../lib/api";
-import { c, font } from "../lib/theme";
+import { c, font, pageBg } from "../lib/theme";
+import { SunStage } from "./SunLight";
 import { Icon, IconName } from "./Icon";
 import { Logo } from "./Logo";
 import { NavGlow, Wash } from "./NavGlow";
@@ -246,7 +247,7 @@ export function Shell({ children }: { children: ReactNode }) {
   // light on hover. Upgrade is the one filled control (accent, squared corners). The balance lives in the sidebar on wide screens.
   const top = (
     <View style={{ flexDirection: "row", alignItems: "center", gap: narrow ? 10 : 18, paddingHorizontal: narrow ? 14 : 28,
-                   paddingVertical: narrow ? 10 : 14, backgroundColor: c.bg }}>
+                   paddingVertical: narrow ? 10 : 14, backgroundColor: pageBg }}>
       {deep && (
         <Pressable onPress={() => (router.canGoBack() ? router.back() : router.navigate("/workspace"))} accessibilityRole="button"
           accessibilityLabel="Back" {...hoverProps("back")}
@@ -292,8 +293,10 @@ export function Shell({ children }: { children: ReactNode }) {
   if (narrow) {
     return (
       <View style={{ flex: 1, backgroundColor: c.bg }}>
+        <SunStage>
         {top}
         <View style={{ flex: 1 }}>{children}<Notices /></View>
+        </SunStage>
         <View accessibilityRole="tablist" onLayout={(e) => setTabW(e.nativeEvent.layout.width / shown.length)}
           style={{ flexDirection: "row", backgroundColor: c.rail, shadowColor: "#000", shadowOpacity: 0.5, shadowRadius: 24,
                    shadowOffset: { width: 0, height: -8 } }}>
@@ -357,8 +360,11 @@ export function Shell({ children }: { children: ReactNode }) {
     <View style={{ flex: 1, flexDirection: "row", backgroundColor: c.bg }}>
       {expanded ? sidebar : compact}
       <View style={{ flex: 1, minWidth: 0 }}>
+        {/* 2026-11-20: every studio page sits in front of the sun light */}
+        <SunStage>
         {top}
         <View style={{ flex: 1 }}>{children}<Notices /></View>
+        </SunStage>
       </View>
     </View>
   );

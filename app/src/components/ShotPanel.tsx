@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Link, router, useFocusEffect } from "expo-router";
 import { api, CutoutJob, END_FRAME_CREDITS, FRAME_CREDITS, EndCheck, HeightCheck, KIND_NAMES, StagingCheck, MODEL_NAMES, QUALITY_NAMES, Shot, StartMode, StartSource, startFrameCredits, uploadStill } from "../lib/api";
-import { c, font } from "../lib/theme";
+import { c, font, pageBg } from "../lib/theme";
 import { autoNote, MODEL_NOTES } from "../lib/modelNotes";
 import { StillPicker } from "./StillPicker";
 
@@ -277,7 +277,7 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
   const startCandidate = shot.start_job?.status === "ready" ? shot.start_job : null;
 
   return (
-    <ScrollView style={{ backgroundColor: c.bg }} contentContainerStyle={s.page}>
+    <ScrollView style={{ backgroundColor: pageBg }} contentContainerStyle={s.page}>
       <Text style={s.crumb}>{shot.series_name} · {shot.scene_title} · shot {shot.ord} · {shot.duration_s} s · camera {shot.camera ?? "locked"}</Text>
       {!editing ? (
         <>

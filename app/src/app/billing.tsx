@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { api, Billing, PricePlan } from "../lib/api";
-import { c, font } from "../lib/theme";
+import { c, font, pageBg } from "../lib/theme";
 
 const usd = (cents: number) => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
 const SHORT_CREDITS = 1650;   // one mixed Short ≈ $6.44 cost ≈ 1,650 credits (design doc rev 82)
@@ -55,7 +55,7 @@ export default function BillingScreen() {
   const packs = b.plans.filter((p) => p.kind === "pack");
 
   return (
-    <ScrollView style={{ backgroundColor: c.bg }} contentContainerStyle={s.page}>
+    <ScrollView style={{ backgroundColor: pageBg }} contentContainerStyle={s.page}>
       {!b.ready && <Text style={[s.note, { color: c.flag }]}>Payments are not switched on yet (no Stripe key on the server).</Text>}
       {params.paid && <Text style={[s.note, { color: c.pass }]}>
         Payment received by Stripe. {waitTries < 10 ? "Your credits appear here in a few seconds…" : "If the credits are not here yet, refresh in a minute."}</Text>}

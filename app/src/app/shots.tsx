@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { ActivityIndicator, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Link, router, useFocusEffect } from "expo-router";
 import { api, MODEL_NAMES, Series, ShotRow } from "../lib/api";
-import { c, font } from "../lib/theme";
+import { c, font, pageBg } from "../lib/theme";
 import { Grid } from "../components/Grid";
 import { AddShot } from "../components/AddShot";
 import { chip, pad2, TONE } from "../lib/shotStatus";
@@ -64,7 +64,7 @@ export default function Shots() {
   const done = (err?: string) => { if (err) setError(err); load(); };
 
   return (
-    <ScrollView style={{ backgroundColor: c.bg }} contentContainerStyle={s.page}
+    <ScrollView style={{ backgroundColor: pageBg }} contentContainerStyle={s.page}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}>
       {error && <Text style={s.error}>{error}</Text>}
       {!series && !error && <ActivityIndicator style={{ marginTop: 40 }} />}

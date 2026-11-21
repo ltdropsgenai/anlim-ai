@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { api, HomeData } from "../lib/api";
-import { c, font } from "../lib/theme";
+import { c, font, pageBg } from "../lib/theme";
 import { Grid } from "../components/Grid";
 import { Icon, IconName } from "../components/Icon";
 import { FEATURES } from "../lib/marketing";
@@ -12,7 +12,6 @@ import { Composer } from "../components/Composer";
 import { Ambient, FloatCard } from "../components/FloatCard";
 import { Mark } from "../components/Mark";
 import { SplashBanner } from "../components/SplashBanner";
-import { SunStage } from "../components/SunLight";
 
 const KIND: Record<string, string> = { walking: "walking", sit_stand: "sitting and standing", handling: "handling props", talking: "talking", other: "other shots" };
 const LOOK: Record<string, string> = { cartoon: "Cartoon", photoreal: "Photoreal" };
@@ -55,8 +54,7 @@ export default function Home() {
   ];
 
   return (
-    <SunStage>
-    <ScrollView style={{ backgroundColor: "transparent" }} contentContainerStyle={[s.page, narrow && { padding: 16 }]}>
+    <ScrollView style={{ backgroundColor: pageBg }} contentContainerStyle={[s.page, narrow && { padding: 16 }]}>
       {/* prompt first (2026-11-19, Londi: like other tools, "What are we making today?" with a prompt window) */}
       {/* splash banner (2026-11-20): a slow reel of clips made in anlim, above the prompt */}
       <SplashBanner height={narrow ? 170 : 280} />
@@ -187,7 +185,6 @@ export default function Home() {
       </Section>
       <View style={{ height: 40 }} />
     </ScrollView>
-    </SunStage>
   );
 }
 

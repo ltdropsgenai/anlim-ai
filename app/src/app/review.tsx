@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Link, useFocusEffect } from "expo-router";
 import { api, MODEL_NAMES, QueueItem, WelcomeStatus } from "../lib/api";
-import { c, font } from "../lib/theme";
+import { c, font, pageBg } from "../lib/theme";
 import { Grid } from "../components/Grid";
 
 // shown only when a new account got no welcome credits, so the creator knows why
@@ -62,7 +62,7 @@ export default function Review() {
   const rest = items?.filter((i) => !waiting.includes(i) && !working.includes(i)) ?? [];
 
   return (
-    <ScrollView style={{ backgroundColor: c.bg }} contentContainerStyle={s.page}
+    <ScrollView style={{ backgroundColor: pageBg }} contentContainerStyle={s.page}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}>
       {welcome && WELCOME_NOTE[welcome] && <Text style={s.note}>{WELCOME_NOTE[welcome]}</Text>}
       {error && <Text style={s.error}>{error}</Text>}

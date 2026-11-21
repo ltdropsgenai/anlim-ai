@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { api, Clip, Flag, KIND_NAMES, MODEL_NAMES } from "../../lib/api";
-import { c, font } from "../../lib/theme";
+import { c, font, pageBg } from "../../lib/theme";
 import { ClipPlayer, PlayerHandle } from "../../components/ClipPlayer";
 
 const REASONS = ["Character looks wrong", "Extra or broken limbs", "Room or props changed", "Wrong action", "Motion looks bad", "Other"];
@@ -98,7 +98,7 @@ export default function Review() {
   const T = { ok: [c.passBg, c.pass, c.passLine], bad: [c.failBg, c.fail, c.failLine], call: [c.flagBg, c.flag, c.flagLine] }[verdict.tone];
 
   return (
-    <ScrollView style={{ backgroundColor: c.bg }} contentContainerStyle={s.page}>
+    <ScrollView style={{ backgroundColor: pageBg }} contentContainerStyle={s.page}>
       <View style={s.grid}>
         <View style={s.main}>
           <Text style={[s.kicker, font.mono]}>
