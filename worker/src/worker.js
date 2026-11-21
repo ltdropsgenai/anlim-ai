@@ -111,14 +111,46 @@ const fromText = (g) => g.route_kind === "text";
 // Motion transfer (2026-11-20): the creator's source clip recast with their reference images (studio.motion_create).
 const isMotion = (g) => g.route_kind === "motion";
 
+// The billed length is what the app measured in the browser (motion_create p_seconds), so the server must not trust
+// it (2026-11-21 review): a 30 s clip sent as "4 s" would be charged 4 s while Higgsfield bills the real length. The
+// worker measures the source and, when it runs longer than the seconds charged (or the model's maximum), sends
+// Higgsfield a copy cut to exactly that length. Untrusted video: only the container formats an upload can be, local file
+// only (same rule as the audio in assemble.js).
+const SAFE_VIDEO_IN = ["-format_whitelist", "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm", "-protocol_whitelist", "file,pipe"];
+async function motionSource(g, shot) {
+  const dir = path.join(config.workDir, g.id);
+  await fs.mkdir(dir, { recursive: true });
+  const src = path.join(dir, "source-in" + (path.extname(shot.motion_source_path) || ".mp4"));
+  try { await fs.access(src); } catch { await storage.download(shot.motion_source_path, src); }
+  let secs = NaN;
+  try {
+    const { stdout } = await run("ffprobe", ["-v", "error", ...SAFE_VIDEO_IN, "-show_entries", "format=duration", "-of", "csv=p=0", src]);
+    secs = parseFloat(stdout);
+  } catch { /* not a readable video */ }
+  if (!isFinite(secs) || secs <= 0) throw Object.assign(new Error("the source clip could not be read as a video; nothing was charged"), { permanent: true });
+  const billed = Number(shot.duration_s) || 0;
+  if (secs <= billed + 0.05) return shot.motion_source_path;        // within what was charged: send as uploaded
+  const cut = `${g.owner}/motion/billed-${g.id}.mp4`;
+  const out = path.join(dir, "source-cut.mp4");
+  await run("ffmpeg", ["-y", "-v", "error", ...SAFE_VIDEO_IN, "-i", src, "-t", String(billed), "-map", "0:v:0", "-map", "0:a?",
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", out],
+    { maxBuffer: 1 << 20 });
+  await storage.upload(out, cut, "video/mp4");
+  log(g, `source is ${secs.toFixed(2)} s, charged ${billed} s: sending a copy cut to ${billed} s`);
+  return cut;
+}
+
 async function submitMotion(g, shot) {
-  const videoUrl = await storage.signedUrl(shot.motion_source_path, 7200);
+  let source;
+  try { source = await motionSource(g, shot); }
+  catch (e) { if (e.permanent) return fail(g, e.message); throw e; }
+  const videoUrl = await storage.signedUrl(source, 7200);
   const imageUrls = [];
   for (const p of shot.motion_ref_paths || []) imageUrls.push(await storage.signedUrl(p, 7200));
   const input = { video_url: videoUrl, image_urls: imageUrls, prompt: shot.action === "Motion transfer" ? "" : (shot.action || ""),
                   resolution: shot.resolution };
   const sub = await providers[shot.provider].submit(shot.endpoint, input);
-  const saved = { video_url: shot.motion_source_path, image_urls: shot.motion_ref_paths, prompt: input.prompt,
+  const saved = { video_url: source, image_urls: shot.motion_ref_paths, prompt: input.prompt,
                   resolution: input.resolution, endpoint: shot.endpoint };
   await db.unlock(g.id, {
     status: "running", request: JSON.stringify(saved), provider_request_id: sub.requestId,
