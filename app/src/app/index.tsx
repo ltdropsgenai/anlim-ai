@@ -12,6 +12,7 @@ import { Composer } from "../components/Composer";
 import { Ambient, FloatCard } from "../components/FloatCard";
 import { Mark } from "../components/Mark";
 import { SplashBanner } from "../components/SplashBanner";
+import { SunStage } from "../components/SunLight";
 
 const KIND: Record<string, string> = { walking: "walking", sit_stand: "sitting and standing", handling: "handling props", talking: "talking", other: "other shots" };
 const LOOK: Record<string, string> = { cartoon: "Cartoon", photoreal: "Photoreal" };
@@ -54,7 +55,8 @@ export default function Home() {
   ];
 
   return (
-    <ScrollView style={{ backgroundColor: c.bg }} contentContainerStyle={[s.page, narrow && { padding: 16 }]}>
+    <SunStage>
+    <ScrollView style={{ backgroundColor: "transparent" }} contentContainerStyle={[s.page, narrow && { padding: 16 }]}>
       {/* prompt first (2026-11-19, Londi: like other tools, "What are we making today?" with a prompt window) */}
       {/* splash banner (2026-11-20): a slow reel of clips made in anlim, above the prompt */}
       <SplashBanner height={narrow ? 170 : 280} />
@@ -185,6 +187,7 @@ export default function Home() {
       </Section>
       <View style={{ height: 40 }} />
     </ScrollView>
+    </SunStage>
   );
 }
 

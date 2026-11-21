@@ -5,12 +5,14 @@ import { router } from "expo-router";
 import { c, font } from "../lib/theme";
 import { Logo } from "./Logo";
 import { OPERATOR } from "../lib/legal";
+import { SunStage } from "./SunLight";
 
-export function PublicFrame({ children, signedIn }: { children: ReactNode; signedIn?: boolean }) {
+// `sun` (2026-11-20): the page sits in front of the distant sun light (welcome page)
+export function PublicFrame({ children, signedIn, sun }: { children: ReactNode; signedIn?: boolean; sun?: boolean }) {
   const { width } = useWindowDimensions();
   const narrow = width < 700;
-  return (
-    <ScrollView style={{ flex: 1, backgroundColor: c.bg }} contentContainerStyle={{ minHeight: "100%" }}>
+  const page = (
+    <ScrollView style={{ flex: 1, backgroundColor: sun ? "transparent" : c.bg }} contentContainerStyle={{ minHeight: "100%" }}>
       <View style={[s.bar, narrow && { paddingHorizontal: 16 }]}>
         <Pressable onPress={() => router.navigate("/welcome")} accessibilityRole="link" accessibilityLabel="anlim.ai" style={s.row}>
           <Logo size={32} />
@@ -38,6 +40,7 @@ export function PublicFrame({ children, signedIn }: { children: ReactNode; signe
       </View>
     </ScrollView>
   );
+  return sun ? <SunStage>{page}</SunStage> : page;
 }
 
 // A readable column for long text (Terms, Privacy, Help).
