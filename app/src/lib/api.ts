@@ -216,8 +216,9 @@ export const api = {
   portal: (returnUrl: string) => call<{ url: string }>({ op: "portal", return_url: returnUrl }, "studio-billing"),
   queue: () => call<{ items: QueueItem[] }>({ op: "queue" }).then((r) => r.items),
   clip: (id: string) => call<Clip>({ op: "clip", generation_id: id }),
-  decide: (id: string, decision: "approve" | "reject", reasons: string[], note: string) =>
-    call<{ ok: boolean }>({ op: "decide", generation_id: id, decision, reasons, note }),
+  // 2026-11-21: Reject needs the reason and opens a refund request (credits come back only if anlim upholds it)
+  decide: (id: string, decision: "approve" | "reject", reasons: string[], note: string, atS: number | null = null) =>
+    call<{ ok: boolean }>({ op: "decide", generation_id: id, decision, reasons, note, at_s: atS }),
   shots: () => call<{ items: ShotRow[] }>({ op: "shots" }).then((r) => r.items),
   shot: (id: string) => call<Shot>({ op: "shot", shot_id: id }),
   requestEndFrame: (id: string, instruction: string) => call<{ job_id: string }>({ op: "end_frame", shot_id: id, instruction }),

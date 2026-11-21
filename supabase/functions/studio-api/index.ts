@@ -170,9 +170,9 @@ async function handle(req: Request): Promise<Response> {
         if (!g) return json({ error: "not found" }, 404);        // RLS: not yours or not there
         // free accounts see the watermarked copy; once the account has paid, every clip shows clean (2026-11-18)
         const [{ paid }] = await sql`select studio.has_paid(${uid}) as paid`;
-        const marked = !paid && !!g.preview_path;
+        const marked = !paid;   // 2026-11-21 review: free accounts get the watermarked copy or nothing, never the clean clip
         const { output_path: _clean, preview_path: _preview, ...rest } = g;
-        return json({ ...rest, watermarked: marked, clip_url: await sign(marked ? g.preview_path : g.output_path),
+        return json({ ...rest, watermarked: marked, clip_url: marked ? (g.preview_path ? await sign(g.preview_path) : null) : await sign(g.output_path),
           start_url: await sign(g.start_frame_path) });
       }
       case "shots": {
@@ -223,7 +223,9 @@ async function handle(req: Request): Promise<Response> {
           [route] = await asUser(uid, (tx) => tx`
             select r.kind, r.model_id, r.reason, r.evidence, m.label, m.credits_per_second * ${sh.duration_s}::int as credits
               from studio.route_model(${id}) r join studio.models m on m.id = r.model_id`);
-        } catch (e) { routeError = e instanceof Error ? e.message : String(e); }
+        } catch (e) {   // only messages written for creators (P0001) are shown (2026-11-21 review)
+          routeError = (e as { code?: string })?.code === "P0001" && e instanceof Error ? e.message : "No model can make this shot right now.";
+        }
         const [gen] = await asUser(uid, (tx) => tx`
           select id, status from studio.generations where shot_id = ${id} order by created_at desc limit 1`);
         // every model a creator may pick by hand, with its price for this shot's length (override chips)
@@ -289,25 +291,25 @@ async function handle(req: Request): Promise<Response> {
         if (!x) return json({ error: "not found" }, 404);
         const [m] = x.model_id ? await sql`select label from studio.models where id = ${x.model_id}` : [];
         const [{ paid }] = await sql`select studio.has_paid(${uid}) as paid`;
-        const marked = !paid && !!x.preview_path;
+        const marked = !paid;   // fail closed (2026-11-21 review)
         // the clip can be watched while it is checked; it can be downloaded (kept) once the check is done
         const ready = x.gen_status === "checking" || x.gen_status === "review" || x.gen_status === "succeeded";
         const { composed_path, output_path, preview_path, start_frame_path, ...rest } = x;
         return json({ ...rest, model_label: m?.label ?? null, watermarked: marked,
           image_url: x.frame_status === "ready" || x.frame_status === "approved" ? await sign(composed_path) : null,
-          video_url: ready && output_path ? await sign(marked ? preview_path : output_path) : null,
+          video_url: ready && output_path ? (marked ? (preview_path ? await sign(preview_path) : null) : await sign(output_path)) : null,
           // a clip made from words: its first frame, as the player's poster only (not offered as an image download)
           poster_url: (x.from_text || x.motion) && start_frame_path ? await sign(start_frame_path) : null });
       }
       case "creation_keep": {
-        // keeping (or downloading) a clip that waits for review approves it: that is when it is charged
+        // keeping (or downloading) a clip that waits for review approves it (it was charged on delivery, 2026-11-21)
         const id = String(body.generation_id || "");
         const [g] = await asUser(uid, (tx) => tx`select status from studio.generations where id = ${id}`);
         if (!g) return json({ error: "not found" }, 404);
         if (g.status === "review") await asUser(uid, (tx) => tx`select studio.review_generation(${id}, 'approve', ${[]}, ${"kept from the Home result"})`);
         return json({ ok: true });
       }
-      // ---- refunds (2026-11-20): the creator explains, the credits come back at once, an admin confirms or reverses
+      // ---- refunds (v3, 2026-11-21): same as Reject; the credits come back only when an admin upholds the request
       case "refund_request": {
         const reasons = Array.isArray(body.reasons) ? body.reasons.map(String).slice(0, 10) : [];
         const at = body.at_s == null || body.at_s === "" ? null : Number(body.at_s);
@@ -490,10 +492,10 @@ async function handle(req: Request): Promise<Response> {
             from studio.assemblies where scene_id = ${String(body.scene_id || "")} order by created_at desc limit 5`);
         const [{ paid }] = await sql`select studio.has_paid(${uid}) as paid`;
         const items = await Promise.all(rows.map(async (a) => {
-          const marked = !paid && !!a.preview_path;
+          const marked = !paid;   // fail closed (2026-11-21 review)
           const { output_path: _o, preview_path: _p, ...rest } = a;
           return { ...rest, watermarked: marked,
-                   url: a.status === "done" ? await sign(marked ? a.preview_path : a.output_path, 3600) : null };
+                   url: a.status === "done" ? (marked ? (a.preview_path ? await sign(a.preview_path, 3600) : null) : await sign(a.output_path, 3600)) : null };
         }));
         return json({ items });
       }
@@ -540,7 +542,10 @@ async function handle(req: Request): Promise<Response> {
         if (!["approve", "reject"].includes(decision)) return json({ error: "decision must be approve or reject" }, 400);
         const reasons = Array.isArray(body.reasons) ? body.reasons.map(String).slice(0, 10) : [];
         const note = body.note ? String(body.note).slice(0, 1000) : null;
-        await asUser(uid, (tx) => tx`select studio.review_generation(${id}, ${decision}, ${reasons}, ${note})`);
+        const atRaw = body.at_s == null || body.at_s === "" ? null : Number(body.at_s);
+        const at = atRaw != null && isFinite(atRaw) ? atRaw : null;
+        // 2026-11-21: Reject needs a reason and opens a refund request that anlim reviews (studio.review_generation v3)
+        await asUser(uid, (tx) => tx`select studio.review_generation(${id}, ${decision}, ${reasons}, ${note}, ${at})`);
         return json({ ok: true, decision });
       }
       case "series_genre": {
@@ -574,9 +579,9 @@ async function handle(req: Request): Promise<Response> {
           .sort((a, b) => (asc ? 1 : -1) * (new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
         const [{ paid }] = await sql`select studio.has_paid(${uid}) as paid`;
         const page = await Promise.all(list.slice(offset, offset + limit).map(async (a) => {
-          const marked = !paid && !!a.preview_path && (a.kind === "clip" || a.kind === "cut");
+          const marked = !paid && (a.kind === "clip" || a.kind === "cut");   // fail closed (2026-11-21 review)
           const { path, preview_path: _p, thumb_path, ...rest } = a;
-          const [thumb_url, url] = await Promise.all([thumb(thumb_path ?? null), sign(marked ? a.preview_path : path, 3600)]);
+          const [thumb_url, url] = await Promise.all([thumb(thumb_path ?? null), (marked ? (a.preview_path ? sign(a.preview_path, 3600) : Promise.resolve(null)) : sign(path, 3600))]);
           return { ...rest, watermarked: marked, thumb_url, url,
                    upload_path: a.kind === "music" && !a.series_id ? path : null };   // an uploaded track: deleted by its path
         }));

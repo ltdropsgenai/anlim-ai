@@ -19,7 +19,7 @@ type Tone = "ok" | "call" | "busy" | "bad" | "idle";
 // what the creator needs to know about a clip, in plain words
 function status(i: QueueItem): { text: string; tone: Tone; line: string } {
   if (i.decision === "approve") return { text: "✓ Kept", tone: "ok", line: "You kept this clip." };
-  if (i.decision === "reject") return { text: "Rejected", tone: "idle", line: "You rejected it. To get credits back, request a refund on the clip page." };
+  if (i.decision === "reject") return { text: "Rejected", tone: "idle", line: "You rejected it. We look at every rejected clip and refund it if we can see the problem." };
   if (["queued", "running"].includes(i.status)) return { text: "Rendering", tone: "busy", line: "The video model is making it." };
   if (i.status === "checking") return { text: "Checking", tone: "busy", line: "anlim check is going through every frame." };
   if (i.status === "failed")

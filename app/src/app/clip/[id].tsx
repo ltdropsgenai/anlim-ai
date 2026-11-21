@@ -59,19 +59,15 @@ export default function Review() {
   })).filter((f) => f.rules.length > 0), [clip, why]);
   const timeOf = useMemo(() => Object.fromEntries((clip?.flags ?? []).map((f) => [f.frame, f.t_s])), [clip]);
 
+  // 2026-11-21 (Londi): Keep or Reject only. Reject opens a short form (what's wrong, when); sending it rejects the clip and
+  // asks for a refund, which anlim reviews: the credits come back only if the problem is there to see.
+  const [rejecting, setRejecting] = useState(false);
   async function decide(decision: "approve" | "reject") {
-    setBusy(true); setError(null);
-    try { await api.decide(id, decision, picked, note); setDone(decision); }
-    catch (e) { setError((e as Error).message); }
-    setBusy(false);
-  }
-
-  async function requestRefund() {
     setBusy(true); setError(null);
     try {
       const at = refundAt.trim() ? Number(refundAt.replace(",", ".").replace(/[^0-9.]/g, "")) : null;
-      await api.requestRefund(id, picked, note, at != null && isFinite(at) ? at : null);
-      setRefunded(true);
+      await api.decide(id, decision, picked, note, decision === "reject" && at != null && isFinite(at) ? at : null);
+      setDone(decision); if (decision === "reject") setRefunded(true);
     } catch (e) { setError((e as Error).message); }
     setBusy(false);
   }
@@ -191,10 +187,14 @@ export default function Review() {
                 <Pressable style={[s.btn, { backgroundColor: c.accent }]} onPress={() => decide("approve")} disabled={busy} accessibilityRole="button">
                   <Text style={s.btnText}>Keep it</Text>
                 </Pressable>
-                <Pressable style={s.ghost} onPress={() => decide("reject")} disabled={busy} accessibilityRole="button">
+                {!rejecting ? (
+                <Pressable style={s.ghost} onPress={() => setRejecting(true)} disabled={busy} accessibilityRole="button">
                   <Text style={{ color: c.ink, fontWeight: "600", fontSize: 15 }}>Reject</Text>
                 </Pressable>
-                <Text style={[s.label, { marginTop: 14 }]}>What's wrong? (it helps the check learn)</Text>
+                ) : (<>
+                <Text style={[s.kicker, font.mono, { marginTop: 14 }]}>WHAT'S WRONG WITH IT?</Text>
+                <Text style={s.sub}>Pick what's wrong and say in a sentence what you see (and when, if you can). We look at every rejected
+                  clip: if we can see the problem, the{clip.credits_reserved ? ` ${clip.credits_reserved}` : ""} credits come back to you and we tell you.</Text>
                 <View style={s.chips}>
                   {REASONS.map((r) => (
                     <Pressable key={r} onPress={() => setPicked((p) => p.includes(r) ? p.filter((x) => x !== r) : [...p, r])}
@@ -204,29 +204,25 @@ export default function Review() {
                     </Pressable>
                   ))}
                 </View>
-                <Text style={s.small}>Keeping or rejecting doesn't change the charge. To get credits back, request a refund below.</Text>
-              </>
-            ) : null}
-            {!refunded && !clip.refund && clip.settled === "charged" && (clip.status === "review" || clip.status === "succeeded") ? (
-              <View style={{ marginTop: 18, borderTopWidth: 1, borderTopColor: c.line, paddingTop: 14 }}>
-                <Text style={[s.kicker, font.mono]}>SOMETHING WRONG WITH IT?</Text>
-                <Text style={s.sub}>Pick what's wrong above and say in a sentence what you see (and when, if you can). You get the
-                  {clip.credits_reserved ? ` ${clip.credits_reserved}` : ""} credits back now; we look at every request, and if we can't see the problem we take them back and tell you why.</Text>
                 <TextInput style={[s.input, { marginTop: 8 }]} placeholder="What's wrong, e.g. the fox's tail comes off its body" placeholderTextColor={c.muted}
                   value={note} onChangeText={setNote} multiline />
                 <TextInput style={[s.input, { marginTop: 8, minHeight: 0 }]} placeholder="When (seconds, optional), e.g. 2.1" placeholderTextColor={c.muted}
                   value={refundAt} onChangeText={setRefundAt} keyboardType="decimal-pad" />
-                <Pressable style={[s.ghost, (picked.length === 0 || note.trim().length < 15) && { opacity: 0.45 }]} onPress={requestRefund}
+                <Pressable style={[s.ghost, (picked.length === 0 || note.trim().length < 15) && { opacity: 0.45 }]} onPress={() => decide("reject")}
                   disabled={busy || picked.length === 0 || note.trim().length < 15} accessibilityRole="button">
-                  <Text style={{ color: c.ink, fontWeight: "600", fontSize: 15 }}>Request a refund</Text>
+                  <Text style={{ color: c.ink, fontWeight: "600", fontSize: 15 }}>Reject and ask for a refund</Text>
                 </Pressable>
+                <Pressable onPress={() => setRejecting(false)} disabled={busy} accessibilityRole="button"><Text style={[s.small, { textDecorationLine: "underline" }]}>Cancel</Text></Pressable>
+                </>)}
                 {error && <Text style={s.err}>{error}</Text>}
-              </View>
-            ) : refunded ? (
-              <Text style={[s.sub, { marginTop: 14 }]}>Refund requested: the credits are back in your account. We'll look at the clip and let you know.</Text>
+                <Text style={s.small}>Every clip is charged when it is made, because the video model is paid for every render.</Text>
+              </>
+            ) : null}
+            {refunded ? (
+              <Text style={[s.sub, { marginTop: 14 }]}>Rejected. We'll look at the clip and let you know; if we can see the problem, the credits come back to you.</Text>
             ) : clip.refund ? (
               <Text style={[s.sub, { marginTop: 14 }]}>{clip.refund.status === "pending" ? "Refund requested: we're looking at it."
-                : clip.refund.status === "upheld" ? "Refund confirmed." : `Refund reversed${clip.refund.decision_note ? `: ${clip.refund.decision_note}` : "."}`}</Text>
+                : clip.refund.status === "upheld" ? "Refund approved: the credits are back in your account." : `Refund declined${clip.refund.decision_note ? `: ${clip.refund.decision_note}` : "."}`}</Text>
             ) : null}
             {!decidable && !done && clip.decision ? (
               <Text style={[s.decided, font.display]}>You {clip.decision === "approve" ? "kept" : "rejected"} this clip</Text>

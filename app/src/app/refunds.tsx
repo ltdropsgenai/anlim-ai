@@ -23,11 +23,11 @@ export default function Refunds() {
   return (
     <ScrollView style={{ backgroundColor: pageBg }} contentContainerStyle={{ padding: 16, maxWidth: 1100, width: "100%", alignSelf: "center" }}>
       <Text style={[s.h1, font.display]}>Refund requests</Text>
-      <Text style={s.sub}>The credits are already back with the creator. Confirm if you can see the problem; otherwise reverse it and say why (the creator reads your note).</Text>
+      <Text style={s.sub}>Nothing has been refunded yet. Approve if you can see the problem (the credits go back to the creator); otherwise decline and say why (the creator reads your note).</Text>
       <View style={s.tabs}>
         {(["pending", "upheld", "reversed"] as Tab[]).map((t) => (
           <Pressable key={t} onPress={() => setTab(t)} style={[s.tab, tab === t && s.tabOn]} accessibilityRole="tab" accessibilityState={{ selected: tab === t }}>
-            <Text style={{ color: tab === t ? c.onAccent : c.ink, fontWeight: "600" }}>{t === "pending" ? "Waiting" : t === "upheld" ? "Confirmed" : "Reversed"}</Text>
+            <Text style={{ color: tab === t ? c.onAccent : c.ink, fontWeight: "600" }}>{t === "pending" ? "Waiting" : t === "upheld" ? "Approved" : "Declined"}</Text>
           </Pressable>
         ))}
       </View>
@@ -64,19 +64,19 @@ function Request({ r, onDone }: { r: AdminRefund; onDone: () => void }) {
             {r.checker_verdict === "FAIL" ? "Found a problem" : r.checker_verdict === "PASS" ? "Passed" : r.checker_verdict ?? "Not checked"}</Text>
           {(r.qc_reasons ?? []).slice(0, 4).map((q, i) => <Text key={i} style={s.small}>• {String(q).slice(0, 220)}</Text>)}
           <Text style={s.label}>Account</Text>
-          <Text style={s.text}>{r.email ?? r.owner} · {r.owner_requests} request{r.owner_requests === 1 ? "" : "s"}, {r.owner_reversed} reversed</Text>
+          <Text style={s.text}>{r.email ?? r.owner} · {r.owner_requests} request{r.owner_requests === 1 ? "" : "s"}, {r.owner_reversed} declined</Text>
           {r.status === "pending" ? (
             <>
-              <TextInput style={s.input} value={note} onChangeText={setNote} multiline placeholder="Note to the creator (required to reverse)" placeholderTextColor={c.muted} />
+              <TextInput style={s.input} value={note} onChangeText={setNote} multiline placeholder="Note to the creator (required to decline)" placeholderTextColor={c.muted} />
               <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
                 <Pressable style={[s.btn, { backgroundColor: c.accent, borderColor: c.accent }]} disabled={busy} onPress={() => decide("uphold")} accessibilityRole="button">
-                  <Text style={{ color: c.onAccent, fontWeight: "700" }}>Confirm refund</Text></Pressable>
+                  <Text style={{ color: c.onAccent, fontWeight: "700" }}>Approve refund</Text></Pressable>
                 <Pressable style={[s.btn, note.trim().length < 5 && { opacity: 0.45 }]} disabled={busy || note.trim().length < 5} onPress={() => decide("reverse")} accessibilityRole="button">
-                  <Text style={{ color: c.ink, fontWeight: "600" }}>Reverse refund</Text></Pressable>
+                  <Text style={{ color: c.ink, fontWeight: "600" }}>Decline refund</Text></Pressable>
               </View>
               {err && <Text style={{ color: c.fail }}>{err}</Text>}
             </>
-          ) : <Text style={s.text}>{r.status === "upheld" ? "Confirmed" : "Reversed"}{r.decision_note ? `: ${r.decision_note}` : ""}</Text>}
+          ) : <Text style={s.text}>{r.status === "upheld" ? "Approved" : "Declined"}{r.decision_note ? `: ${r.decision_note}` : ""}</Text>}
         </View>
       </View>
     </View>

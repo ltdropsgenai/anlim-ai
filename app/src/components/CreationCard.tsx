@@ -27,7 +27,7 @@ function stage(x: Creation | null, output: Output) {
   // 2026-11-21 review: a clip the creator rejected was delivered and charged (review_generation policy v2); only a clip that
   // never finished is free
   if (x.gen_status === "failed") return { done: true, label: x.gen_error === "refund requested" ? "Refund requested for this clip."
-    : x.gen_error === "rejected by creator" ? "You rejected this clip. It was made, so it was charged."
+    : x.gen_error === "rejected by creator" ? "You rejected this clip. We'll look at it and refund the credits if we can see the problem."
     : "The clip didn't finish. Nothing was charged for it." };
   // 2026-11-20: motion clips get the who-is-who check (worker checkMotion); it only flags, so "not checked" still asks for a look.
   // Keeping a flagged clip makes it "succeeded" but keeps the flag, so the flag decides first (2026-11-21 review).
