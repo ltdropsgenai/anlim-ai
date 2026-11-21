@@ -9,6 +9,8 @@ import { Grid } from "../components/Grid";
 import { Icon, IconName } from "../components/Icon";
 import { FEATURES } from "../lib/marketing";
 import { Composer } from "../components/Composer";
+import { Ambient, FloatCard } from "../components/FloatCard";
+import { Mark } from "../components/Mark";
 import { SplashBanner } from "../components/SplashBanner";
 
 const KIND: Record<string, string> = { walking: "walking", sit_stand: "sitting and standing", handling: "handling props", talking: "talking", other: "other shots" };
@@ -112,15 +114,18 @@ export default function Home() {
       )}
 
       <Section kicker="FEATURES" title="What anlim does">
-        <Grid min={300} gap={14}>
-          {FEATURES.map((f) => (
-            <View key={f.title} style={[s.card, { padding: 20, minHeight: 170 }]}>
-              <View style={s.iconBox}><Icon name={f.icon} size={20} color={c.accent} /></View>
-              <Text style={[s.h3, font.display]}>{f.title}</Text>
-              <Text style={s.body}>{f.body}</Text>
-            </View>
-          ))}
-        </Grid>
+        {/* 2026-11-20: the same glass cards and marks as the public page (no square icon tiles) */}
+        <Ambient>
+          <Grid min={300} gap={16}>
+            {FEATURES.map((f) => (
+              <FloatCard key={f.title} hover style={{ padding: 24, minHeight: 196 }}>
+                <Mark name={f.mark} />
+                <Text style={[s.h3, font.display, { marginTop: 0 }]}>{f.title}</Text>
+                <Text style={s.body}>{f.body}</Text>
+              </FloatCard>
+            ))}
+          </Grid>
+        </Ambient>
       </Section>
 
       <Section kicker="MODELS" title="The models behind it">
@@ -163,15 +168,18 @@ export default function Home() {
 
       <Section kicker="TOOLS" title="Where to go">
         <Grid min={240} gap={12}>
+          {/* 2026-11-20: compact glass surface, no 1 px outline */}
           {TOOLS.map((t) => (
-            <Pressable key={t.href} style={[s.card, s.tool]} onPress={() => router.navigate(t.href)} accessibilityRole="link">
-              <Icon name={t.icon} size={22} color={c.ink} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: c.ink, fontWeight: "700", fontSize: 15 }}>{t.title}</Text>
-                <Text style={{ color: c.sub, fontSize: 13, marginTop: 2 }}>{t.body}</Text>
-              </View>
-              <Icon name="arrow" size={18} color={c.sub} />
-            </Pressable>
+            <FloatCard key={t.href} compact hover>
+              <Pressable style={s.tool} onPress={() => router.navigate(t.href)} accessibilityRole="link">
+                <Icon name={t.icon} size={22} color={c.ink} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: c.ink, fontWeight: "700", fontSize: 15 }}>{t.title}</Text>
+                  <Text style={{ color: c.sub, fontSize: 13, marginTop: 2 }}>{t.body}</Text>
+                </View>
+                <Icon name="arrow" size={18} color={c.sub} />
+              </Pressable>
+            </FloatCard>
           ))}
         </Grid>
       </Section>
@@ -200,7 +208,6 @@ const s = StyleSheet.create({
   card: { backgroundColor: c.card, borderWidth: 1, borderColor: c.line, borderRadius: 16, overflow: "hidden" },
   thumb: { width: "100%", aspectRatio: 16 / 9 },
   tag: { position: "absolute", top: 8, left: 8, color: c.ink, backgroundColor: "rgba(8,8,10,0.78)", fontSize: 10, letterSpacing: 0.6, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 3, overflow: "hidden" },
-  iconBox: { width: 40, height: 40, borderRadius: 12, backgroundColor: "#2A1608", alignItems: "center", justifyContent: "center" },
   pill: { color: c.sub, borderWidth: 1, borderColor: c.line, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3, fontSize: 10, letterSpacing: 0.6 },
   tool: { flexDirection: "row", alignItems: "center", gap: 14, padding: 18 },
 });

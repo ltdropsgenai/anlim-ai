@@ -52,3 +52,45 @@ export const NAV: Partial<Record<IconName, { b: Prim[]; s: Prim[]; a: Prim[] }>>
     a: [{t: "circle", p: {"cx": 9, "cy": 12, "r": 2.2, "stroke": "none"}}] },
 };
 export const ACCENT = "#FF7A1A";
+
+// Feature marks (2026-11-20, Londi picked the glass cards): bespoke glyphs on a 32 grid for the feature cards, in place
+// of an orange icon in a square tile. b = soft body, s = metal strokes, a = the one tungsten part.
+export type MarkName = "continuity" | "frames" | "route" | "scan" | "ratios" | "layers";
+const dim = { opacity: 0.45 };
+export const MARK: Record<MarkName, { b: Prim[]; s: Prim[]; a: Prim[] }> = {
+  // the same character in three frames in a row
+  continuity: { b: [{t: "rect", p: {x: 11.75, y: 8, width: 8.5, height: 16, rx: 1.6}}],
+    s: [{t: "rect", p: {x: 2, y: 8, width: 8.5, height: 16, rx: 1.6, ...dim}}, {t: "rect", p: {x: 11.75, y: 8, width: 8.5, height: 16, rx: 1.6}},
+        {t: "rect", p: {x: 21.5, y: 8, width: 8.5, height: 16, rx: 1.6, ...dim}},
+        {t: "circle", p: {cx: 6.25, cy: 14, r: 1.9, ...dim}}, {t: "path", p: {d: "M3.6 21.2c.4-2 1.4-3 2.65-3s2.25 1 2.65 3", ...dim}},
+        {t: "circle", p: {cx: 25.75, cy: 14, r: 1.9, ...dim}}, {t: "path", p: {d: "M23.1 21.2c.4-2 1.4-3 2.65-3s2.25 1 2.65 3", ...dim}},
+        {t: "path", p: {d: "M13.35 21.2c.4-2 1.4-3 2.65-3s2.25 1 2.65 3"}}],
+    a: [{t: "circle", p: {cx: 16, cy: 14, r: 2.1, stroke: "none"}}] },
+  // a start frame, an end frame and the move between them
+  frames: { b: [{t: "rect", p: {x: 3, y: 5, width: 15, height: 11, rx: 1.8}}],
+    s: [{t: "rect", p: {x: 3, y: 5, width: 15, height: 11, rx: 1.8}}, {t: "rect", p: {x: 14, y: 16, width: 15, height: 11, rx: 1.8}},
+        {t: "path", p: {d: "M3 12.5l4-3.5 3.5 3 2.5-2 5 4", opacity: 0.55}}],
+    a: [{t: "path", p: {d: "M8.5 19.5c0 3 2.2 4.5 4.5 4.5", fill: "none", strokeDasharray: "1.2 1.8", strokeWidth: 1.4}},
+        {t: "circle", p: {cx: 21.5, cy: 21.5, r: 1.8, stroke: "none"}}] },
+  // one shot routed to the model that tested best
+  route: { b: [],
+    s: [{t: "circle", p: {cx: 5, cy: 16, r: 2.2}}, {t: "path", p: {d: "M7.2 16h4.3"}},
+        {t: "path", p: {d: "M11.5 16c4 0 4-9 9-9h5.5", opacity: 0.42}}, {t: "path", p: {d: "M11.5 16c4 0 4 9 9 9h5.5", opacity: 0.42}},
+        {t: "circle", p: {cx: 27.5, cy: 7, r: 1.5, opacity: 0.42}}, {t: "circle", p: {cx: 27.5, cy: 25, r: 1.5, opacity: 0.42}}],
+    a: [{t: "path", p: {d: "M11.5 16h14.5", fill: "none", strokeWidth: 1.7}}, {t: "circle", p: {cx: 27.5, cy: 16, r: 2.4, stroke: "none"}}] },
+  // a strip of frames, a scan head passing over it, a pass mark
+  scan: { b: [{t: "rect", p: {x: 3, y: 7, width: 26, height: 18, rx: 2}}],
+    s: [{t: "rect", p: {x: 3, y: 7, width: 26, height: 18, rx: 2}}, {t: "path", p: {d: "M3 11h26M3 21h26", opacity: 0.5}},
+        {t: "path", p: {d: "M7 9h1M11 9h1M15 9h1M19 9h1M23 9h1M7 23h1M11 23h1M15 23h1M19 23h1M23 23h1", strokeWidth: 1.6, opacity: 0.55}},
+        {t: "path", p: {d: "M8 16.2l2.2 2.2 4.2-4.4"}}],
+    a: [{t: "path", p: {d: "M21 4.5v23", fill: "none", strokeWidth: 1.6}}, {t: "path", p: {d: "M19.3 4h3.4L21 6z", stroke: "none"}}] },
+  // one cut in three shapes: 16:9, 9:16, 4:5
+  ratios: { b: [{t: "rect", p: {x: 10.5, y: 4, width: 11, height: 24, rx: 1.8}}],
+    s: [{t: "rect", p: {x: 2, y: 9.25, width: 28, height: 13.5, rx: 1.8}}, {t: "rect", p: {x: 10.5, y: 4, width: 11, height: 24, rx: 1.8, opacity: 0.55}},
+        {t: "rect", p: {x: 8.6, y: 7.25, width: 14.8, height: 17.5, rx: 1.8, opacity: 0.35, strokeDasharray: "1.4 1.6"}}],
+    a: [{t: "path", p: {d: "M14 13.2v5.6l4.6-2.8z", stroke: "none"}}] },
+  // filed layers, the top one lit
+  layers: { b: [{t: "path", p: {d: "M16 4.5l12 6-12 6-12-6z"}}],
+    s: [{t: "path", p: {d: "M4 16l12 6 12-6", opacity: 0.7}}, {t: "path", p: {d: "M4 21.5l12 6 12-6", opacity: 0.42}}, {t: "path", p: {d: "M16 4.5l12 6-12 6-12-6z"}}],
+    a: [{t: "path", p: {d: "M16 7.6l5.8 2.9-5.8 2.9-5.8-2.9z", stroke: "none"}}] },
+};

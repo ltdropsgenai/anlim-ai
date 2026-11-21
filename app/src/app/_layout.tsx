@@ -8,6 +8,7 @@ import { c } from "../lib/theme";
 import { Shell } from "../components/Shell";
 
 // Web: the studio fonts and page-level styles (dark scrollbars, base text font). Native keeps the system font.
+// 2026-11-20: plus the glass card and ambient light CSS used by components/FloatCard.web.tsx.
 function useWebLook() {
   useEffect(() => {
     if (Platform.OS !== "web" || document.getElementById("anlim-look")) return;
@@ -19,7 +20,16 @@ function useWebLook() {
 html body [class]{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 ::selection{background:${c.accent};color:${c.onAccent}}
 *{scrollbar-color:#2A2A31 ${c.bg}}
-input,textarea{color-scheme:dark}`;
+input,textarea{color-scheme:dark}
+.anlim-glass{position:relative;display:flex;flex-direction:column;height:100%;border-radius:20px;background:linear-gradient(160deg,rgba(255,255,255,.065),rgba(255,255,255,.025) 40%,rgba(255,255,255,.012)),rgba(14,14,17,.84);box-shadow:inset 0 1px 0 rgba(255,255,255,.1),inset 0 -1px 0 rgba(0,0,0,.35),0 30px 60px -28px rgba(0,0,0,.95);transition:transform .45s cubic-bezier(.2,.7,.2,1),background .45s ease}
+@supports ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){.anlim-glass{-webkit-backdrop-filter:blur(22px) saturate(140%);backdrop-filter:blur(22px) saturate(140%)}}
+@supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){.anlim-glass{background:linear-gradient(160deg,rgba(255,255,255,.065),rgba(255,255,255,.025) 40%,rgba(255,255,255,.012)),#131316}}
+.anlim-glass--compact{border-radius:14px;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 16px 32px -20px rgba(0,0,0,.9)}
+.anlim-glass--hover:hover{transform:translateY(-4px);background-color:rgba(20,20,24,.86)}
+.anlim-glass--compact.anlim-glass--hover:hover{transform:translateY(-2px)}
+.anlim-ambient{position:relative;isolation:isolate}
+.anlim-ambient::before{content:"";position:absolute;z-index:-1;pointer-events:none;left:0;right:0;top:-40px;bottom:-40px;background:radial-gradient(50% 50% at 50% 55%,rgba(255,122,26,.13),rgba(255,122,26,.04) 55%,rgba(255,122,26,0))}
+@media (prefers-reduced-motion:reduce){.anlim-glass{transition:none}.anlim-glass--hover:hover{transform:none}}`;
     document.head.append(pre, css, st);
   }, []);
 }
