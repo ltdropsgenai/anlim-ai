@@ -34,15 +34,15 @@ input,textarea{color-scheme:dark}
 .anlim-sun{position:absolute;inset:0;z-index:-1;pointer-events:none;overflow:hidden}
 .anlim-sun>*{position:absolute;left:var(--sx);top:var(--sy)}
 .anlim-sun__pulse{width:0;height:0;will-change:transform,opacity;transform:scale(calc(.78 + .35*var(--flash)));opacity:calc(.2 + .8*var(--flash))}
-.anlim-sun__rays{position:absolute;width:220vmax;height:220vmax;left:-110vmax;top:-110vmax;border-radius:50%;will-change:transform;animation:anlim-turn 120s linear infinite;
-background:repeating-conic-gradient(rgba(255,190,130,0) 0deg,rgba(255,200,150,.26) 1.6deg,rgba(255,190,130,0) 4.2deg,rgba(255,190,130,0) 13deg);filter:blur(6px);
+.anlim-sun__rays{position:absolute;width:260vmax;height:260vmax;left:-130vmax;top:-130vmax;border-radius:50%;will-change:transform;animation:anlim-turn 120s linear infinite;
+background:repeating-conic-gradient(rgba(255,190,130,0) 0deg,rgba(255,205,155,.32) 1.6deg,rgba(255,190,130,0) 4.2deg,rgba(255,190,130,0) 13deg);filter:blur(6px);
 -webkit-mask:radial-gradient(closest-side,#000 0%,rgba(0,0,0,.6) 8%,rgba(0,0,0,.2) 20%,transparent 40%);mask:radial-gradient(closest-side,#000 0%,rgba(0,0,0,.6) 8%,rgba(0,0,0,.2) 20%,transparent 40%)}
 .anlim-sun__rays--b{background:repeating-conic-gradient(from 31deg,rgba(255,150,80,0) 0deg,rgba(255,160,90,.2) 3deg,rgba(255,150,80,0) 7.5deg,rgba(255,150,80,0) 23deg);filter:blur(14px);animation:anlim-turn 85s linear infinite reverse}
 @keyframes anlim-turn{to{transform:rotate(360deg)}}
 .anlim-sun__halo{width:120vmin;height:120vmin;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(closest-side,rgba(255,190,130,.34),rgba(255,122,26,.11) 40%,rgba(255,122,26,0));opacity:calc(.45 + .55*var(--flash))}
 .anlim-sun__core{width:150px;height:150px;border-radius:50%;background:radial-gradient(closest-side,#fff 0%,rgba(255,246,236,.9) 13%,rgba(255,206,160,.45) 32%,rgba(255,140,60,.1) 60%,rgba(255,122,26,0));transform:translate(-50%,-50%) scale(calc(.6 + .45*var(--flash)))}
 .anlim-stage .anlim-glass{background:linear-gradient(160deg,rgba(255,255,255,.065),rgba(255,255,255,.025) 40%,rgba(255,255,255,.012)),rgba(14,14,17,.76);box-shadow:inset 0 1px 0 rgba(255,255,255,.1),inset 0 -1px 0 rgba(0,0,0,.35),0 30px 60px -28px rgba(0,0,0,.95),0 0 50px -12px rgba(255,170,110,calc(.26*var(--flash)*var(--near,.5)))}
-.anlim-stage .anlim-glass::after{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;background:linear-gradient(var(--to-sun,0deg),rgba(255,200,160,0) 30%,rgba(255,190,140,.4) 75%,rgba(255,246,236,.95));-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);opacity:calc((.2 + .8*var(--flash))*var(--near,.5))}
+.anlim-stage .anlim-glass::after{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;background:linear-gradient(var(--to-sun,0deg),rgba(255,200,160,0) 30%,rgba(255,190,140,.4) 75%,rgba(255,246,236,.95));-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);opacity:calc((.3 + .7*var(--flash))*(.4 + .6*var(--near,.5)))}
 @media (max-width:760px){.anlim-sun{opacity:.75}}
 @media (prefers-reduced-motion:reduce){.anlim-sun__rays{animation:none}.anlim-stage{--flash:.45}}`;
     document.head.append(pre, css, st);
