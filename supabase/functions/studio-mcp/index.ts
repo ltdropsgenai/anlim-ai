@@ -475,7 +475,7 @@ async function callTool(uid: string, name: string, a: Args) {
       const keep = a.decision !== "reject";
       const reasons = Array.isArray(a.reasons) ? (a.reasons as unknown[]).map(String).slice(0, 10) : [];
       const at = a.at_seconds == null ? null : Number(a.at_seconds);
-      await asUser(uid, (tx) => tx`select studio.review_generation(${g.id}, ${keep ? "approve" : "reject"}, ${reasons},
+      await asUser(uid, (tx) => tx`select studio.review_generation(${g.id}, ${keep ? "approve" : "reject"}, ${reasons}::text[],
         ${a.note ? String(a.note).slice(0, 1000) : null}, ${at != null && isFinite(at) ? at : null})`);
       return text(keep ? "Kept: it goes into this scene's cut." : "Rejected. anlim reviews the request and refunds the credits if the problem is clear.");
     }
