@@ -559,7 +559,8 @@ async function findUpload(uid: string, id: string) {
 }
 async function copyStored(from: string, to: string) {
   const { error } = await admin.storage.from(BUCKET).copy(from, to);
-  if (error) throw new Error(`copy failed: ${error.message}`);
+  // the same upload used again (a second project, a retry): the copy from the first time is the same file
+  if (error && !/already exists/i.test(error.message)) throw new Error(`copy failed: ${error.message}`);
   return to;
 }
 // the app's functions take images only from their own folders (studio.owned_file), so an upload is copied there
