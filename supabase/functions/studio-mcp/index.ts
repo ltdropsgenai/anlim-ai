@@ -273,7 +273,7 @@ async function callTool(uid: string, name: string, a: Args) {
         select sh.action, sh.from_text, sh.start_frame_path, sh.start_frame_approved, sh.motion_source_path is not null as motion,
                sh.approved_generation_id, se.name as series_name, se.aspect,
                f.status as frame_status, f.composed_path, f.error as frame_error, f.then_render, f.render_error, f.check_result,
-               g.id as gen_id, g.status as gen_status, g.output_path, g.preview_path, g.error as gen_error,
+               f.created_at as frame_at, g.created_at as gen_at, g.id as gen_id, g.status as gen_status, g.output_path, g.preview_path, g.error as gen_error,
                q.verdict, q.raw -> 'reasons' as reasons
           from studio.shots sh join studio.scenes sc on sc.id = sh.scene_id join studio.series se on se.id = sc.series_id
           left join lateral (select * from studio.frame_jobs where shot_id = sh.id and kind = 'start' order by created_at desc limit 1) f on true
@@ -281,6 +281,10 @@ async function callTool(uid: string, name: string, a: Args) {
           left join lateral (select * from studio.qc_runs q where q.generation_id = g.id order by created_at desc limit 1) q on true
          where sh.id = ${id}`);
       if (!x) return text("Not found (or not yours).", undefined, true);
+      // a start image made after the latest clip (a redo after a rejected clip) is what the shot is on now
+      if (x.gen_id && x.frame_at && x.gen_at && new Date(x.frame_at) > new Date(x.gen_at)) {
+        x.gen_id = null; x.gen_status = null; x.output_path = null; x.preview_path = null; x.gen_error = null; x.verdict = null; x.reasons = null;
+      }
       const [{ paid }] = await sql`select studio.has_paid(${uid}) as paid`;
       const image = x.frame_status === "ready" || x.frame_status === "approved" ? await sign(x.composed_path)
         : x.start_frame_path ? await sign(x.start_frame_path) : null;
@@ -500,7 +504,13 @@ async function callTool(uid: string, name: string, a: Args) {
       const gate = await spendGate(uid, "make_start_image");
       if (gate) return gate;
       const [r] = await asUser(uid, (tx) => tx`select studio.request_start_frame(${sid}, ${mode}, ${a.instruction ? String(a.instruction) : null}, ${null}) as id`);
-      return text(`The start image is being made (usually under a minute). Check it with get_creation (shot_id ${sid}).`, { job_id: r.id });
+      // 2026-11-22 (promo shot 2): continuing from a frame the cast is not in left the video model nothing to draw their faces
+      // from, and it invented a different man. The reply says so whenever a continued shot has a cast.
+      const [cast] = mode === "continue" ? await asUser(uid, (tx) => tx`select coalesce(cardinality(cast_ids), 0) as n from studio.shots where id = ${sid}`) : [{ n: 0 }];
+      return text(`The start image is being made (usually under a minute). Check it with get_creation (shot_id ${sid}).` +
+        (cast?.n ? " Note: 'continue' gives the video model only the previous clip's last frame. If the characters are not clearly " +
+          "visible in it (they left, vanished, or are tiny), it invents their faces: use new_setup instead to place them from their photos." : ""),
+        { job_id: r.id });
     }
     case "set_start_image": {
       const sid = String(a.shot_id || "");
