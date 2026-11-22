@@ -156,7 +156,8 @@ async function callTool(uid: string, name: string, a: Args) {
       const q = r.r as Record<string, unknown>;
       const cost = output === "image" ? 20 : Number(q.clip_credits || 0) + (q.from_text ? 0 : 20);
       return text(`Started: ${output === "image" ? "an image" : `a ${seconds} s clip`} in "${q.series_name}" (${q.aspect}), about ${cost} credits. ` +
-        `shot_id ${q.shot_id}. Call get_creation with it to follow progress and get the links.`,
+        `shot_id ${q.shot_id}; project_id ${q.series_id} (pass it to create to add more shots to this project). ` +
+        `Call get_creation with the shot_id to follow progress and get the links.`,
         { shot_id: q.shot_id, project_id: q.series_id, project: q.series_name, aspect: q.aspect, output, credits: cost });
     }
     default:
