@@ -29,7 +29,7 @@ const FPS = 24;
 // 2026-11-21: projects can be any of six shapes, so a cut can be too (1x1, 4x3, 3x4, 21x9 added)
 const SIZES = { "16x9": [1920, 1080], "9x16": [1080, 1920], "4x5": [1080, 1350], "1x1": [1080, 1080],
                 "4x3": [1440, 1080], "3x4": [1080, 1440], "21x9": [2520, 1080] };
-const FADE_IN = 0.5, FADE_OUT = 0.8, CARD_S = 3.0, MUSIC_FADE = 2.0;
+const FADE_IN = 0.5, FADE_OUT = 0.8, CARD_S = 3.0, CREDIT_S = 2.0, MUSIC_FADE = 2.0;
 const LUFS = -14, TP = -1.5;
 const log = (a, msg) => console.log(`${new Date().toISOString()} [cut ${String(a.id).slice(0, 8)}] ${msg}`);
 
@@ -68,15 +68,23 @@ function conform(format) {
          `scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1`;
 }
 
-// skip: frames cut off the clip's start (the shot's trim, 2026-11-22); frames: how many are kept after that
-async function part(src, dest, format, frames, fades, skip = 0) {
+// skip: frames cut off the clip's start (the shot's trim, 2026-11-22); frames: how many are kept after that.
+// credit: "Made with anlim.ai" over the end of this (the last) shot. 2026-11-22 (Londi: "Made with anlim.ai belongs on
+// the end shot, not on an end card"): it fades in over the last CREDIT_S seconds and stays while the picture fades out.
+async function part(src, dest, format, frames, fades, skip = 0, credit = false) {
   const t = frames / FPS;
   const fx = [];
   if (fades.in) fx.push(`fade=t=in:st=0:d=${FADE_IN}`);
   if (fades.out) fx.push(`fade=t=out:st=${(t - FADE_OUT).toFixed(3)}:d=${FADE_OUT}`);
-  let fc = conform(format) + (fx.length ? "," + fx.join(",") : "") + ",format=yuv420p[v]";
+  let fc = conform(format) + (fx.length ? "," + fx.join(",") : "");
+  if (credit) {
+    const [W, H] = SIZES[format], mw = Math.round(Math.min(W, H) * 0.5 / 2) * 2, st = Math.max(0, t - CREDIT_S);
+    fc += `[pic];[1:v]scale=${mw}:-1,format=rgba,fade=t=in:st=${st.toFixed(3)}:d=0.6:alpha=1[m];` +
+          `[pic][m]overlay=(W-w)/2:H*0.87-h/2:shortest=1,format=yuv420p[v]`;
+  } else fc += ",format=yuv420p[v]";
   if (skip > 0) fc = fc.replace(`fps=${FPS},`, `fps=${FPS},trim=start_frame=${skip},setpts=PTS-STARTPTS,`);
-  await ff(["-i", src, "-filter_complex", fc, "-map", "[v]", "-frames:v", String(frames), "-an", "-c:v", "libx264",
+  const inputs = ["-i", src, ...(credit ? ["-loop", "1", "-framerate", String(FPS), "-t", (t + 2).toFixed(3), "-i", MADE_WITH] : [])];
+  await ff([...inputs, "-filter_complex", fc, "-map", "[v]", "-frames:v", String(frames), "-an", "-c:v", "libx264",
             "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", String(FPS), dest]);
   const got = await probe(dest);
   if (got.frames !== frames) throw new Error(`part ${path.basename(dest)} has ${got.frames} frames, expected ${frames}`);
@@ -239,14 +247,16 @@ async function build(a) {
     const keep = Math.max(Math.min(FPS, p.frames), p.frames - skip - cut);
     const from = Math.min(skip, p.frames - keep);
     if (from || keep < p.frames) notes.push(`Shot ${it.ord}: trimmed to ${(keep / FPS).toFixed(2)} s (from ${(from / FPS).toFixed(2)} s).`);
-    await part(src, dest, a.format, keep, fades, from);
+    // 2026-11-22: end_card puts the credit on the last shot (style "card" keeps the old black card after it)
+    const credit = !!opts.end_card && last && opts.end_card_style !== "card";
+    await part(src, dest, a.format, keep, fades, from, credit);
     if (fades.in) quiet.push([frames / FPS, frames / FPS + FADE_IN]);
     starts.push(frames / FPS); lens.push(keep / FPS);
     frames += keep;
     if (fades.out) quiet.push([frames / FPS - FADE_OUT, frames / FPS]);
     parts.push(dest);
   }
-  if (opts.end_card) {
+  if (opts.end_card && opts.end_card_style === "card") {
     const dest = path.join(dir, "p_card.mp4"), n = await endCard(dest, a.format);
     quiet.push([frames / FPS, (frames + n) / FPS]);
     frames += n; parts.push(dest);
