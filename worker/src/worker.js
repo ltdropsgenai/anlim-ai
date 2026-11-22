@@ -82,6 +82,7 @@ async function fail(g, error, { release = true } = {}) {
 // 2026-11-19: a project with no characters on file (made from the home prompt) cannot tell a character from the room,
 // so every moving character looks like "something else changed". The creator approved the end frame with the
 // checker's boxes in view; for such projects the gate only logs.
+const APPEARS = /\b(appears?|appearing|reappears?|re-?forms?|re-?forming|materiali[sz]es?|materiali[sz]ing|gathers? (?:together )?into|gathering (?:from [a-z ]+)?into|walks? in(?:to (?:the )?(?:frame|shot))?|enters?|steps? into (?:the )?(?:frame|shot)|comes? into view|fades? in)\b/i;
 async function endFrameGate(g, shot, characters = []) {
   if (!shot.end_frame_path || config.endFrameGate === "off") return null;
   const dir = path.join(config.workDir, g.id, "end_frame");
@@ -100,6 +101,11 @@ async function endFrameGate(g, shot, characters = []) {
   const detail = `end frame drift at ${where}; check image ${path.join(dir, "end_frame_check.png")}`;
   if (config.endFrameGate === "warn") { log(g, `WARNING ${detail}`); return null; }
   if (!characters.length) { log(g, `WARNING (no characters on file; the creator approved this end frame) ${detail}`); return null; }
+  // 2026-11-22 (Londi's promo, shot 9f541888): a character who appears during the shot (re-forms from particles, walks in,
+  // materialises) is not in the start frame, so their shadow and reflection in the end frame read as "the room changed"
+  // (21% of the frame on the wet beach) and the gate blocked a correct end frame. When the shot's words say someone
+  // appears, the creator's approval of the end frame stands and the gate only logs.
+  if (APPEARS.test(shot.action || "")) { log(g, `WARNING (a character appears during the shot; shadows and reflections are new) ${detail}`); return null; }
   log(g, `blocked: ${detail}`);
   return "The end frame changes more than the characters: something in the room or a prop moved. Nothing was charged. " +
          "Make the end frame again (or remove it) and render once more.";
