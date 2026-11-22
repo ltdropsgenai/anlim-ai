@@ -83,6 +83,7 @@ async function fail(g, error, { release = true } = {}) {
 // so every moving character looks like "something else changed". The creator approved the end frame with the
 // checker's boxes in view; for such projects the gate only logs.
 const APPEARS = /\b(appears?|appearing|reappears?|re-?forms?|re-?forming|materiali[sz]es?|materiali[sz]ing|gathers? (?:together )?into|gathering (?:from [a-z ]+)?into|walks? in(?:to (?:the )?(?:frame|shot))?|enters?|steps? into (?:the )?(?:frame|shot)|comes? into view|fades? in)\b/i;
+const LIGHT_CHANGES = /\b(halos?|auras?|glows?|glowing|radiant|radiance|beams? of (?:sun)?light|(?:sun|light) ?rays?|rays? of (?:sun)?light|bursts? of light|light (?:forms|floods|fills|spreads|grows|blazes))\b/i;
 async function endFrameGate(g, shot, characters = []) {
   if (!shot.end_frame_path || config.endFrameGate === "off") return null;
   const dir = path.join(config.workDir, g.id, "end_frame");
@@ -106,6 +107,9 @@ async function endFrameGate(g, shot, characters = []) {
   // (21% of the frame on the wet beach) and the gate blocked a correct end frame. When the shot's words say someone
   // appears, the creator's approval of the end frame stands and the gate only logs.
   if (APPEARS.test(shot.action || "")) { log(g, `WARNING (a character appears during the shot; shadows and reflections are new) ${detail}`); return null; }
+  // 2026-11-22 (promo shot 3, 74060ec4): light that the shot's words ask for (a halo forms, beams of sunlight hit him)
+  // relights the whole frame, which reads as "the room changed". The creator approved the end frame; the gate only logs.
+  if (LIGHT_CHANGES.test(shot.action || "")) { log(g, `WARNING (the shot's words change the light: halo, glow, beams) ${detail}`); return null; }
   log(g, `blocked: ${detail}`);
   return "The end frame changes more than the characters: something in the room or a prop moved. Nothing was charged. " +
          "Make the end frame again (or remove it) and render once more.";
