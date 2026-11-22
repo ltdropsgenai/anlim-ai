@@ -31,7 +31,7 @@ export const setShot = (shotId, status) => q("update studio.shots set status = $
 
 export async function shotContext(gen) {
   const [row] = await q(
-    `select sh.*, sc.blocking, sc.title as scene_title, se.name as series_name, se.style_prompt, se.look,
+    `select sh.*, sc.blocking, sc.title as scene_title, se.name as series_name, se.style_prompt, se.look, se.aspect,
             l.name as location_name, l.description as location_description, m.endpoint, m.t2v_endpoint, m.provider,
             m.resolution, m.usd_per_second
        from studio.shots sh join studio.scenes sc on sc.id = sh.scene_id join studio.series se on se.id = sc.series_id
@@ -65,10 +65,10 @@ export async function frameContext(job) {
   // the location's empty-room plate (compose takes the room a character left from it, 2026-11-16)
   // the series' look (cartoon | photoreal, 2026-11-16): prompt wording, detector classes and matting model
   const [se] = shot ? await q(
-    `select se.look, se.style_prompt from studio.scenes sc join studio.series se on se.id = sc.series_id where sc.id = $1`,
+    `select se.look, se.style_prompt, se.aspect from studio.scenes sc join studio.series se on se.id = sc.series_id where sc.id = $1`,
     [shot.scene_id])
     : job.location_id ? await q(        // a plate made for a location, not from a shot
-      `select se.look, se.style_prompt from studio.locations l join studio.series se on se.id = l.series_id where l.id = $1`,
+      `select se.look, se.style_prompt, se.aspect from studio.locations l join studio.series se on se.id = l.series_id where l.id = $1`,
       [job.location_id]) : [];
   const [loc] = shot ? await q(
     `select l.layout_path, l.other_plates from studio.scenes sc join studio.locations l on l.id = sc.location_id where sc.id = $1`,
@@ -76,7 +76,7 @@ export async function frameContext(job) {
   // every plate of the location, one per camera framing, latest first (2026-11-16, migration studio_location_framings)
   const platePaths = loc ? [loc.layout_path, ...[...(loc.other_plates || [])].reverse()].filter(Boolean) : [];
   return { shot, characters: chars, platePath: loc?.layout_path || null, platePaths, look: se?.look || "cartoon",
-           stylePrompt: se?.style_prompt || null };
+           stylePrompt: se?.style_prompt || null, aspect: se?.aspect || "16:9" };
 }
 
 export async function recordQc(genId, r) {

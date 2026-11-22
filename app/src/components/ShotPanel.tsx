@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Link, router, useFocusEffect } from "expo-router";
-import { api, CutoutJob, END_FRAME_CREDITS, FRAME_CREDITS, EndCheck, HeightCheck, KIND_NAMES, StagingCheck, MODEL_NAMES, QUALITY_NAMES, Shot, StartMode, StartSource, startFrameCredits, uploadStill } from "../lib/api";
+import { api, CutoutJob, END_FRAME_CREDITS, FRAME_CREDITS, EndCheck, HeightCheck, KIND_NAMES, StagingCheck, MODEL_NAMES, QUALITY_NAMES, ratioOf, Shot, StartMode, StartSource, startFrameCredits, uploadStill } from "../lib/api";
 import { c, font, pageBg } from "../lib/theme";
 import { autoNote, MODEL_NOTES } from "../lib/modelNotes";
 import { StillPicker } from "./StillPicker";
@@ -205,11 +205,11 @@ function Cutouts({ shot }: { shot: Shot }) {
   );
 }
 
-function Frame({ label, uri, boxes, look }: { label: string; uri: string | null; boxes?: number[][]; look?: number[][] }) {
+function Frame({ label, uri, boxes, look, ratio = 16 / 9 }: { label: string; uri: string | null; boxes?: number[][]; look?: number[][]; ratio?: number }) {
   return (
     <View style={s.frameCol}>
       <Text style={s.label}>{label}</Text>
-      <View style={s.frame}>
+      <View style={[s.frame, { aspectRatio: ratio }]}>
         {uri ? <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="contain" accessibilityLabel={label} />
           : <Text style={[s.sub, { padding: 12 }]}>None yet</Text>}
         {(boxes ?? []).map((b, i) => (   // drift boxes: fractions x0,y0,x1,y1 of the frame
@@ -335,9 +335,9 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
       <Text style={[s.h, font.display]}>Start frame</Text>
       <Text style={s.sub}>The first frame of the shot: your characters in the room, posed as the shot begins. The video starts exactly on it.</Text>
       <View style={s.frames}>
-        <Frame label={!shot.start_url ? "Start frame" : shot.start_frame_approved ? "Start frame (approved)" : "Start frame (not approved yet)"} uri={shot.start_url} />
+        <Frame ratio={ratioOf(shot.aspect)} label={!shot.start_url ? "Start frame" : shot.start_frame_approved ? "Start frame (approved)" : "Start frame (not approved yet)"} uri={shot.start_url} />
         {(startCandidate || startMaking) && (
-          <Frame label={startMaking ? "New start frame (being made)" : "New start frame (not approved yet)"} uri={startCandidate?.composed_url ?? null}
+          <Frame ratio={ratioOf(shot.aspect)} label={startMaking ? "New start frame (being made)" : "New start frame (not approved yet)"} uri={startCandidate?.composed_url ?? null}
             boxes={startCandidate?.check_result?.verdict === "FLAG" ? startCandidate.check_result.drift.map((d) => d.box) : undefined}
             look={drawnAreas(startCandidate?.check_result)} />
         )}
@@ -413,8 +413,8 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
       </Text>
 
       <View style={s.frames}>
-        <Frame label="Start frame" uri={shot.start_url} />
-        <Frame label={candidate ? "New end frame (not approved yet)" : shot.end_url ? "End frame (approved)" : "End frame"}
+        <Frame ratio={ratioOf(shot.aspect)} label="Start frame" uri={shot.start_url} />
+        <Frame ratio={ratioOf(shot.aspect)} label={candidate ? "New end frame (not approved yet)" : shot.end_url ? "End frame (approved)" : "End frame"}
           uri={candidate?.composed_url ?? shot.end_url} boxes={check?.verdict === "FLAG" ? check.drift.map((d) => d.box) : undefined}
           look={candidate ? drawnAreas(check) : undefined} />
       </View>

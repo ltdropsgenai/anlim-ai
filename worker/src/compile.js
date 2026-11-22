@@ -133,14 +133,15 @@ export function prompt(shot, chars) {
 //   Kling 4.0 text-to-video (kling/v4/text-to-video, 2026-11-20): prompt, duration 3..30, resolution "720p",
 //     aspect_ratio (default 16:9; Home's prompt stills are 16:9 too), no image fields
 const ADAPTERS = [
-  { match: /^kling\/v4\/text-to-video/, build: (p, s) => ({ prompt: p, duration: s.duration_s, resolution: s.resolution, aspect_ratio: "16:9" }) },
+  // 2026-11-21: the project's shape (series.aspect); all three take 21:9, 16:9, 4:3, 1:1, 3:4, 9:16 (fal pages read 2026-11-21)
+  { match: /^kling\/v4\/text-to-video/, build: (p, s) => ({ prompt: p, duration: s.duration_s, resolution: s.resolution, aspect_ratio: s.aspect || "16:9" }) },
   // MiniMax H3 (minimax/h3/text-to-video) and Seedance 2.0 (bytedance/seedance-2.0/text-to-video), fal pages read
   // 2026-11-20: same fields as their image-to-video minus the image, plus aspect_ratio (16:9 like Kling's)
   { match: /^minimax\/h3\/text-to-video/, build: (p, s) => ({ prompt: p, duration: s.duration_s, resolution: s.resolution,
-                                                                 aspect_ratio: "16:9", prompt_expansion_mode: "disabled" }) },
+                                                                 aspect_ratio: s.aspect || "16:9", prompt_expansion_mode: "disabled" }) },
   { match: /^bytedance\/seedance-2\.0\/text-to-video/, build: (p, s) => ({ prompt: p, duration: String(s.duration_s),
-                                                                 resolution: s.resolution, aspect_ratio: "16:9", generate_audio: false }) },
-  { match: /^mock\/t2v/, build: (p, s) => ({ prompt: p, duration: s.duration_s, resolution: s.resolution }) },
+                                                                 resolution: s.resolution, aspect_ratio: s.aspect || "16:9", generate_audio: false }) },
+  { match: /^mock\/t2v/, build: (p, s) => ({ prompt: p, duration: s.duration_s, resolution: s.resolution, aspect_ratio: s.aspect || "16:9" }) },
   { match: /^kling\/v4\//, build: (p, s, u) => ({ prompt: p, start_image_url: u, duration: s.duration_s, resolution: s.resolution }) },
   { match: /^minimax\//, build: (p, s, u) => ({ prompt: p, image_url: u, duration: s.duration_s, resolution: s.resolution,
                                                 prompt_expansion_mode: "disabled" }) },

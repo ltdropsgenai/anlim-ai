@@ -2,9 +2,9 @@
 // account only to see the result). Kept in this browser until the new account signs in; then the Home composer makes
 // the shot and its first frame from it, paid from the new account's credits. Older than a day = dropped. @anlim
 import { Platform } from "react-native";
-import type { Look, Output } from "./api";
+import type { Aspect, Look, Output } from "./api";
 
-export type Draft = { text: string; look: Look; len: number; output?: Output; at: number };
+export type Draft = { text: string; look: Look; len: number; output?: Output; aspect?: Aspect; at: number };
 const KEY = "anlim.draft";
 const DAY = 24 * 3600 * 1000;
 let memory: Draft | null = null;     // native, or a browser where storage is blocked

@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
-import { api, Creation, Output } from "../lib/api";
+import { api, Creation, Output, ratioOf } from "../lib/api";
 import { c, font } from "../lib/theme";
 import { downloadFile } from "../lib/download";
 import { MediaView } from "./MediaView";
@@ -81,8 +81,8 @@ export function CreationCard({ shotId, output, onAgain }: { shotId: string; outp
         {st.label}{!st.done ? `  ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}` : ""}
       </Text>
 
-      {x?.video_url ? <MediaView kind="clip" url={x.video_url} poster={x.image_url ?? x.poster_url ?? null} />
-        : x?.image_url ? <MediaView kind="still" url={x.image_url} /> : <View style={s.placeholder} />}
+      {x?.video_url ? <MediaView kind="clip" url={x.video_url} poster={x.image_url ?? x.poster_url ?? null} ratio={ratioOf(x.aspect)} />
+        : x?.image_url ? <MediaView kind="still" url={x.image_url} ratio={ratioOf(x.aspect)} /> : <View style={[s.placeholder, { aspectRatio: ratioOf(x?.aspect) }, ratioOf(x?.aspect) < 1 && { width: "50%", alignSelf: "center" }]} />}
 
       {x?.gen_status === "review" && x.gen_error?.startsWith("checker found: ") ? (
         <Text style={[s.note, { color: c.flag }]}>Our check found: {x.gen_error.slice(15, 300)}</Text>) : null}

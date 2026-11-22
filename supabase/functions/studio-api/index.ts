@@ -194,7 +194,7 @@ async function handle(req: Request): Promise<Response> {
         const id = String(body.shot_id || "");
         const [sh] = await asUser(uid, (tx) => tx`
           select sh.id, sh.ord, sh.action, sh.status, sh.duration_s, sh.camera, sh.start_frame_path, sh.start_frame_approved,
-                 sh.end_frame_path, sh.end_frame_approved, sh.end_instruction, sc.title as scene_title, se.name as series_name, se.look,
+                 sh.end_frame_path, sh.end_frame_approved, sh.end_instruction, sc.title as scene_title, se.name as series_name, se.look, se.aspect,
                  se.quality, se.id as series_id
             from studio.shots sh join studio.scenes sc on sc.id = sh.scene_id join studio.series se on se.id = sc.series_id
            where sh.id = ${id}`);
@@ -248,7 +248,8 @@ async function handle(req: Request): Promise<Response> {
         const camera = null;
         const [r] = await asUser(uid, (tx) => tx`select studio.quick_create(${prompt}, ${String(body.look || "cartoon")},
           ${Number(body.duration_s || 5)}::int, ${String(body.output || "video")}, ${camera},
-          ${body.series_id ? String(body.series_id) : null}::uuid, ${body.model ? String(body.model) : null}::text) as r`);
+          ${body.series_id ? String(body.series_id) : null}::uuid, ${body.model ? String(body.model) : null}::text,
+          ${String(body.aspect || "16:9")}::text) as r`);
         return json(r.r);
       }
       // Motion transfer (2026-11-20): the creator's clip recast with their reference images; paid accounts only.
@@ -278,7 +279,7 @@ async function handle(req: Request): Promise<Response> {
       case "creation": {
         const id = String(body.shot_id || "");
         const [x] = await asUser(uid, (tx) => tx`
-          select sh.id as shot_id, sh.action, sh.duration_s, sh.from_text, sh.motion_source_path is not null as motion, sh.start_frame_path, sc.id as scene_id, se.id as series_id, se.name as series_name, se.look,
+          select sh.id as shot_id, sh.action, sh.duration_s, sh.from_text, sh.motion_source_path is not null as motion, sh.start_frame_path, sc.id as scene_id, se.id as series_id, se.name as series_name, se.look, se.aspect,
                  f.id as job_id, f.status as frame_status, f.composed_path, f.error as frame_error, f.then_render, f.render_error,
                  g.id as gen_id, g.status as gen_status, g.output_path, g.preview_path, g.error as gen_error, g.model_id,
                  g.credits_reserved, g.settled
@@ -360,13 +361,13 @@ async function handle(req: Request): Promise<Response> {
       // ---- authoring (studio.create_scene / create_shot / update_shot / set_start_frame / approve_start_frame / delete_shot)
       case "series": {
         const rows = await asUser(uid, (tx) => tx`
-          select se.id, se.name, se.look, se.quality, se.genre, se.style_prompt, coalesce(json_agg(json_build_object('id', sc.id, 'title', sc.title, 'ord', sc.ord, 'location_id', sc.location_id)
+          select se.id, se.name, se.look, se.aspect, se.quality, se.genre, se.style_prompt, coalesce(json_agg(json_build_object('id', sc.id, 'title', sc.title, 'ord', sc.ord, 'location_id', sc.location_id)
                    order by sc.ord) filter (where sc.id is not null), '[]') as scenes,
                  (select coalesce(json_agg(json_build_object('id', l.id, 'name', l.name, 'has_plate', l.layout_path is not null)
                    order by l.name), '[]') from studio.locations l where l.series_id = se.id) as locations,
                  exists (select 1 from studio.characters ch where ch.series_id = se.id) as has_cast
             from studio.series se left join studio.scenes sc on sc.series_id = se.id
-           group by se.id, se.name, se.look, se.quality, se.genre, se.style_prompt order by se.name`);
+           group by se.id, se.name, se.look, se.aspect, se.quality, se.genre, se.style_prompt order by se.name`);
         return json({ items: rows });
       }
       case "scene_create": {
@@ -460,7 +461,13 @@ async function handle(req: Request): Promise<Response> {
         const [r] = await asUser(uid, (tx) => tx`select studio.create_series(${String(body.name || "")}, ${body.style == null ? null : String(body.style)},
                                                    ${body.look == null ? "cartoon" : String(body.look)}) as id`);
         if (body.genre) await asUser(uid, (tx) => tx`select studio.set_series_genre(${r.id}, ${String(body.genre)})`);
+        if (body.aspect) await asUser(uid, (tx) => tx`select studio.set_series_aspect(${r.id}, ${String(body.aspect)})`);
         return json({ ok: true, id: r.id });
+      }
+      case "series_aspect": {
+        // the project's shape (2026-11-21): 16:9, 9:16, 1:1, 4:3, 3:4 or 21:9; applies to images and clips made afterwards
+        await asUser(uid, (tx) => tx`select studio.set_series_aspect(${String(body.series_id || "")}, ${String(body.aspect || "")})`);
+        return json({ ok: true });
       }
       case "series_update": {
         // the look (cartoon | photoreal) and free-text style; they apply to frames and renders made afterwards (2026-11-16)

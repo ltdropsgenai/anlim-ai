@@ -1,7 +1,8 @@
 // Web preview for an asset: video, image or audio (Assets, 2026-11-19). @anlim
 import type { AssetKind } from "../lib/api";
 
-export function MediaView({ kind, url, poster }: { kind: AssetKind; url: string; poster?: string | null }) {
+// ratio: the native version sizes its box with it; the web elements size themselves from the file
+export function MediaView({ kind, url, poster }: { kind: AssetKind; url: string; poster?: string | null; ratio?: number }) {
   if (kind === "clip" || kind === "cut")
     return <video src={url} poster={poster ?? undefined} controls autoPlay playsInline
       style={{ width: "100%", maxHeight: "62vh", borderRadius: 12, background: "#000", display: "block" }} />;

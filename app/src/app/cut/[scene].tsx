@@ -11,9 +11,15 @@ import { ClipPlayer } from "../../components/ClipPlayer";
 
 const FORMATS: { id: CutFormat; title: string; sub: string }[] = [
   { id: "16x9", title: "Landscape 16:9", sub: "1920 × 1080 · YouTube, websites" },
-  { id: "9x16", title: "Vertical 9:16", sub: "1080 × 1920 · Shorts, Reels, TikTok. Wide shots sit in the middle over a blurred fill." },
+  { id: "9x16", title: "Vertical 9:16", sub: "1080 × 1920 · Shorts, Reels, TikTok" },
+  { id: "1x1", title: "Square 1:1", sub: "1080 × 1080 · feeds" },
   { id: "4x5", title: "Feed 4:5", sub: "1080 × 1350 · Instagram and Facebook feed" },
+  { id: "4x3", title: "Classic 4:3", sub: "1440 × 1080" },
+  { id: "3x4", title: "Portrait 3:4", sub: "1440 tall × 1080" },
+  { id: "21x9", title: "Cinema 21:9", sub: "2520 × 1080" },
 ];
+// 2026-11-21: clips can be any project shape now. A clip in a different shape than the cut is shown whole, in the middle,
+// over a blurred fill (never cropped). The cut starts on the project's own shape.
 const STATUS: Record<string, string> = { queued: "Waiting to start", running: "Cutting…", done: "Ready", failed: "Failed" };
 
 export default function SceneCut() {
@@ -30,12 +36,19 @@ export default function SceneCut() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const picked = useRef(false);    // the project's shape is the starting format, once; then the creator's choice stands
 
   const load = useCallback(async () => {
     try {
       const [list, me, series] = await Promise.all([api.cuts(scene), api.me(), api.series()]);
       setCuts(list); setOwner(me.user_id);
-      for (const se of series) { const sc = se.scenes.find((x) => x.id === scene); if (sc) setTitle(`${se.name} · ${sc.title}`); }
+      for (const se of series) {
+        const sc = se.scenes.find((x) => x.id === scene);
+        if (sc) {
+          setTitle(`${se.name} · ${sc.title}`);
+          if (!picked.current) { picked.current = true; setFormat(((se.aspect ?? "16:9").replace(":", "x")) as CutFormat); }
+        }
+      }
       setError(null);
     } catch (e) { setError((e as Error).message); }
   }, [scene]);
@@ -108,7 +121,7 @@ export default function SceneCut() {
             x.report?.effects ? `${x.report.effects} sound effect${x.report.effects > 1 ? "s" : ""}` : null].filter(Boolean).map((t) => ` · ${t}`).join("") || " · silent"}</Text>
           {(x.status === "queued" || x.status === "running") && <ActivityIndicator style={{ alignSelf: "flex-start", marginVertical: 6 }} />}
           {x.status === "failed" && <Text style={s.err}>{x.error}</Text>}
-          {x.url && <View style={{ maxWidth: x.format === "16x9" ? 900 : 380, marginVertical: 8 }}>
+          {x.url && <View style={{ maxWidth: ["16x9", "21x9", "4x3"].includes(x.format) ? 900 : x.format === "1x1" ? 520 : 380, marginVertical: 8 }}>
             <ClipPlayer src={x.url} duration={Number(x.duration_s) || 0} markers={[]} />
           </View>}
           {x.watermarked && (

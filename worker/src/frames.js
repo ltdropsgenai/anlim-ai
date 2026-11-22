@@ -94,7 +94,7 @@ export function setupPrompt(instruction, names, heights = [], look = "cartoon", 
 // Start frame from the description (mode "prompt", 2026-11-19): a new project's first shot has no room, cast or
 // previous clip to start from, so the still is drawn from the shot's words alone (text to image, 16:9). The creator
 // can then cut character references out of it, and later shots continue from its clip.
-export function framePrompt(instruction, look = "cartoon", style = null, chars = []) {
+export function framePrompt(instruction, look = "cartoon", style = null, chars = [], aspect = "16:9") {
   // 2026-11-19 held-out test: the first wording ("everyone in their starting positions", "real people and places",
   // "a wide or medium shot that shows the whole setting") made Nano Banana 2 add people who were never asked for on
   // 9 of 20 first-time-user prompts (a family around the cat, a film crew next to the horse, four gardeners and no
@@ -103,7 +103,8 @@ export function framePrompt(instruction, look = "cartoon", style = null, chars =
   const looks = look === "photoreal"
     ? "A real photograph: natural light, a real camera lens, not drawn, not 3D, not animated."
     : "A clean cartoon illustration with a consistent drawing style, clear shapes and readable faces.";
-  return `The first frame of a short video clip, 16:9. The clip: ${instruction.trim().replace(/\.?$/, ".")} ` +
+  const shape = { "16:9": "16:9 landscape", "9:16": "9:16 vertical", "1:1": "1:1 square", "4:3": "4:3", "3:4": "3:4 portrait", "21:9": "21:9 widescreen" }[aspect] || aspect;
+  return `The first frame of a short video clip, ${shape}, composed for that shape. The clip: ${instruction.trim().replace(/\.?$/, ".")} ` +
     "Draw only the moment the clip starts, before the action happens. Show exactly the subjects the description names " +
     "and no other people, animals or characters: if it names one subject, show only that one (background extras only " +
     "if the description asks for a crowd or a busy place). Keep the main subject fully inside the frame. Use the framing " +
@@ -254,11 +255,12 @@ async function stepCutout(j, shot, base, look, characters) {
 }
 
 async function stepQueued(j) {
-  const { shot, characters, look, stylePrompt } = await db.frameContext(j);
+  const { shot, characters, look, stylePrompt, aspect } = await db.frameContext(j);
   if (j.kind === "start" && j.mode === "prompt") {
     // no image to start from: text to image only
-    const prompt = framePrompt(j.instruction || shot?.action || "", look, stylePrompt, characters);
-    const sub = await provider().submit(j.endpoint, { prompt, num_images: 1, aspect_ratio: "16:9", resolution: "1K", output_format: "png" });
+    const prompt = framePrompt(j.instruction || shot?.action || "", look, stylePrompt, characters, aspect);
+    // 2026-11-21: the project's shape (was always 16:9)
+    const sub = await provider().submit(j.endpoint, { prompt, num_images: 1, aspect_ratio: aspect, resolution: "1K", output_format: "png" });
     await db.updateFrame(j.id, { status: "running", prompt, provider_request_id: sub.requestId, provider_status_url: sub.statusUrl,
       provider_response_url: sub.responseUrl, submitted_at: new Date(), next_poll_at: later(5000), tries: 0,
       locked_by: null, locked_until: null });

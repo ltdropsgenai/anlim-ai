@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
-import { api, Genre, GENRE_NAMES, Look, MODEL_NAMES, QueueItem, Series, ShotRow } from "../lib/api";
+import { api, Aspect, ASPECTS, Genre, GENRE_NAMES, Look, MODEL_NAMES, QueueItem, Series, ShotRow } from "../lib/api";
 import { c, font, verdictColor, verdictLabel, pageBg } from "../lib/theme";
 import { chip, GEN, pad2, TONE } from "../lib/shotStatus";
 import { AddShot } from "../components/AddShot";
@@ -19,6 +19,7 @@ function NewSeries({ onDone }: { onDone: (id?: string, err?: string) => void }) 
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [look, setLook] = useState<Look>("cartoon");
+  const [aspect, setAspect] = useState<Aspect>("16:9");
   const [genre, setGenre] = useState<Genre | null>(null);
   const [busy, setBusy] = useState(false);
   if (!open) return <Pressable onPress={() => setOpen(true)} accessibilityRole="button"><Text style={s.link}>+ New series</Text></Pressable>;
@@ -33,6 +34,16 @@ function NewSeries({ onDone }: { onDone: (id?: string, err?: string) => void }) 
           </Pressable>
         ))}
       </View>
+      <Text style={s.label}>Shape</Text>
+      <View style={s.row}>
+        {ASPECTS.map((a) => (
+          <Pressable key={a.id} onPress={() => setAspect(a.id)} style={[s.chip, aspect === a.id && s.chipOn]} accessibilityRole="radio"
+            accessibilityState={{ checked: aspect === a.id }} accessibilityLabel={`${a.label}, ${a.hint}`}>
+            <Text style={{ color: aspect === a.id ? c.onAccent : c.ink, fontSize: 13 }}>{a.label}</Text>
+          </Pressable>
+        ))}
+        <Text style={{ color: c.muted, fontSize: 12 }}>{ASPECTS.find((a) => a.id === aspect)?.hint}</Text>
+      </View>
       <Text style={s.label}>Genre (optional, for filing in Assets)</Text>
       <View style={s.row}>
         {(Object.keys(GENRE_NAMES) as Genre[]).map((g) => (
@@ -45,7 +56,7 @@ function NewSeries({ onDone }: { onDone: (id?: string, err?: string) => void }) 
         <Pressable style={[s.btn, (!name.trim() || busy) && { opacity: 0.5 }]} disabled={!name.trim() || busy} accessibilityRole="button"
           onPress={async () => {
             setBusy(true);
-            try { const r = await api.createSeries(name, look, undefined, genre); setOpen(false); setName(""); onDone(r.id); }
+            try { const r = await api.createSeries(name, look, undefined, genre, aspect); setOpen(false); setName(""); onDone(r.id); }
             catch (e) { onDone(undefined, (e as Error).message); }
             setBusy(false);
           }}>

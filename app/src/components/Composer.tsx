@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { FloatCard } from "./FloatCard";
 import { router } from "expo-router";
-import { api, Look, Output, PromptModel, Series } from "../lib/api";
+import { api, Aspect, ASPECTS, Look, Output, PromptModel, Series } from "../lib/api";
 import { autoNote, MODEL_NOTES } from "../lib/modelNotes";
 import { CreationCard } from "./CreationCard";
 import { c, font } from "../lib/theme";
@@ -33,6 +33,8 @@ export function Composer({ narrow, guest = false, afterBanner = false }: { narro
   const [text, setText] = useState("");
   const [look, setLook] = useState<Look>("cartoon");
   const [len, setLen] = useState(5);
+  // 2026-11-21 (Londi): every creator picks the shape (was always 16:9); a picked project keeps its own
+  const [aspect, setAspect] = useState<Aspect>("16:9");
   const [output, setOutput] = useState<Output>("video");
   const [made, setMade] = useState<{ shot: string; output: Output } | null>(null);
   const [series, setSeries] = useState<Series[]>([]);
@@ -54,12 +56,13 @@ export function Composer({ narrow, guest = false, afterBanner = false }: { narro
     const d = peekDraft();
     if (!d) return;
     clearDraft();
-    setText(d.text); setLook(d.look); setLen(d.len); setOutput(d.output ?? "video");
-    make(d.text, d.look, d.len, d.output ?? "video", null);
+    setText(d.text); setLook(d.look); setLen(d.len); setOutput(d.output ?? "video"); setAspect(d.aspect ?? "16:9");
+    make(d.text, d.look, d.len, d.output ?? "video", null, null, d.aspect ?? "16:9");
   }, [guest]);   // eslint-disable-line react-hooks/exhaustive-deps
   const picked = useMemo(() => series.find((x) => x.id === target) ?? null, [series, target]);
   // adding to an existing project uses that project's look; the toggle is for new projects
   const effLook: Look = picked ? picked.look : look;
+  const effAspect: Aspect = picked ? picked.aspect ?? "16:9" : aspect;
   const ready = text.trim().length >= 8 && !busy;
   // models that can make this video: the look and the length must fit
   const fits = useMemo(() => models.filter((m) => (!m.looks || m.looks.includes(effLook)) && len >= m.min_duration_s && len <= m.max_duration_s),
@@ -72,17 +75,17 @@ export function Composer({ narrow, guest = false, afterBanner = false }: { narro
     if (!ready) return;
     if (guest) {
       // visitors: keep the prompt, ask for an account; the shot is made as soon as they are signed in
-      saveDraft({ text: text.trim(), look, len, output });
+      saveDraft({ text: text.trim(), look, len, output, aspect });
       router.navigate({ pathname: "/login", params: { mode: "signup" } });
       return;
     }
-    await make(text.trim(), look, len, output, picked, output === "video" ? model : null);
+    await make(text.trim(), look, len, output, picked, output === "video" ? model : null, aspect);
   }
 
-  async function make(action: string, lk: Look, ln: number, out: Output, p: Series | null, m: string | null = null) {
+  async function make(action: string, lk: Look, ln: number, out: Output, p: Series | null, m: string | null = null, a: Aspect = "16:9") {
     setBusy(true); setError(null);
     try {
-      const r = await api.quickCreate(action, lk, ln, out, p ? p.id : null, m);
+      const r = await api.quickCreate(action, lk, ln, out, p ? p.id : null, m, a);
       setMade({ shot: r.shot_id, output: out });
       if (!p) api.series().then(setSeries).catch(() => {});      // the new Untitled project shows in "Add to"
     } catch (e) {
@@ -150,6 +153,25 @@ export function Composer({ narrow, guest = false, afterBanner = false }: { narro
         </View>
       </FloatCard>
 
+      <View style={[s.row, { marginTop: 12, justifyContent: "center" }]} accessibilityRole="radiogroup" accessibilityLabel="Shape">
+        <Text style={[s.small, font.mono]}>SHAPE</Text>
+        {ASPECTS.map((a) => {
+          const on = effAspect === a.id, locked = !!picked;
+          return (
+            <Pressable key={a.id} disabled={locked} onPress={() => setAspect(a.id)} style={[s.chip, on && s.chipOn, locked && !on && { opacity: 0.4 }]}
+              accessibilityRole="radio" accessibilityState={{ checked: on, disabled: locked }} accessibilityLabel={`${a.label}, ${a.hint}`}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Shape ratio={a.id} on={on} />
+                <Text style={[{ color: on ? c.ink : c.sub, fontSize: 12 }, font.mono]}>{a.label}</Text>
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
+      <Text style={[s.small, { textAlign: "center", marginTop: 4 }]}>
+        {picked ? `${picked.name} is ${effAspect}; change it in the project's settings.` : ASPECTS.find((a) => a.id === effAspect)?.hint}
+      </Text>
+
       {output === "video" && !guest && fits.length > 0 && (
         <View style={[s.row, { marginTop: 12, justifyContent: "center" }]} accessibilityRole="radiogroup" accessibilityLabel="Video model">
           <Text style={[s.small, font.mono]}>MODEL</Text>
@@ -214,6 +236,13 @@ export function Composer({ narrow, guest = false, afterBanner = false }: { narro
       </Text>
     </View>
   );
+}
+
+// a small outline of the shape, so 9:16 and 16:9 read at a glance
+function Shape({ ratio, on }: { ratio: Aspect; on: boolean }) {
+  const [w, h] = ratio.split(":").map(Number);
+  const k = 14 / Math.max(w, h);
+  return <View style={{ width: Math.round(w * k), height: Math.round(h * k), borderWidth: 1.5, borderRadius: 2, borderColor: on ? c.accent : c.muted }} />;
 }
 
 const s = StyleSheet.create({

@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
-import { api, FRAME_CREDITS, Genre, GENRE_NAMES, Kind, Library, Look, Series, ShotRow, uploadImage, Quality, QUALITY_NAMES, QUALITY_HELP } from "../lib/api";
+import { api, ASPECTS, FRAME_CREDITS, Genre, GENRE_NAMES, Kind, Library, Look, Series, ShotRow, uploadImage, Quality, QUALITY_NAMES, QUALITY_HELP } from "../lib/api";
 import { c, font, pageBg } from "../lib/theme";
 import { StillPicker } from "../components/StillPicker";
 
@@ -116,6 +116,20 @@ export default function LibraryScreen() {
               </Pressable>
             ))}
             <Text style={s.sub}>{LOOKS.find((l) => l.id === cur.look)?.sub}</Text>
+          </View>
+          <Text style={[s.title, { marginTop: 14 }]}>Shape</Text>
+          <Text style={s.sub}>The frame shape of new images and clips. Clips already made keep theirs; a cut can still be exported in any shape.</Text>
+          <View style={s.row}>
+            {ASPECTS.map((a) => {
+              const on = (cur.aspect ?? "16:9") === a.id;
+              return (
+                <Pressable key={a.id} disabled={busy || on} onPress={() => run(() => api.setSeriesAspect(cur.id, a.id))}
+                  style={[s.chip, on && s.chipOn]} accessibilityRole="radio" accessibilityState={{ checked: on }} accessibilityLabel={`${a.label}, ${a.hint}`}>
+                  <Text style={on ? { color: c.onAccent } : { color: c.ink }}>{a.label}</Text>
+                </Pressable>
+              );
+            })}
+            <Text style={s.sub}>{ASPECTS.find((a) => a.id === (cur.aspect ?? "16:9"))?.hint}</Text>
           </View>
           <Text style={[s.title, { marginTop: 14 }]}>Genre</Text>
           <Text style={s.sub}>Optional. Files this series' work in Assets so you can filter by it; it does not change how anything is made.</Text>

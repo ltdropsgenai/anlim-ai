@@ -26,7 +26,9 @@ import { watermark, VAULT, MARK } from "./watermark.js";
 
 const exec = promisify(execFile);
 const FPS = 24;
-const SIZES = { "16x9": [1920, 1080], "9x16": [1080, 1920], "4x5": [1080, 1350] };
+// 2026-11-21: projects can be any of six shapes, so a cut can be too (1x1, 4x3, 3x4, 21x9 added)
+const SIZES = { "16x9": [1920, 1080], "9x16": [1080, 1920], "4x5": [1080, 1350], "1x1": [1080, 1080],
+                "4x3": [1440, 1080], "3x4": [1080, 1440], "21x9": [2520, 1080] };
 const FADE_IN = 0.5, FADE_OUT = 0.8, CARD_S = 2.5, MUSIC_FADE = 2.0;
 const LUFS = -14, TP = -1.5;
 const log = (a, msg) => console.log(`${new Date().toISOString()} [cut ${String(a.id).slice(0, 8)}] ${msg}`);
@@ -59,10 +61,11 @@ function conform(format) {
   // Timestamps reset to zero and the last frame held for a moment, so the frame-rate step can never come up a frame
   // short (2026-11-19: a 121-frame clip came out 120); -frames:v then cuts each part to its exact count.
   const head = `[0:v]setpts=PTS-STARTPTS,fps=${FPS},tpad=stop_mode=clone:stop=${FPS}`;
-  if (format === "16x9")
-    return `${head},scale=${W}:${H}:force_original_aspect_ratio=increase:flags=lanczos,crop=${W}:${H},setsar=1`;
+  // 2026-11-21: clips are no longer always 16:9. The whole picture is fitted inside the frame (never cropped) over a
+  // blurred fill; a clip already in the cut's shape fills it and the fill never shows. (The 16x9 cut used to crop.)
   return `${head},split[a][b];[a]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},boxblur=30:3,` +
-         `eq=brightness=-0.22[bg];[b]scale=${W}:-2:flags=lanczos[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1`;
+         `eq=brightness=-0.22[bg];[b]scale=${W}:${H}:force_original_aspect_ratio=decrease:flags=lanczos,` +
+         `scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1`;
 }
 
 async function part(src, dest, format, frames, fades) {

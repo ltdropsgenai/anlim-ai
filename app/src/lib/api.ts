@@ -49,7 +49,7 @@ export type ShotContext = {
 export type Shot = {
   id: string; ord: number; action: string; status: string; duration_s: number; camera: string | null;
   start_url: string | null; start_frame_approved: boolean; end_url: string | null; end_frame_path: string | null;
-  end_frame_approved: boolean; end_instruction: string | null; scene_title: string; series_name: string; look: Look;
+  end_frame_approved: boolean; end_instruction: string | null; scene_title: string; series_name: string; look: Look; aspect?: Aspect;
   job: FrameJob | null;
   route: { kind: string; model_id: string; reason: string; evidence: string; label: string | null; credits: number } | null;
   quality: Quality; series_id: string; models: { id: string; label: string | null; credits: number }[];
@@ -81,6 +81,17 @@ export type Activity = { kind: "clip" | "frame" | "cut" | "audio"; id: string; s
 export type Library = { characters: LibCharacter[]; locations: LibLocation[]; owner: string };
 // cartoon = drawn; photoreal = looks filmed. Picks the checker's rules, the image-prompt wording and the video route.
 export type Look = "cartoon" | "photoreal";
+// A project's shape (2026-11-21): every text-to-video model in use takes these six (fal pages read 2026-11-21).
+export type Aspect = "16:9" | "9:16" | "1:1" | "4:3" | "3:4" | "21:9";
+export const ASPECTS: { id: Aspect; label: string; hint: string }[] = [
+  { id: "16:9", label: "16:9", hint: "Landscape: YouTube, websites" },
+  { id: "9:16", label: "9:16", hint: "Vertical: Shorts, Reels, TikTok" },
+  { id: "1:1", label: "1:1", hint: "Square: feeds" },
+  { id: "4:3", label: "4:3", hint: "Classic TV" },
+  { id: "3:4", label: "3:4", hint: "Portrait" },
+  { id: "21:9", label: "21:9", hint: "Cinema widescreen" },
+];
+export const ratioOf = (a?: string | null) => { const [w, h] = String(a || "16:9").split(":").map(Number); return w > 0 && h > 0 ? w / h : 16 / 9; };
 // a cast member: a person, an animal or an object, in either look (2026-11-16)
 export type Kind = "person" | "animal" | "object";
 // which tested route table Auto uses for a series (2026-11-19); balanced = the tested picks
@@ -92,7 +103,7 @@ export const QUALITY_HELP: Record<string, string> = {
   economy: "Picks the cheapest model that still passed our tests for that kind of shot.",
 };
 // a scene cut (studio.assemblies, 2026-11-19)
-export type CutFormat = "16x9" | "9x16" | "4x5";
+export type CutFormat = "16x9" | "9x16" | "4x5" | "1x1" | "4x3" | "3x4" | "21x9";
 export type Cut = {
   id: string; format: CutFormat; options: { fade: boolean; end_card: boolean; music_path: string | null; voice?: boolean; sfx?: boolean };
   status: "queued" | "running" | "done" | "failed"; duration_s: string | null; error: string | null; skipped: number[]; shots: number;
@@ -100,7 +111,7 @@ export type Cut = {
   watermarked: boolean; url: string | null; created_at: string;
 };
 export type Series = {
-  id: string; name: string; look: Look; quality: Quality; genre: Genre | null; style_prompt: string | null; scenes: { id: string; title: string; ord: number; location_id: string | null }[];
+  id: string; name: string; look: Look; aspect?: Aspect; quality: Quality; genre: Genre | null; style_prompt: string | null; scenes: { id: string; title: string; ord: number; location_id: string | null }[];
   locations: { id: string; name: string; has_plate: boolean }[];
   has_cast?: boolean;   // the project has characters: a Home video starts from an image of them (quick_create)
 };
@@ -190,9 +201,9 @@ async function call<T>(body: Record<string, unknown>, fn = "studio-api"): Promis
 // Quick create from the Home prompt (2026-11-20): an image, or an image and a clip, in an "Untitled project"
 export type Output = "image" | "video";
 export type QuickCreated = { series_id: string; scene_id: string; shot_id: string; job_id: string; series_name: string;
-  output: Output; clip_credits: number };
+  output: Output; clip_credits: number; aspect?: Aspect };
 export type Creation = { shot_id: string; action: string; duration_s: number; scene_id: string; series_id: string; series_name: string;
-  look: Look; job_id: string | null; frame_status: string | null; frame_error: string | null; then_render: boolean | null;
+  look: Look; aspect?: Aspect; job_id: string | null; frame_status: string | null; frame_error: string | null; then_render: boolean | null;
   render_error: string | null; gen_id: string | null; gen_status: string | null; gen_error: string | null; model_id: string | null;
   model_label: string | null; credits_reserved: number | null; settled: boolean | null; watermarked: boolean;
   image_url: string | null; video_url: string | null; from_text?: boolean; motion?: boolean; poster_url?: string | null };
@@ -239,13 +250,15 @@ export const api = {
   decideFrame: (job: string, decision: "approve" | "discard") => call<{ ok: boolean }>({ op: "frame_decide", job_id: job, decision }),
   requestPlate: (locationId: string, shotId: string) => call<{ job_id: string }>({ op: "plate", location_id: locationId, shot_id: shotId }),
   library: (seriesId: string) => call<Library>({ op: "library", series_id: seriesId }),
-  createSeries: (name: string, look: Look, style?: string, genre?: Genre | null) =>
-    call<{ id: string }>({ op: "series_create", name, look, style: style ?? null, genre: genre ?? null }),
+  createSeries: (name: string, look: Look, style?: string, genre?: Genre | null, aspect?: Aspect) =>
+    call<{ id: string }>({ op: "series_create", name, look, style: style ?? null, genre: genre ?? null, aspect: aspect ?? null }),
+  setSeriesAspect: (seriesId: string, aspect: Aspect) => call<{ ok: true }>({ op: "series_aspect", series_id: seriesId, aspect }),
   setSeriesGenre: (seriesId: string, genre: Genre | null) => call<{ ok: true }>({ op: "series_genre", series_id: seriesId, genre }),
   assets: (q: AssetQuery) => call<{ items: Asset[]; total: number; counts: Record<string, number> }>({ op: "assets", ...q }),
   home: () => call<HomeData>({ op: "home" }),
-  quickCreate: (prompt: string, look: Look, durationS: number, output: Output, seriesId: string | null, model: string | null = null) =>
-    call<QuickCreated>({ op: "quick_create", prompt, look, duration_s: durationS, output, series_id: seriesId, model }),
+  quickCreate: (prompt: string, look: Look, durationS: number, output: Output, seriesId: string | null, model: string | null = null,
+                aspect: Aspect = "16:9") =>
+    call<QuickCreated>({ op: "quick_create", prompt, look, duration_s: durationS, output, series_id: seriesId, model, aspect }),
   promptModels: () => call<{ paid: boolean; models: PromptModel[] }>({ op: "prompt_models" }),
   motionModels: () => call<{ paid: boolean; models: MotionModel[] }>({ op: "motion_models" }),
   motionCreate: (sourcePath: string, refPaths: string[], prompt: string, seconds: number, model: string, seriesId: string | null) =>
