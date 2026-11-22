@@ -1,10 +1,13 @@
 // Sound for a scene cut (2026-11-19): the music (none, the creator's own track, or a score generated with their
 // ElevenLabs account) and, per shot, a voiceover line and a sound effect. Audio runs on the creator's ElevenLabs
-// credits, not anlim's. The worker places each shot's chosen line and effect where the shot starts (assemble.js). @anlim
+// credits, not anlim's. The worker places each shot's chosen line and effect where the shot starts (assemble.js).
+// 2026-11-22 the score composer (Londi: "kind of a mini Suno"): one style for the whole score, and by default one section
+// per kept shot, each with its own mood and exactly as long as the shot is in the cut, so the music changes on the cut.
+// Instrumental for now; ElevenLabs music_v2_5 composition plans (worker/src/audio.js). @anlim
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
-import { api, AudioJob, AudioKind, Connection, ShotRow, uploadMusic, Voice } from "../lib/api";
+import { api, AudioJob, AudioKind, Connection, cutSeconds as shotCutSeconds, ScoreSection, ShotRow, uploadMusic, Voice } from "../lib/api";
 import { c, font } from "../lib/theme";
 import { pad2 } from "../lib/shotStatus";
 import { StillPicker } from "./StillPicker";
@@ -13,6 +16,9 @@ import { AudioPlayer } from "./AudioPlayer";
 const AUDIO = ["audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/wave", "audio/mp4", "audio/x-m4a", "audio/aac"];
 export type Music = { path: string; name: string; source: "upload" | "score" } | null;
 const BUSY = ["queued", "running"];
+// quick picks for the composer; tapping one adds it to the text (the creator can write anything)
+const STYLES = ["cinematic film score", "warm strings", "soft piano", "ambient pads", "acoustic guitar", "epic orchestral", "lo-fi beats", "synthwave"];
+const MOODS = ["somber", "tense", "reflective", "hopeful", "uplifting", "triumphant", "calm", "playful"];
 
 function Chip({ on, text, onPress, disabled }: { on: boolean; text: string; onPress: () => void; disabled?: boolean }) {
   return (
@@ -121,6 +127,8 @@ export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, 
   const [mode, setMode] = useState<"none" | "upload" | "score">(music?.source === "score" ? "score" : music ? "upload" : "none");
   const [prompt, setPrompt] = useState("");
   const [instrumental, setInstrumental] = useState(true);
+  const [follow, setFollow] = useState(true);                       // the score's sections follow the shots
+  const [moods, setMoods] = useState<Record<string, string>>({});   // per shot id: that section's mood
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const connected = conn?.status === "ok";
@@ -151,7 +159,19 @@ export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, 
   // the score is made to the cut's length: the kept shots, one second spare (the clips can run a frame or two over
   // their shot length; the cut trims and fades the score). Since 2026-11-22 the "Made with anlim.ai" credit sits on the
   // last shot and adds no time.
-  const cutSeconds = shots.reduce((t, r) => t + r.duration_s, 0) + (shots.length ? 1 : 0);
+  const cutSeconds = shots.reduce((t, r) => t + shotCutSeconds(r), 0) + (shots.length ? 1 : 0);
+  // one section per kept shot, as long as the shot is in the cut (trims and speed included); the last one gets the
+  // spare second; a section shorter than ElevenLabs' 3 s joins the one before it
+  const sections: ScoreSection[] = useMemo(() => {
+    const out: ScoreSection[] = [];
+    shots.forEach((r, i) => {
+      const secs = shotCutSeconds(r) + (i === shots.length - 1 ? 1 : 0);
+      const mood = (moods[r.id] ?? "").trim();
+      if (secs < 3 && out.length) { out[out.length - 1].seconds += secs; return; }
+      out.push({ label: `Shot ${pad2(r.ord)}`, seconds: Math.round(Math.max(3, secs) * 10) / 10, styles: mood });
+    });
+    return out.map((x) => ({ ...x, seconds: Math.round(x.seconds * 10) / 10 }));
+  }, [shots, moods]);
   const scores = useMemo(() => jobs.filter((j) => j.kind === "music"), [jobs]);
   const scorePath = (j: AudioJob) => `${owner}/audio/music/${j.id}.mp3`;
   // the score in the cut follows the chosen one
@@ -191,17 +211,50 @@ export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, 
       {mode === "upload" && <Text style={s.small}>Use a track you have the rights to.</Text>}
       {mode === "score" && (!connected ? <ConnectNote conn={conn} /> : (
         <View style={{ gap: 8 }}>
+          <Text style={s.label}>The whole score: genre, instruments, tempo</Text>
           <TextInput value={prompt} onChangeText={setPrompt} multiline placeholderTextColor={c.muted} style={s.input}
-            placeholder="Describe the score: mood, instruments, tempo. e.g. warm acoustic guitar and soft piano, hopeful, slow build, 90 bpm" />
+            placeholder="e.g. cinematic film score, warm strings, soft piano, slow build, 70 bpm" />
           <View style={s.row}>
-            <Chip on={instrumental} text="Instrumental (no singing)" onPress={() => setInstrumental(!instrumental)} />
-            <Text style={s.small}>Length: {Math.ceil(cutSeconds)} s, the length of the cut. It fades out at the end.</Text>
+            {STYLES.map((t) => <Chip key={t} on={prompt.toLowerCase().includes(t.toLowerCase())} text={t}
+              onPress={() => setPrompt((p) => p.toLowerCase().includes(t.toLowerCase()) ? p : (p.trim() ? `${p.trim().replace(/,$/, "")}, ${t}` : t))} />)}
           </View>
+          <View style={s.row}>
+            <Chip on={follow && shots.length > 0} disabled={!shots.length} text="Follow the shots" onPress={() => setFollow(true)} />
+            <Chip on={!follow || !shots.length} text="One piece" onPress={() => setFollow(false)} />
+            <Text style={s.small}>Instrumental (no singing)</Text>
+          </View>
+          {follow && shots.length > 0 ? (
+            <View style={{ gap: 8 }}>
+              <Text style={s.sub}>Each shot gets its own section, exactly as long as the shot is in the cut, so the music changes where the picture does.</Text>
+              {shots.map((r, i) => {
+                const sec = shotCutSeconds(r) + (i === shots.length - 1 ? 1 : 0);
+                return (
+                  <View key={r.id} style={s.shot}>
+                    <Text style={[s.small, font.mono, { color: c.sub }]}>SH {pad2(r.ord)} · {sec.toFixed(1)} S{sec < 3 ? " · JOINS THE SECTION BEFORE" : ""}</Text>
+                    <Text style={{ color: c.ink, fontSize: 13, marginBottom: 4 }} numberOfLines={1}>{r.action}</Text>
+                    <TextInput value={moods[r.id] ?? ""} onChangeText={(t) => setMoods((m) => ({ ...m, [r.id]: t }))} placeholderTextColor={c.muted}
+                      style={[s.input, { minHeight: 0 }]} placeholder="The mood here, e.g. somber, sparse, minor key" />
+                    <View style={[s.row, { marginTop: 4 }]}>
+                      {MOODS.map((t) => <Chip key={t} on={(moods[r.id] ?? "").toLowerCase().includes(t)} text={t}
+                        onPress={() => setMoods((m) => { const cur = (m[r.id] ?? "").trim(); return cur.toLowerCase().includes(t) ? m : { ...m, [r.id]: cur ? `${cur.replace(/,$/, "")}, ${t}` : t }; })} />)}
+                    </View>
+                  </View>
+                );
+              })}
+              <Text style={s.small}>Length: {Math.ceil(sections.reduce((t, x) => t + x.seconds, 0))} s in {sections.length} section{sections.length > 1 ? "s" : ""}. It fades out at the end of the cut.</Text>
+            </View>
+          ) : (
+            <Text style={s.small}>Length: {Math.ceil(cutSeconds)} s, the length of the cut. It fades out at the end.</Text>
+          )}
           <Pressable style={[s.btnSm, (!prompt.trim() || busy || scores.some((j) => BUSY.includes(j.status)) || cutSeconds < 3) && { opacity: 0.5 }]}
             disabled={!prompt.trim() || busy || scores.some((j) => BUSY.includes(j.status)) || cutSeconds < 3} accessibilityRole="button"
             onPress={async () => {
               setBusy(true); setError(null);
-              try { await api.makeAudio({ scene_id: sceneId, kind: "music", text: prompt, length_s: Math.ceil(cutSeconds), instrumental }); await load(); }
+              try {
+                if (follow && shots.length) await api.makeAudio({ scene_id: sceneId, kind: "music", text: prompt, styles: prompt, sections, instrumental: true });
+                else await api.makeAudio({ scene_id: sceneId, kind: "music", text: prompt, length_s: Math.ceil(cutSeconds), instrumental });
+                await load();
+              }
               catch (e) { setError((e as Error).message); }
               setBusy(false);
             }}>

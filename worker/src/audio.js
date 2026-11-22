@@ -2,7 +2,8 @@
 // sound effects and a generated score. It runs on the creator's own ElevenLabs account: their key is read from Supabase
 // Vault (studio.connection_key) for each job and never logged. anlim charges no credits for it. @anlim
 // API (checked 2026-11-19, elevenlabs.io/docs/api-reference): POST /v1/text-to-speech/{voice_id}, POST /v1/sound-generation
-// (duration 0.5-30 s), POST /v1/music (music_length_ms 3000-600000, force_instrumental); output_format mp3_44100_128,
+// (duration 0.5-30 s), POST /v1/music (music_v2_5 since 2026-11-22: a prompt and music_length_ms 3000-600000 with
+// force_instrumental, or a composition plan of sections); output_format mp3_44100_128,
 // which every plan may use.
 // AUDIO_MOCK=1 (tests only): make tones with ffmpeg instead of calling ElevenLabs.
 import fs from "node:fs/promises";
@@ -43,13 +44,36 @@ async function mock(j, dest) {
   return { mock: true };
 }
 
+// The score (2026-11-22, the composer): ElevenLabs music_v2_5. A score shaped to the shots is a composition plan with one
+// chunk per section (docs: elevenlabs.io/docs/eleven-api/guides/how-to/music/composition-plans): the section name in
+// brackets as its text, its length, the whole score's styles plus its own as positive styles (the first chunk sets the
+// genre, so it carries all of them), and what to avoid. Instrumental: singing and lyrics are in every chunk's negative
+// styles (force_instrumental only works with a prompt). Otherwise a prompt and a length, as before, on music_v2_5.
+const STYLE_SPLIT = /[,;\n]+/;
+const styleList = (t) => String(t || "").split(STYLE_SPLIT).map((x) => x.trim()).filter(Boolean).slice(0, 25);
+export function musicBody(i) {
+  const model = i.model || "music_v2_5";
+  if (Array.isArray(i.sections) && i.sections.length) {
+    const base = styleList(i.styles || i.text);
+    const noVocals = i.instrumental !== false ? ["vocals", "singing", "lyrics", "voice", "choir"] : [];
+    const chunks = i.sections.map((sec) => ({
+      text: `[${String(sec.label || "Section").replace(/[\[\]]/g, "").slice(0, 60)}]`,
+      duration_ms: Math.round(Number(sec.seconds) * 1000),
+      positive_styles: [...base, ...styleList(sec.styles)].slice(0, 50),
+      negative_styles: [...noVocals, ...styleList(sec.avoid)].slice(0, 50),
+    }));
+    return { model_id: model, composition_plan: { chunks } };
+  }
+  return { model_id: model, prompt: i.text, music_length_ms: Math.round(Number(i.length_s) * 1000), force_instrumental: i.instrumental !== false };
+}
+
 async function make(j, key, dest) {
   if (MOCK) return mock(j, dest);
   const i = j.input;
   let r;
   if (j.kind === "voiceover") r = await xiPost(key, `/v1/text-to-speech/${encodeURIComponent(i.voice_id)}`, { text: i.text, model_id: i.model || "eleven_v3" });
   else if (j.kind === "sfx") r = await xiPost(key, "/v1/sound-generation", { text: i.text, ...(i.duration_s ? { duration_seconds: Number(i.duration_s) } : {}) });
-  else r = await xiPost(key, "/v1/music", { prompt: i.text, music_length_ms: Math.round(Number(i.length_s) * 1000), force_instrumental: i.instrumental !== false });
+  else r = await xiPost(key, "/v1/music", musicBody(i));
   await fs.writeFile(dest, r.buf);
   return r.meta;
 }

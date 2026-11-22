@@ -207,6 +207,49 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { shot_id: { type: "string" }, speed: { type: "number", minimum: 0.5, maximum: 2 } },
       required: ["shot_id", "speed"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
+  // ---- v2.4 (2026-11-22): sound, on the creator's own ElevenLabs account (connected in anlim: Account > Connections)
+  { name: "list_voices", title: "Voices",
+    description: "The voices in the creator's ElevenLabs library (their cloned voices, saved and default voices): id, name, kind. " +
+      "Needs ElevenLabs connected in anlim (Account > Connections).",
+    inputSchema: { type: "object", properties: { search: { type: "string", maxLength: 60 } }, additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: true } },
+  { name: "make_voiceover", title: "Make a shot's voiceover",
+    description: "Speaks a line over a shot with an ElevenLabs voice (eleven_v3: audio tags like [whispers], [sighs], [pause] set the " +
+      "delivery). It starts with the shot in the cut. Uses the creator's ElevenLabs credits, not anlim's. Follow it with list_audio.",
+    inputSchema: { type: "object", properties: {
+      shot_id: { type: "string" }, text: { type: "string", minLength: 1, maxLength: 3000 },
+      voice_id: { type: "string", description: "From list_voices" },
+    }, required: ["shot_id", "text", "voice_id"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } },
+  { name: "make_sound_effect", title: "Make a shot's sound effect",
+    description: "A sound effect for a shot (ElevenLabs), 0.5 to 30 s, starting with the shot. Creator's ElevenLabs credits.",
+    inputSchema: { type: "object", properties: {
+      shot_id: { type: "string" }, text: { type: "string", minLength: 1, maxLength: 450 },
+      seconds: { type: "number", minimum: 0.5, maximum: 30 },
+    }, required: ["shot_id", "text"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } },
+  { name: "make_score", title: "Compose the scene's score",
+    description: "Composes an instrumental score for the project's latest scene (ElevenLabs Music v2.5, the creator's ElevenLabs " +
+      "credits). styles: the whole score (genre, instruments, tempo). By default it follows the shots: one section per kept shot, " +
+      "exactly as long as the shot is in the cut (trims and speed included), so the music changes on the cut; moods gives each " +
+      "section its own mood, in shot order. follow_shots false makes one piece the length of the cut. Follow it with list_audio.",
+    inputSchema: { type: "object", properties: {
+      project_id: { type: "string" }, styles: { type: "string", minLength: 3, maxLength: 1000 },
+      moods: { type: "array", items: { type: "string", maxLength: 500 }, maxItems: 30, description: "One per kept shot, in order" },
+      follow_shots: { type: "boolean", default: true },
+    }, required: ["project_id", "styles"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } },
+  { name: "list_audio", title: "Sound in a project",
+    description: "The voiceovers, sound effects and scores of the project's latest scene: id, shot, length, which take is in the cut, " +
+      "status or error, and a link (one hour).",
+    inputSchema: { type: "object", properties: { project_id: { type: "string" } }, required: ["project_id"], additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false } },
+  { name: "use_audio", title: "Choose the take for the cut",
+    description: "Puts a finished take (audio id from list_audio) in the cut, replacing the other take of the same kind for that shot " +
+      "(or the scene's score), or leaves it out.",
+    inputSchema: { type: "object", properties: { audio_id: { type: "string" }, use: { type: "boolean", default: true } },
+      required: ["audio_id"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
   { name: "make_start_image", title: "Make a shot's start image",
     description: "Makes the first frame of a shot (paid accounts; about 20 credits). Modes: 'new_setup' places the shot's characters " +
       "(their reference photos) in the scene's location background as the instruction says, the way to put a real person in a shot; " +
@@ -265,6 +308,8 @@ const TOOLS = [
     inputSchema: { type: "object", properties: {
       project_id: { type: "string" }, format: { type: "string", enum: ["16x9", "9x16", "1x1", "4x5", "4x3", "3x4", "21x9"] },
       end_card: { type: "boolean", default: true }, fade: { type: "boolean", default: true },
+      voiceover: { type: "boolean", default: true }, sound_effects: { type: "boolean", default: true },
+      music: { type: "boolean", default: true, description: "The scene's score in the cut (from make_score), if there is one" },
     }, required: ["project_id"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
   { name: "get_cut", title: "Get the scene's cut",
@@ -584,6 +629,84 @@ async function callTool(uid: string, name: string, a: Args) {
       await asUser(uid, (tx) => tx`select studio.set_shot_speed(${sid}, ${sp}::numeric)`);
       return text(sp === 1 ? "Normal speed." : `This shot plays at ${Math.round(sp * 100)}% speed in the cut. Run make_cut to see it.`);
     }
+    // ---- v2.4 sound
+    case "list_voices": {
+      const key = await xiKey(uid);
+      if (!key) return text(`Connect ElevenLabs in anlim first: ${APP}, Account > Connections.`, undefined, true);
+      const q = a.search ? `&search=${encodeURIComponent(String(a.search).slice(0, 60))}` : "";
+      const r = await fetch(`https://api.elevenlabs.io/v2/voices?page_size=100&sort=name&sort_direction=asc${q}`, { headers: { "xi-api-key": key } });
+      if (!r.ok) return text(r.status === 401 ? "ElevenLabs refused the key; reconnect it in anlim (Account > Connections)." : `ElevenLabs error ${r.status}.`, undefined, true);
+      const vs = ((await r.json())?.voices || []).map((v: any) => ({ id: v.voice_id, name: v.name, kind: v.category,
+        gender: v.labels?.gender ?? null, accent: v.labels?.accent ?? null }));
+      return text(vs.length ? vs.map((v: any) => `${v.name} (${v.kind}${v.gender ? `, ${v.gender}` : ""}) id ${v.id}`).join("\n") : "No voices match.", { voices: vs });
+    }
+    case "make_voiceover":
+    case "make_sound_effect": {
+      const sid = String(a.shot_id || "");
+      if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
+      const [sh] = await asUser(uid, (tx) => tx`select scene_id from studio.shots where id = ${sid}`);
+      if (!sh) return text("Shot not found.", undefined, true);
+      const vo = name === "make_voiceover";
+      let voiceName = "";
+      if (vo) {
+        const key = await xiKey(uid);
+        if (key) {
+          const r = await fetch(`https://api.elevenlabs.io/v1/voices/${encodeURIComponent(String(a.voice_id || ""))}`, { headers: { "xi-api-key": key } });
+          if (r.ok) voiceName = String((await r.json())?.name || "").slice(0, 80);
+        }
+      }
+      const input = vo ? { text: String(a.text || ""), voice_id: String(a.voice_id || ""), voice_name: voiceName }
+                       : { text: String(a.text || ""), duration_s: a.seconds == null ? null : Number(a.seconds) };
+      const [r] = await asUser(uid, (tx) => tx`select studio.request_audio(${sh.scene_id}, ${sid}, ${vo ? "voiceover" : "sfx"}, ${tx.json(input)}) as id`);
+      return text(`The ${vo ? "voiceover" : "sound effect"} is being made (usually under a minute) on your ElevenLabs credits. ` +
+        `audio_id ${r.id}. Check it with list_audio; the newest finished take goes in the cut.`, { audio_id: r.id });
+    }
+    case "make_score": {
+      const pid = String(a.project_id || "");
+      if (!UUID.test(pid)) return text("project_id must be an id from list_projects.", undefined, true);
+      const scene = await latestScene(uid, pid);
+      const styles = String(a.styles || "").trim();
+      const shots = await asUser(uid, (tx) => tx`select sh.ord, sh.duration_s, sh.trim_start_s, sh.trim_end_s, sh.speed from studio.shots sh
+                                                   where sh.scene_id = ${scene} and sh.approved_generation_id is not null order by sh.ord`);
+      if (!shots.length) return text("Keep at least one clip in this scene first.", undefined, true);
+      const len = (r: any) => Math.max(1, (Number(r.duration_s) - Number(r.trim_start_s) - Number(r.trim_end_s)) / (Number(r.speed) || 1));
+      const total = shots.reduce((t: number, r: any) => t + len(r), 0) + 1;
+      const moods = Array.isArray(a.moods) ? (a.moods as unknown[]).map((x) => String(x).slice(0, 500)) : [];
+      let input: Record<string, unknown>;
+      if (a.follow_shots !== false) {
+        const secs: { label: string; seconds: number; styles: string }[] = [];
+        shots.forEach((r: any, i: number) => {
+          const sec = len(r) + (i === shots.length - 1 ? 1 : 0);
+          if (sec < 3 && secs.length) { secs[secs.length - 1].seconds += sec; return; }
+          secs.push({ label: `Shot ${String(r.ord).padStart(2, "0")}`, seconds: Math.max(3, sec), styles: moods[i] ?? "" });
+        });
+        input = { text: styles, styles, sections: secs.map((x) => ({ ...x, seconds: Math.round(x.seconds * 10) / 10 })), instrumental: true };
+      } else input = { text: styles, length_s: Math.ceil(total), instrumental: true };
+      const [r] = await asUser(uid, (tx) => tx`select studio.request_audio(${scene}, ${null}, 'music', ${tx.json(input)}) as id`);
+      const n = Array.isArray(input.sections) ? (input.sections as unknown[]).length : 0;
+      return text(`The score is being composed: ${Math.ceil(total)} s${n ? ` in ${n} section${n > 1 ? "s" : ""}, one per shot` : ""}, instrumental, ` +
+        `on your ElevenLabs credits (usually a minute or two). audio_id ${r.id}. Check it with list_audio.`, { audio_id: r.id });
+    }
+    case "list_audio": {
+      const pid = String(a.project_id || "");
+      if (!UUID.test(pid)) return text("project_id must be an id from list_projects.", undefined, true);
+      const scene = await latestScene(uid, pid);
+      const rows = await asUser(uid, (tx) => tx`select a.id, a.kind, a.status, a.in_cut, a.duration_s, a.error, a.output_path, a.input,
+                                                       sh.ord as shot_ord from studio.audio_jobs a left join studio.shots sh on sh.id = a.shot_id
+                                                 where a.scene_id = ${scene} order by a.created_at desc limit 30`);
+      if (!rows.length) return text("No sound yet: make_voiceover, make_sound_effect or make_score.");
+      const items = await Promise.all(rows.map(async (x: any) => ({ id: x.id, kind: x.kind, shot: x.shot_ord ?? null, status: x.status,
+        in_cut: x.in_cut, seconds: x.duration_s == null ? null : Number(x.duration_s), error: x.error,
+        text: String(x.input?.text ?? "").slice(0, 80), url: x.status === "done" ? await sign(x.output_path) : null })));
+      return text(items.map((x) => `${x.kind}${x.shot ? ` shot ${x.shot}` : ""} [${x.id}] ${x.status}${x.seconds ? ` ${x.seconds.toFixed(1)} s` : ""}` +
+        `${x.in_cut ? " (in the cut)" : ""}${x.error ? `: ${x.error}` : ""}${x.url ? `: ${x.url}` : ""}`).join("\n"), { audio: items });
+    }
+    case "use_audio": {
+      const id = String(a.audio_id || "");
+      if (!UUID.test(id)) return text("audio_id must be an id from list_audio.", undefined, true);
+      await asUser(uid, (tx) => tx`select studio.use_audio(${id}, ${a.use !== false})`);
+      return text(a.use !== false ? "In the cut." : "Left out of the cut.");
+    }
     case "make_start_image": {
       const sid = String(a.shot_id || "");
       if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
@@ -681,7 +804,11 @@ async function callTool(uid: string, name: string, a: Args) {
       const [p] = await asUser(uid, (tx) => tx`select aspect from studio.series where id = ${pid}`);
       const format = ["16x9", "9x16", "1x1", "4x5", "4x3", "3x4", "21x9"].includes(String(a.format)) ? String(a.format)
         : String(p?.aspect ?? "16:9").replace(":", "x");
-      const opts = { fade: a.fade !== false, end_card: a.end_card !== false };
+      // 2026-11-22: the scene's sound goes in too: the voiceovers and effects in the cut, and the score in the cut
+      const [score] = a.music === false ? [] : await asUser(uid, (tx) => tx`select id from studio.audio_jobs where scene_id = ${scene}
+                                                    and kind = 'music' and in_cut and status = 'done' order by created_at desc limit 1`);
+      const opts = { fade: a.fade !== false, end_card: a.end_card !== false, voice: a.voiceover !== false, sfx: a.sound_effects !== false,
+                     music_path: score ? `${uid}/audio/music/${score.id}.mp3` : null };
       const [r] = await asUser(uid, (tx) => tx`select studio.request_assembly(${scene}, ${format}, ${tx.json(opts)}) as id`);
       return text(`The cut is being made (${format}${opts.end_card ? ", with Made with anlim.ai on the last shot" : ""}); usually under a minute (longer with slowed shots). ` +
         "Get it with get_cut.", { cut_id: r.id });
@@ -704,6 +831,12 @@ async function callTool(uid: string, name: string, a: Args) {
   }
 }
 
+
+// the creator's ElevenLabs key, from Supabase Vault (only the owner role and the worker may read it); never logged
+async function xiKey(uid: string) {
+  const [r] = await sql`select studio.connection_key(${uid}, 'elevenlabs') as k`;
+  return (r?.k as string | null) ?? null;
+}
 
 // ---- v2 helpers: uploads, files, scenes, the spending gate
 // Uploads from anlim.ai/upload land in <owner>/motion/ (the storage policy already allows images and videos there) as
@@ -766,13 +899,14 @@ async function rpc(uid: string, m: Rpc) {
       const want = String(m.params?.protocolVersion || "");
       return ok(m.id, { protocolVersion: PROTOCOLS.includes(want) ? want : PROTOCOLS[1],
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "anlim", title: "anlim.ai", version: "2.3.0" },
+        serverInfo: { name: "anlim", title: "anlim.ai", version: "2.4.0" },
         instructions: "anlim makes images and short video clips and keeps them in the creator's projects. Quick: create (an image or a " +
           "clip from words) then get_creation. Step by step, for a real person, a set or several shots: new_project (or list_projects), " +
           "get_upload_link so the creator uploads photos, add_character with an upload, add_location for the background, add_shot, " +
           "(update_character, update_shot, move_shot to change them), make_end_image when someone must appear or end somewhere exact, " +
           "make_start_image (new_setup places the characters), get_creation to look, animate, review_clip (keep), then make_cut and " +
-          "get_cut (trim_clip to shorten a clip, set_clip_speed to slow it, in the cut). Steps that spend credits need a paid account. Clips take minutes: tell the creator and check again rather than " +
+          "get_cut (trim_clip to shorten a clip, set_clip_speed to slow it, in the cut; make_voiceover, make_sound_effect and " +
+          "make_score add sound on the creator's ElevenLabs account). Steps that spend credits need a paid account. Clips take minutes: tell the creator and check again rather than " +
           "starting the same thing twice." });
     }
     case "ping": return ok(m.id, {});

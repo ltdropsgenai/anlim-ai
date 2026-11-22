@@ -181,6 +181,7 @@ async function handle(req: Request): Promise<Response> {
                  sc.id as scene_id, sc.title as scene_title, sc.ord as scene_ord, se.id as series_id, se.name as series_name,
                  g.status as gen_status, g.id as gen_id, f.status as frame_status, f.kind as frame_kind,
                  sh.start_frame_path, sh.approved_generation_id is not null as has_approved_clip,
+                 sh.trim_start_s, sh.trim_end_s, sh.speed,
                  coalesce((select a.model_id from studio.generations a where a.id = sh.approved_generation_id), g.model_id) as gen_model
             from studio.shots sh join studio.scenes sc on sc.id = sh.scene_id join studio.series se on se.id = sc.series_id
             left join lateral (select id, status, model_id from studio.generations where shot_id = sh.id order by created_at desc limit 1) g on true
@@ -682,8 +683,10 @@ async function handle(req: Request): Promise<Response> {
       }
       // ---- audio for scene cuts (studio.audio_jobs, worker audio.js)
       case "audio_create": {
+        // 2026-11-22: a score may carry its style and sections (one per shot), checked by studio.request_audio
         const input = { text: body.text ?? null, voice_id: body.voice_id ?? null, voice_name: body.voice_name ?? null,
-                        duration_s: body.duration_s ?? null, length_s: body.length_s ?? null, instrumental: body.instrumental ?? null };
+                        duration_s: body.duration_s ?? null, length_s: body.length_s ?? null, instrumental: body.instrumental ?? null,
+                        styles: body.styles ?? null, sections: Array.isArray(body.sections) ? body.sections.slice(0, 30) : null };
         const [r] = await asUser(uid, (tx) => tx`select studio.request_audio(${String(body.scene_id || "")}, ${body.shot_id ? String(body.shot_id) : null},
           ${String(body.kind || "")}, ${tx.json(input)}) as id`);
         return json({ ok: true, id: r.id });

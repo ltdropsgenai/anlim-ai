@@ -28,7 +28,12 @@ export type ShotRow = {
   scene_id: string; scene_title: string; scene_ord: number; series_id: string; series_name: string;
   gen_status: string | null; gen_id: string | null; frame_status: string | null; frame_kind: "end" | "start" | null;
   thumb_url: string | null; has_approved_clip: boolean; gen_model: string | null;   // 2026-11-19 board
+  trim_start_s?: number | string; trim_end_s?: number | string; speed?: number | string;   // 2026-11-22: the cut's trims and speed
 };
+// A shot's length in the scene cut: its clip, less the trims, at its speed (2026-11-22)
+export const cutSeconds = (r: ShotRow) =>
+  Math.max(1, (Number(r.duration_s) - Number(r.trim_start_s || 0) - Number(r.trim_end_s || 0)) / (Number(r.speed || 1) || 1));
+export type ScoreSection = { label: string; seconds: number; styles: string; avoid?: string };
 export type HeightCheck = { verdict: "OK" | "WRONG" | "UNSURE" | "NOT CHECKED"; problems: string[]; notes: string[] };
 // 2026-11-17: is everyone physically doing what was asked (sitting ON the seat, feet on the floor, hands holding)?
 export type StagingCheck = { verdict: "OK" | "WRONG" | "UNSURE" | "NOT CHECKED"; problems: string[]; notes?: string[] };
@@ -289,7 +294,8 @@ export const api = {
   disconnect: () => call<{ ok: true }>({ op: "connection_remove" }),
   voices: (search?: string) => call<{ items: Voice[] }>({ op: "voices", search: search ?? null }).then((r) => r.items),
   makeAudio: (a: { scene_id: string; shot_id?: string | null; kind: AudioKind; text: string; voice_id?: string; voice_name?: string;
-                   duration_s?: number | null; length_s?: number; instrumental?: boolean }) => call<{ id: string }>({ op: "audio_create", ...a }),
+                   duration_s?: number | null; length_s?: number; instrumental?: boolean; styles?: string; sections?: ScoreSection[] }) =>
+    call<{ id: string }>({ op: "audio_create", ...a }),
   audio: (sceneId: string) => call<{ items: AudioJob[] }>({ op: "audio_list", scene_id: sceneId }).then((r) => r.items),
   useAudio: (id: string, on: boolean) => call<{ ok: true }>({ op: "audio_use", id, on }),
   makeCut: (sceneId: string, format: CutFormat, opts: { fade: boolean; end_card: boolean; music_path: string | null; voice?: boolean; sfx?: boolean }) =>
