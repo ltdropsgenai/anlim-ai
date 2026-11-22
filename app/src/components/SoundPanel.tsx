@@ -148,9 +148,10 @@ export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, 
     if (v) setVoice(v);
   }, [voices, jobs, voice]);
 
-  // the score is made to the cut's length: the kept shots plus the end card, one second spare (the clips can run a
-  // frame or two over their shot length; the cut trims and fades the score)
-  const cutSeconds = shots.reduce((t, r) => t + r.duration_s, 0) + (endCard ? 2.5 : 0) + (shots.length ? 1 : 0);
+  // the score is made to the cut's length: the kept shots, one second spare (the clips can run a frame or two over
+  // their shot length; the cut trims and fades the score). Since 2026-11-22 the "Made with anlim.ai" credit sits on the
+  // last shot and adds no time.
+  const cutSeconds = shots.reduce((t, r) => t + r.duration_s, 0) + (shots.length ? 1 : 0);
   const scores = useMemo(() => jobs.filter((j) => j.kind === "music"), [jobs]);
   const scorePath = (j: AudioJob) => `${owner}/audio/music/${j.id}.mp3`;
   // the score in the cut follows the chosen one
