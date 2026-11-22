@@ -29,7 +29,7 @@ const FPS = 24;
 // 2026-11-21: projects can be any of six shapes, so a cut can be too (1x1, 4x3, 3x4, 21x9 added)
 const SIZES = { "16x9": [1920, 1080], "9x16": [1080, 1920], "4x5": [1080, 1350], "1x1": [1080, 1080],
                 "4x3": [1440, 1080], "3x4": [1080, 1440], "21x9": [2520, 1080] };
-const FADE_IN = 0.5, FADE_OUT = 0.8, CARD_S = 2.5, MUSIC_FADE = 2.0;
+const FADE_IN = 0.5, FADE_OUT = 0.8, CARD_S = 3.0, MUSIC_FADE = 2.0;
 const LUFS = -14, TP = -1.5;
 const log = (a, msg) => console.log(`${new Date().toISOString()} [cut ${String(a.id).slice(0, 8)}] ${msg}`);
 
@@ -80,10 +80,12 @@ async function part(src, dest, format, frames, fades) {
   if (got.frames !== frames) throw new Error(`part ${path.basename(dest)} has ${got.frames} frames, expected ${frames}`);
 }
 
-// "Made with anlim.ai" end card: the anlim mark on black, fading in.
+// "Made with anlim.ai" end card: the words and the anlim mark on black, fading in. 2026-11-22 (Londi: "Video should end
+// with a clear Made with Anlim.ai"): the card said only "anlim.ai"; it now says "Made with", is larger and stays 3 s.
+const MADE_WITH = path.join(path.dirname(MARK), "made_with.png");
 async function endCard(dest, format) {
-  const [W, H] = SIZES[format], frames = Math.round(CARD_S * FPS), mw = Math.round(Math.min(W, H) * 0.5 / 2) * 2;
-  await ff(["-f", "lavfi", "-i", `color=c=0x08080A:s=${W}x${H}:r=${FPS}:d=${CARD_S}`, "-i", MARK, "-filter_complex",
+  const [W, H] = SIZES[format], frames = Math.round(CARD_S * FPS), mw = Math.round(Math.min(W, H) * 0.66 / 2) * 2;
+  await ff(["-f", "lavfi", "-i", `color=c=0x08080A:s=${W}x${H}:r=${FPS}:d=${CARD_S}`, "-i", MADE_WITH, "-filter_complex",
             `[1:v]scale=${mw}:-1[m];[0:v][m]overlay=(W-w)/2:(H-h)/2,fade=t=in:st=0:d=0.4,setsar=1,format=yuv420p[v]`,
             "-map", "[v]", "-frames:v", String(frames), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
             "-pix_fmt", "yuv420p", "-r", String(FPS), dest]);
