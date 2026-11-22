@@ -70,12 +70,28 @@ export function platePrompt(look = "cartoon", chars = []) {
 export const PLATE_PROMPT = platePrompt("cartoon");     // the cartoon wording, kept for tests
 
 // what a new setup keeps of each reference: faces, hair and clothes for people; fur and markings for animals; shape,
-// colours and details for objects
+// colours and details for objects.
+// 2026-11-22 (Londi's promo, first chat-made setup): a person with wardrobe set came out in the blazer and dress shoes of
+// their reference photo, because "same clothes" won over the wardrobe. 
+// When any person in the shot has a wardrobe, only faces and hair are kept from the references and the lines below say
+// what each person wears: their wardrobe, or the clothes of their reference image.
+const dressed = (c) => (c?.kind || "person") === "person" && !!String(c?.wardrobe || "").trim();
 function setupSame(names, chars) {
-  const kinds = new Set(names.map((n) => (chars.find((c) => c.name === n)?.kind) || "person"));
-  const keep = [kinds.has("person") ? "faces, hair, clothes" : null, kinds.has("animal") ? "fur, markings" : null,
+  const cs = names.map((n) => chars.find((c) => c.name === n));
+  const kinds = new Set(cs.map((c) => c?.kind || "person"));
+  const people = cs.filter((c) => (c?.kind || "person") === "person");
+  const clothes = people.some(dressed) ? "faces, hair" : "faces, hair, clothes";
+  const keep = [kinds.has("person") ? clothes : null, kinds.has("animal") ? "fur, markings" : null,
                 kinds.has("object") ? "shape, colours, details" : null].filter(Boolean);
   return `same ${keep.join(", ")}`;
+}
+// "Londi wears a dark hooded jacket, hood up (not the clothes in his reference image)."
+function setupWardrobe(names, chars) {
+  const cs = names.map((n) => chars.find((c) => c.name === n) || { name: n });
+  if (!cs.some(dressed)) return "";
+  return cs.filter((c) => (c.kind || "person") === "person")
+    .map((c) => dressed(c) ? `${c.name} wears ${String(c.wardrobe).trim().replace(/\.$/, "")} (not the clothes or shoes in the reference image).`
+                           : `${c.name} wears the same clothes as in their reference image.`).join(" ");
 }
 
 // New setup: image 1 is the plate, then one reference image per character (2026-11-13 feasibility prompt).
@@ -83,8 +99,9 @@ export function setupPrompt(instruction, names, heights = [], look = "cartoon", 
   const who = names.map((n, i) => `image ${i + 2} is ${n}`).join(", ");
   const h = names.map((n, i) => ({ n, v: Number(heights[i]) })).filter((x) => x.v > 0).sort((a, b) => b.v - a.v);
   const sizes = h.slice(1).map((x, i) => (x.v < h[i].v * 0.97 ? `${x.n} is shorter than ${h[i].n}.` : `${x.n} is about as tall as ${h[i].n}.`));
-  return `Image 1 is the setting. ${who[0].toUpperCase()}${who.slice(1)}: draw ${names.length > 1 ? "them exactly as in those images" : "this character exactly as in that image"}, ` +
+  return `Image 1 is the setting. ${who[0].toUpperCase()}${who.slice(1)}: draw ${names.length > 1 ? "them" : "this character"} ${setupWardrobe(names, chars) ? "as" : "exactly as"} in ${names.length > 1 ? "those images" : "that image"}, ` +
     `${setupSame(names, chars)}, proportions and ${lookWords(look)}, at the same scale relative to the setting. ` +
+    (setupWardrobe(names, chars) ? setupWardrobe(names, chars) + " " : "") +
     `Place ${names.length > 1 ? "them" : "the character"} in the setting of image 1: ${instruction.trim().replace(/\.?$/, ".")} ` +
     (sizes.length ? sizes.join(" ") + " " : "") +
     `Keep the setting of image 1 exactly as it is: same layout, props, colors, lighting, ${lookWords(look)} and camera ` +
