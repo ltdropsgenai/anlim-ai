@@ -144,6 +144,33 @@ const TOOLS = [
       characters: { type: "array", items: { type: "string" }, maxItems: 6, description: "Character names in this shot" },
     }, required: ["project_id", "action"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
+  // ---- v2.1 (2026-11-22, the promo test: no way to change a wardrobe, a shot's words, or the order of shots from chat)
+  { name: "update_character", title: "Change a character",
+    description: "Changes a character's description or wardrobe (what they wear in this project; for a person it replaces the clothes " +
+      "of their reference photo in new start images). Optionally a new reference photo (upload id). Free.",
+    inputSchema: { type: "object", properties: {
+      project_id: { type: "string" }, name: { type: "string", description: "The character's current name" },
+      new_name: { type: "string", minLength: 1, maxLength: 100 }, description: { type: "string", maxLength: 200 },
+      wardrobe: { type: "string", maxLength: 500 }, upload_id: { type: "string", description: "A new reference photo" },
+    }, required: ["project_id", "name"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
+  { name: "update_shot", title: "Change a shot",
+    description: "Changes a shot's words (what happens), camera or length before it is animated again. Free.",
+    inputSchema: { type: "object", properties: {
+      shot_id: { type: "string" }, action: { type: "string", minLength: 8, maxLength: 2000 },
+      camera: { type: "string", maxLength: 200 }, seconds: { type: "integer", minimum: 3, maximum: 15 },
+    }, required: ["shot_id"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
+  { name: "move_shot", title: "Move a shot",
+    description: "Moves a shot one place earlier or later in its scene (cuts follow this order). Free.",
+    inputSchema: { type: "object", properties: { shot_id: { type: "string" }, direction: { type: "string", enum: ["earlier", "later"] } },
+      required: ["shot_id", "direction"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
+  { name: "delete_shot", title: "Delete a shot",
+    description: "Deletes a shot that has no clips yet (shots with clips are kept; leave them out of a cut by not keeping them, " +
+      "or move them). Cannot be undone: confirm with the creator first.",
+    inputSchema: { type: "object", properties: { shot_id: { type: "string" } }, required: ["shot_id"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false } },
   { name: "make_start_image", title: "Make a shot's start image",
     description: "Makes the first frame of a shot (paid accounts; about 20 credits). Modes: 'new_setup' places the shot's characters " +
       "(their reference photos) in the scene's location background as the instruction says, the way to put a real person in a shot; " +
@@ -422,6 +449,49 @@ async function callTool(uid: string, name: string, a: Args) {
       });
       return text(`Shot added (${secs} s). shot_id ${id}. Next: make_start_image (new_setup to place the characters, or prompt), then animate.`, { shot_id: id });
     }
+    // ---- v2.1 tools: the studio.* functions replace every field, so unchanged fields are passed back as they are
+    case "update_character": {
+      const pid = String(a.project_id || "");
+      if (!UUID.test(pid)) return text("project_id must be an id from list_projects.", undefined, true);
+      const [c] = await asUser(uid, (tx) => tx`select id, name, height_units, wardrobe, kind, what from studio.characters
+                                                 where series_id = ${pid} and lower(name) = lower(${String(a.name || "").trim()})`);
+      if (!c) return text(`No character called ${a.name} in this project.`, undefined, true);
+      let path: string | null = null;
+      if (a.upload_id) {
+        const up = await findUpload(uid, String(a.upload_id));
+        if (!up || up.kind !== "image") return text("upload_id must be an image from list_uploads.", undefined, true);
+        path = await copyUpload(uid, up, "characters");
+      }
+      const name = a.new_name ? String(a.new_name) : c.name;
+      await asUser(uid, async (tx) => {
+        await tx`select studio.update_character(${c.id}, ${name}, ${c.height_units}::numeric,
+          ${a.wardrobe !== undefined ? String(a.wardrobe) : c.wardrobe}, ${c.kind}, ${a.description !== undefined ? String(a.description) : c.what})`;
+        if (path) await tx`select studio.set_character_ref(${c.id}, ${path})`;
+      });
+      return text(`${name} updated${path ? " with the new reference photo" : ""}. New start images use it; existing images and clips stay as they are.`);
+    }
+    case "update_shot": {
+      const sid = String(a.shot_id || "");
+      if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
+      const [sh] = await asUser(uid, (tx) => tx`select action, camera, duration_s from studio.shots where id = ${sid}`);
+      if (!sh) return text("Shot not found.", undefined, true);
+      const secs = a.seconds !== undefined ? Math.round(Number(a.seconds)) : sh.duration_s;
+      await asUser(uid, (tx) => tx`select studio.update_shot(${sid}, ${a.action !== undefined ? String(a.action) : sh.action},
+        ${a.camera !== undefined ? String(a.camera) : sh.camera}, ${secs}::int)`);
+      return text("Shot updated. The next start image or clip of this shot uses the new words.");
+    }
+    case "move_shot": {
+      const sid = String(a.shot_id || "");
+      if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
+      await asUser(uid, (tx) => tx`select studio.move_shot(${sid}, ${a.direction === "earlier" ? -1 : 1}::int)`);
+      return text(`Shot moved ${a.direction === "earlier" ? "earlier" : "later"}. get_project shows the new order.`);
+    }
+    case "delete_shot": {
+      const sid = String(a.shot_id || "");
+      if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
+      await asUser(uid, (tx) => tx`select studio.delete_shot(${sid})`);
+      return text("Shot deleted.");
+    }
     case "make_start_image": {
       const sid = String(a.shot_id || "");
       if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
@@ -598,10 +668,11 @@ async function rpc(uid: string, m: Rpc) {
       const want = String(m.params?.protocolVersion || "");
       return ok(m.id, { protocolVersion: PROTOCOLS.includes(want) ? want : PROTOCOLS[1],
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "anlim", title: "anlim.ai", version: "2.0.0" },
+        serverInfo: { name: "anlim", title: "anlim.ai", version: "2.1.0" },
         instructions: "anlim makes images and short video clips and keeps them in the creator's projects. Quick: create (an image or a " +
           "clip from words) then get_creation. Step by step, for a real person, a set or several shots: new_project (or list_projects), " +
           "get_upload_link so the creator uploads photos, add_character with an upload, add_location for the background, add_shot, " +
+          "(update_character, update_shot, move_shot to change them), " +
           "make_start_image (new_setup places the characters), get_creation to look, animate, review_clip (keep), then make_cut and " +
           "get_cut. Steps that spend credits need a paid account. Clips take minutes: tell the creator and check again rather than " +
           "starting the same thing twice." });
