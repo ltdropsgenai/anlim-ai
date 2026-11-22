@@ -104,11 +104,9 @@ async function xiCheck(key: string) {
   return { ok: false, status: v.status || sub.status, detail: v.body?.detail?.message ?? sub.body?.detail?.message ?? null };
 }
 
-// Same words as the worker's compile.js CAMERA_WORDS: a description that says what the camera does.
-const CAMERA_WORDS = new RegExp("\\bcamera\\s+(?:\\w+ly\\s+)?(?:track|follow|move|glide|pan|tilt|orbit|rise|pull|push|zoom|" +
-  "dolly|dollie|crane|circle|swoop|sweep|fly|flie|race|dive|rack|settle)\\w*|\\btracking shot|\\bpush[- ]in|" +
-  "\\bpull[- ]?(?:back|out)\\b|\\bdolly\\b|\\bpanning\\b|\\bpans? (?:left|right|across|to)|\\btilts? (?:up|down)|" +
-  "\\bzoom[- ](?:in|out)\\b|\\borbit(?:s|ing)?\\b|\\bcrane shot|\\bhandheld|\\b(?:drone|aerial|fpv) shot|\\bdolly zoom", "i");
+// 2026-11-21 (global audit): no camera given means no camera instruction (the model's choice), not "locked". Locking
+// it when nothing was said came from Londi's fixed-camera episodes; the worker's compile.js only locks a camera the
+// creator asked to lock. (The CAMERA_WORDS test that used to decide this is gone with it.)
 
 async function handle(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -247,7 +245,7 @@ async function handle(req: Request): Promise<Response> {
       // (or the project the creator picked); the result card polls "creation" and offers download or the Workspace
       case "quick_create": {
         const prompt = String(body.prompt || "");
-        const camera = CAMERA_WORDS.test(prompt) ? null : "locked";
+        const camera = null;
         const [r] = await asUser(uid, (tx) => tx`select studio.quick_create(${prompt}, ${String(body.look || "cartoon")},
           ${Number(body.duration_s || 5)}::int, ${String(body.output || "video")}, ${camera},
           ${body.series_id ? String(body.series_id) : null}::uuid, ${body.model ? String(body.model) : null}::text) as r`);
@@ -376,10 +374,9 @@ async function handle(req: Request): Promise<Response> {
         return json({ ok: true, id: r.id });
       }
       case "shot_create": {
-        // No camera given (the Home prompt): locked, unless the description itself says what the camera does
-        // ("a slow push-in", "a tracking shot"); then the camera is left to the action (held-out test 2026-11-20).
+        // No camera given: none (see the note at the top); a camera the creator types ("locked", "slow pan") is kept
         const action = String(body.action || "");
-        const camera = body.camera != null ? String(body.camera) : CAMERA_WORDS.test(action) ? null : "locked";
+        const camera = body.camera != null && String(body.camera).trim() ? String(body.camera) : null;
         const [r] = await asUser(uid, (tx) => tx`select studio.create_shot(${String(body.scene_id || "")}, ${action},
           ${camera}, ${Number(body.duration_s || 5)}::int) as id`);
         return json({ ok: true, id: r.id });

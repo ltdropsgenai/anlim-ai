@@ -227,7 +227,7 @@ export const api = {
   render: (id: string, model?: string) => call<{ generation_id: string }>({ op: "render", shot_id: id, model }),
   series: () => call<{ items: Series[] }>({ op: "series" }).then((r) => r.items),
   createScene: (seriesId: string, title: string) => call<{ id: string }>({ op: "scene_create", series_id: seriesId, title }),
-  createShot: (sceneId: string, action: string, durationS: number, camera = "locked") =>
+  createShot: (sceneId: string, action: string, durationS: number, camera: string | null = null) =>
     call<{ id: string }>({ op: "shot_create", scene_id: sceneId, action, duration_s: durationS, camera }),
   updateShot: (id: string, action: string, camera: string | null, durationS: number) =>
     call<{ ok: boolean }>({ op: "shot_update", shot_id: id, action, camera, duration_s: durationS }),

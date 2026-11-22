@@ -115,7 +115,7 @@ function StartMaker({ shot, busy, run }: { shot: Shot; busy: boolean; run: (fn: 
         <Text style={s.sub}>What happens in the clip (the shot's action): <Text style={{ fontStyle: "italic" }}>{shot.action}</Text></Text>
         <Text style={s.label}>Starting pose: where everyone is at the first moment, before anything happens</Text>
         <TextInput style={s.input} multiline value={text} onChangeText={(v) => { setText(v); setSameOk(false); }} placeholderTextColor={c.muted}
-          placeholder="e.g. Layana stands by the window, looking at King; King sits on the sofa. Describe the start, not what happens next." />
+          placeholder="e.g. Sam stands by the door, looking at Ana; Ana sits at the table. Describe the start, not what happens next." />
         {sameText(text, shot.action) >= 0.8 && (
           <Text style={[s.badge, { color: c.flag, borderColor: c.flag }]}>
             This is almost the same as the shot's action. The start frame should show the first moment, before the action happens;
@@ -278,13 +278,13 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
 
   return (
     <ScrollView style={{ backgroundColor: pageBg }} contentContainerStyle={s.page}>
-      <Text style={s.crumb}>{shot.series_name} · {shot.scene_title} · shot {shot.ord} · {shot.duration_s} s · camera {shot.camera ?? "locked"}</Text>
+      <Text style={s.crumb}>{shot.series_name} · {shot.scene_title} · shot {shot.ord} · {shot.duration_s} s · camera: {shot.camera || "the model's choice"}</Text>
       {!editing ? (
         <>
           <Text style={s.title}>{shot.action}</Text>
           <View style={s.row}>
             <Pressable disabled={busy || !!inFlight || anyMaking} accessibilityRole="button"
-              onPress={() => { setDraft({ action: shot.action, camera: shot.camera ?? "locked", dur: String(shot.duration_s) }); setEditing(true); }}>
+              onPress={() => { setDraft({ action: shot.action, camera: shot.camera ?? "", dur: String(shot.duration_s) }); setEditing(true); }}>
               <Text style={s.link}>Edit shot</Text>
             </Pressable>
             {!shot.latest && (
@@ -302,13 +302,13 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
           <View style={s.row}>
             <Text style={s.label}>Camera</Text>
             <TextInput style={[s.input, { minHeight: 0, flex: 1 }]} value={draft.camera} onChangeText={(v) => setDraft({ ...draft, camera: v })}
-              placeholderTextColor={c.muted} placeholder="locked, or e.g. slow pan right following Layana" />
+              placeholderTextColor={c.muted} placeholder="empty = the model's choice; or locked, slow pan right, handheld…" />
             <Text style={s.label}>Seconds</Text>
             <TextInput style={[s.input, { minHeight: 0, width: 70 }]} value={draft.dur} onChangeText={(v) => setDraft({ ...draft, dur: v })} keyboardType="number-pad" />
           </View>
           <View style={s.row}>
             <Pressable style={[s.btn, { backgroundColor: c.accent }]} disabled={busy} accessibilityRole="button"
-              onPress={() => run(() => api.updateShot(shot.id, draft.action, draft.camera || null, Number(draft.dur)), async () => { setEditing(false); await load(); })}>
+              onPress={() => run(() => api.updateShot(shot.id, draft.action, draft.camera.trim() || null, Number(draft.dur)), async () => { setEditing(false); await load(); })}>
               <Text style={s.btnText}>Save</Text>
             </Pressable>
             <Pressable style={s.ghost} onPress={() => setEditing(false)} accessibilityRole="button"><Text style={{ color: c.ink }}>Cancel</Text></Pressable>
@@ -451,7 +451,7 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
         <View style={s.panel}>
           <Text style={s.label}>Describe the last moment of the shot</Text>
           <TextInput style={s.input} multiline value={text} onChangeText={setText}
-            placeholderTextColor={c.muted} placeholder="e.g. Layana has stopped in front of the toy shelf, turned toward King, smiling at the camera. King watches her from the sofa." />
+            placeholderTextColor={c.muted} placeholder="e.g. Sam has stopped at the table, turned toward Ana, smiling. Ana looks up at him." />
           <View style={s.row}>
             <Pressable style={[s.btn, { backgroundColor: c.accent }, (!text.trim() || busy) && { opacity: 0.5 }]}
               disabled={!text.trim() || busy} accessibilityRole="button"

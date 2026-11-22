@@ -18,8 +18,17 @@ export const lookWords = (look) => look === "photoreal"
 // No cast at all (a Home prompt: "an angry coach after his team lost") is not "0 people": the prompt itself says who is in
 // it, so there is no count to hold the clip to (2026-11-21: every such clip said "0 people", the start frame showed 3,
 // and the spec check stopped the review - NOT_REVIEWED). @anlim
-export const peopleCount = (chars) =>
-  !chars.length || chars.some((c) => c.kind === "animal") ? undefined : chars.filter((c) => (c.kind || "person") === "person").length;
+// 2026-11-21 (global audit): a cast of 1 in "Maya walks through a busy market" is not "1 person in frame" either: the
+// people the action asks for beyond the cast (a crowd, passers-by, an audience, a team) are expected, so there is no
+// exact count. The test was built on Londi's own shots, which never had extras.
+const EXTRAS = /\b(crowds?|crowded|busy|bustling|passers?-?by|pedestrians|audience|spectators|fans|onlookers|strangers|people|others|everyone|team(mates)?|players|class(mates|room)?|students|guests|customers|shoppers|commuters|dancers|band|choir|army|soldiers|party|wedding|market|stadium|concert|festival|parade|protest|queue)\b/i;
+export const wantsExtras = (action) => EXTRAS.test(action || "");
+export const peopleCount = (chars, action = "") =>
+  !chars.length || wantsExtras(action) || chars.some((c) => c.kind === "animal") ? undefined
+    : chars.filter((c) => (c.kind || "person") === "person").length;
+// Text: Londi's series never wanted words on screen, other creators do (a sign, a title, letters for a learning video).
+const TEXT_WORDS = /\b(text|words?|letters?|alphabet|numbers?|digits?|sign|signs|signage|poster|banner|billboard|title|caption|subtitle|logo|label|menu|headline|writes?|writing|written|reads?|spells?|chalkboard|whiteboard|blackboard|neon)\b|["\u201c][^"\u201d]+["\u201d]/i;
+export const wantsText = (action) => TEXT_WORDS.test(action || "");
 // The cast as the checker's frame routes take it (detector classes and matting, frame_check end_frame.subjects).
 export const subjects = (chars) => chars.map((c) => ({ name: c.name, kind: c.kind || "person", what: c.what || null }));
 
@@ -33,7 +42,7 @@ function heightOrder(chars) {
 
 // Bump on every prompt change; the worker prints it at start and saves it with each job (2026-11-12: a worker started
 // before a prompt change rendered 3 clips with the old prompt and nothing showed it).
-export const COMPILER_VERSION = "2026-11-20.2";
+export const COMPILER_VERSION = "2026-11-21.1";
 
 // Actions that move a character across the floor (same idea as frame_check/passthrough_check.MOVES).
 const MOVES = /\b(walk|walks|walking|step|steps|run|runs|running|cross|crosses|goes|go to|moves? to|dances?)\b/i;
@@ -41,20 +50,25 @@ const MOVES = /\b(walk|walks|walking|step|steps|run|runs|running|cross|crosses|g
 // 2026-11-12: Phase 0 S3 ("walks from the window across the room to the toy shelf") was rendered as a straight line
 // at the coffee table's own depth in 4 of 4 bad clips - feet between the table's legs or on them (Londi's read).
 // Saying the route costs nothing; catching it afterwards costs a render plus the check.
-const PATH_RULE = "[PATH] Walking characters go AROUND furniture, never through it: pass in front of a table or sofa " +
+const PATH_RULE = "[PATH] If there is furniture, walking characters go AROUND it, never through it: pass in front of a table or sofa " +
   "(feet nearer the camera than its front legs) or behind it (hidden by it), curving around its end; feet never touch " +
   "the floor between a table's legs or on its legs.";
 
 // 2026-11-12 (Londi): when one child moves, the others watch her - a character staring ahead while a playmate crosses
 // the room reads as a cut-out. Added whenever a moving action has 2+ characters.
-const WATCH_RULE = "[REACT] Every character who is not moving follows the moving character with their eyes and head the " +
-  "whole time, turning as she or he passes; they stay where they are unless the action says otherwise.";
+// 2026-11-21 (global audit): softened - "watch her the whole time" was the look of Londi's kids' episodes, not a rule
+// for every creator's scene (people at a party do not all turn to stare at one walker).
+const WATCH_RULE = "[REACT] Characters who are not moving stay aware of the one who moves (they do not stare blankly ahead " +
+  "like cut-outs); they stay where they are unless the action says otherwise.";
 
 // 2026-11-13: MiniMax H3 moved the camera on 6 of 30 locked-camera renders (5 on S4/S5: push-in, pull-out, tilt).
 // Hailuo's prompting guide recommends opening with "[Static shot]" and restating it in words
 // (hailuoai.video/pages/blog/camera-movement-prompt-cheatsheet); it does not name H3, so this is under test.
 // MiniMax only: Kling's prompt is unchanged.
-const isLocked = (shot) => !cameraFree(shot) && (!shot.camera || /lock|static/i.test(shot.camera));
+// 2026-11-21 (global audit): the camera is locked only when the creator says so. It was locked whenever nothing was said -
+// right for Londi's fixed-camera episodes, wrong for everyone else: the first new user's "children learning video" was
+// flagged for a camera move nobody had forbidden. No camera words = the model's choice, and no locked-camera check.
+const isLocked = (shot) => !!shot.camera && /lock|static|tripod|still camera/i.test(shot.camera);
 
 // 2026-11-20 (held-out test): a Home prompt has no camera field, so every model was told "camera locked" and the
 // checker failed clips whose camera moved - even when the prompt itself asked for "a slow push-in" or "a tracking
@@ -73,14 +87,19 @@ const MINIMAX_STATIC = "[CAMERA] Locked-off tripod: the camera stays completely 
 // 9 at 7 s, whose action also said "she stops", ended standing. Walks now default to 7 s (app) and always get an
 // explicit ending. Same words as studio.shot_kind's "walking".
 const WALKING = /\b(walks?|walking|runs?|running|cross(es|ing)?|goes to|go to|moves? to|dances?|dancing|skips?|hops?|chases?|crawls?)\b/i;
-const WALK_END = "[END] The movement is finished well before the clip ends: for the last second the moving character stands " +
-  "still with every foot planted on the floor and weight on all of them - not mid-stride, not leaning forward.";
+// 2026-11-21 (global audit): no longer forces a stop (a chase or a run-and-jump may keep going to the end); it still
+// rules out the frozen mid-stride ending.
+const WALK_END = "[END] The clip never ends frozen mid-stride: by the last second the movement has either finished, with " +
+  "feet planted and weight on them, or is still clearly under way.";
+
+const noText = (shot) => wantsText(shot.action) ? "Only the text the action asks for, spelled correctly; no other text. "
+  : "No text or letters. ";
 
 export function prompt(shot, chars) {
   const moving = MOVES.test(shot.action);
   const minimax = /^minimax\//.test(shot.endpoint || "");
   const camera = minimax && isLocked(shot) ? MINIMAX_STATIC : shot.camera ? `[CAMERA] ${shot.camera}`
-    : cameraFree(shot) ? "[CAMERA] As the action describes." : "[CAMERA] locked";
+    : cameraFree(shot) ? "[CAMERA] As the action describes." : null;
   return [
     minimax && isLocked(shot) ? "[Static shot]" : null,
     shot.style_prompt ? `[STYLE] ${shot.style_prompt}`
@@ -94,9 +113,9 @@ export function prompt(shot, chars) {
     WALKING.test(shot.action) ? WALK_END : null,
     camera,
     shot.from_text
-      ? "[RULES] Only what the action describes appears. No text or letters. No sound."
+      ? `[RULES] Only what the action describes appears. ${noText(shot)}No sound.`
       : `[RULES] Start exactly on the given first frame. Same characters, proportions and ${lookWords(shot.look)} throughout. ` +
-        "Nobody else appears. No text or letters. No sound.",
+        `${wantsExtras(shot.action) ? "Only the extras the action calls for join them." : "Nobody else appears."} ${noText(shot)}No sound.`,
   ].filter(Boolean).join("\n");
 }
 
@@ -157,10 +176,13 @@ export function checkerSpec(shot, chars, clip, out, startFrameLocal, fps = 24) {
     action: shot.action,
     cast,
     style: shot.look === "photoreal" ? "photo" : "cartoon",     // frame_check names; was always "cartoon" until 2026-11-16
-    notes: [shot.style_prompt, chars.length ? `Exactly ${chars.length} characters (${chars.map((c) => c.kind || "person").join(", ")}); nobody else.` : null, order,
-            `The clip must start on the approved start frame and stay in the same set and ${lookWords(shot.look)}. No text or letters.`]
+    notes: [shot.style_prompt,
+            chars.length ? `${chars.length} cast character${chars.length > 1 ? "s" : ""} (${chars.map((c) => c.kind || "person").join(", ")})` +
+              (wantsExtras(shot.action) ? "; extras the action calls for are expected." : "; nobody else.") : null, order,
+            `The clip must start on the approved start frame and stay in the same set and ${lookWords(shot.look)}.` +
+              (wantsText(shot.action) ? " Text the action asks for is expected." : " No text or letters.")]
       .filter(Boolean).join(" "),
-    people: peopleCount(chars),
+    people: peopleCount(chars, shot.action),
     subjects: subjects(chars),
     start_frame: startFrameLocal,
     camera: isLocked(shot) ? "locked" : undefined,     // a camera the action describes is not checked as locked

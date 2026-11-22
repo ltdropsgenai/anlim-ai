@@ -25,7 +25,7 @@ import * as db from "./db.js";
 import * as storage from "./storage.js";
 import * as fal from "./providers/fal.js";
 import * as mock from "./providers/mock.js";
-import { lookWords, subjects } from "./compile.js";
+import { lookWords, subjects, wantsExtras, wantsText } from "./compile.js";
 
 const providers = { fal, mock };
 const provider = () => providers[process.env.IMAGE_PROVIDER || "fal"];
@@ -49,9 +49,10 @@ const sameLooks = (chars) => {
 export function editPrompt(instruction, chars, look = "cartoon") {
   const cast = chars.map(castText).join("; ");
   return `Edit this image. ${instruction.trim().replace(/\.?$/, ".")} ` +
-    "Only the characters change: where they are, their poses and where they look. Keep the room, every piece of " +
-    `furniture, the props, the window, the colors, the lighting, the ${lookWords(look)} and the camera framing ` +
-    `exactly the same. Same characters${cast ? ` (${cast})` : ""}, same size, ${sameLooks(chars)}. Nobody else appears. No text.`;
+    "Only the characters change: where they are, their poses and where they look. Keep the setting (room or outdoors), " +
+    `its layout, the props, the colors, the lighting, the ${lookWords(look)} and the camera framing ` +
+    `exactly the same. Same characters${cast ? ` (${cast})` : ""}, same size, ${sameLooks(chars)}. ` +
+    `${wantsExtras(instruction) ? "Add only the extras the instruction asks for." : "Nobody else appears."} ${wantsText(instruction) ? "Only the text the instruction asks for." : "No new text."}`;
 }
 
 // Plate: the 2026-11-13 feasibility prompt, without the room's own furniture named.
@@ -62,9 +63,9 @@ export function platePrompt(look = "cartoon", chars = []) {
   const objs = chars.filter((c) => c.kind === "object").map(castText);
   return "Edit this image. Remove every person and every animal completely, together with anything they are holding " +
     "or carrying (a toy in a character's hands goes too; nothing is left floating in the air)" +
-    (objs.length ? `, and also remove ${objs.join("; ")}` : "") + ". Show the same empty room " +
-    "exactly as it is: the same furniture, the props that stand on the floor, shelves or furniture, the window, floor, " +
-    `colors, lighting, ${lookWords(look)} and camera framing. Fill in whatever was covered. Nobody in the room. No text.`;
+    (objs.length ? `, and also remove ${objs.join("; ")}` : "") + ". Show the same empty setting " +
+    "exactly as it is: the same layout, furniture or landscape, the props that stand on the ground, shelves or furniture, " +
+    `the colors, lighting, ${lookWords(look)} and camera framing. Fill in whatever was covered. Nobody left in it. No new text.`;
 }
 export const PLATE_PROMPT = platePrompt("cartoon");     // the cartoon wording, kept for tests
 
@@ -82,12 +83,12 @@ export function setupPrompt(instruction, names, heights = [], look = "cartoon", 
   const who = names.map((n, i) => `image ${i + 2} is ${n}`).join(", ");
   const h = names.map((n, i) => ({ n, v: Number(heights[i]) })).filter((x) => x.v > 0).sort((a, b) => b.v - a.v);
   const sizes = h.slice(1).map((x, i) => (x.v < h[i].v * 0.97 ? `${x.n} is shorter than ${h[i].n}.` : `${x.n} is about as tall as ${h[i].n}.`));
-  return `Image 1 is the room. ${who[0].toUpperCase()}${who.slice(1)}: draw ${names.length > 1 ? "them exactly as in those images" : "this character exactly as in that image"}, ` +
-    `${setupSame(names, chars)}, proportions and ${lookWords(look)}, at the same scale relative to the room. ` +
-    `Place ${names.length > 1 ? "them" : "the character"} in the room of image 1: ${instruction.trim().replace(/\.?$/, ".")} ` +
+  return `Image 1 is the setting. ${who[0].toUpperCase()}${who.slice(1)}: draw ${names.length > 1 ? "them exactly as in those images" : "this character exactly as in that image"}, ` +
+    `${setupSame(names, chars)}, proportions and ${lookWords(look)}, at the same scale relative to the setting. ` +
+    `Place ${names.length > 1 ? "them" : "the character"} in the setting of image 1: ${instruction.trim().replace(/\.?$/, ".")} ` +
     (sizes.length ? sizes.join(" ") + " " : "") +
-    `Keep the room of image 1 exactly as it is: same furniture, props, window, colors, lighting, ${lookWords(look)} and camera ` +
-    "framing. Nobody else. No text.";
+    `Keep the setting of image 1 exactly as it is: same layout, props, colors, lighting, ${lookWords(look)} and camera ` +
+    `framing. ${wantsExtras(instruction) ? "Add only the extras the instruction asks for." : "Nobody else."} ${wantsText(instruction) ? "Only the text the instruction asks for." : "No new text."}`;
 }
 
 // Start frame from the description (mode "prompt", 2026-11-19): a new project's first shot has no room, cast or
@@ -108,7 +109,9 @@ export function framePrompt(instruction, look = "cartoon", style = null, chars =
     "if the description asks for a crowd or a busy place). Keep the main subject fully inside the frame. Use the framing " +
     `the description asks for (close-up, wide shot...); if it asks for none, a medium shot of the subject. ${looks}` +
     (style ? ` Style: ${style.trim().replace(/\.?$/, ".")}` : "") +
-    (cast ? ` Characters: ${cast}.` : "") + " No text, no captions, no logos, no watermark.";
+    (cast ? ` Characters: ${cast}.` : "") +
+    (wantsText(instruction) ? " Only the text the description asks for, spelled correctly; no captions, no logos, no watermark."
+      : " No text, no captions, no logos, no watermark.");
 }
 
 // Nano Banana 2 takes an aspect ratio, not a size: pick the supported ratio nearest the start still's.

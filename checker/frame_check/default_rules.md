@@ -1,10 +1,12 @@
 # Default frame rules (from Londi's production notes and review sessions) · @anlim
+2026-11-21 global audit: HEAD COUNT, MOUTHS and LIGHTING no longer assume Londi's own shots (no extras, quiet
+characters, bright even light); they follow what each creator's shot asks for.
 Copy this file per series and add that series' own rules (characters, outfits, set, props).
 The letter in brackets is the QC gate the rule belongs to (from the music-video Production Bible v2):
 A Character, B Set, C Anatomy, D Camera, E Motion and props, F Editorial, G Technical.
 Every rule gets PASS, FAIL or NOT CHECKED on every frame. NOT CHECKED never counts as PASS.
 
-1. [A] HEAD COUNT: exactly the people/characters the shot calls for; nobody doubled, no extras.
+1. [A] HEAD COUNT: exactly the people/characters the shot calls for; nobody doubled. No extras unless the shot calls for them (a crowd, passers-by, an audience, a team): then background people are expected and only the cast is counted.
 2. [A] IDENTITY: each character matches their reference (face, hair, skin tone, age, gender); no two characters' roles swapped (one character performing the other's moves or standing where the other should be). Motion transfer: the character must not drift toward the driving video's real actor (a gender- or design-swapped character turning back into the actor or a lookalike, worst in close-ups; EP18 2026-11-10: the woman became a Donnie Yen lookalike, the boxer a Tyson lookalike).
 3. [A] WARDROBE: outfit and footwear match the wardrobe list for this scene/day; no costume change inside a scene; no swapped clothing pieces; no accessory that is not in the design (a pouch or holster at the hip, a jacket over the tunic); no part recoloured (an inner collar turning pink); feet keep their footwear (no bare feet on a shod character).
 4. [A] RELATIVE HEIGHT: characters keep their height ratios and builds (measure at full size when in doubt).
@@ -14,7 +16,7 @@ Every rule gets PASS, FAIL or NOT CHECKED on every frame. NOT CHECKED never coun
 8. [C] EVERY CREATURE: animals have animal anatomy (no human hands, no human gestures).
 9. [C] BODY CONTACT: nobody fused into furniture, floor, a bed, a table or another character; seated people have a seat under them.
 10. [C] NATURAL POSES: people face what they are doing or who they are talking to, not the camera, unless the shot says so; a walking body and its head face the same way.
-11. [C] MOUTHS: characters who are not speaking or singing keep their mouths closed.
+11. [C] MOUTHS: mouths move only when the character speaks, sings, shouts, laughs, eats or reacts with the mouth the way the shot calls for; otherwise they stay still (no silent chattering).
 12. [D] SCREEN SIDE: each character is on the side of frame the blocking says; walking direction matches the previous shot; no surprise 180-degree axis flip.
 13. [D] CAMERA: the camera moves the way the shot spec says (locked, push-in, pan...); walls, furniture and horizon stay rigid; the camera never passes through a wall.
 14. [E] HELD OBJECTS FACE THE HOLDER: a phone screen, photo, paper or book faces the person holding it, not the camera, unless the shot says otherwise; text on paper is upright for the holder.
@@ -23,7 +25,7 @@ Every rule gets PASS, FAIL or NOT CHECKED on every frame. NOT CHECKED never coun
 17. [E] MOTION (video): the shot's action happens (no frozen clip); feet touch the ground when walking (no sliding); multi-step moves (car doors, stairs) follow a physically possible path, with no passing through doors, car bodies or railings.
 18. [E] REFLECTIONS AND SHADOWS: FAIL only for a reflection or shadow that is WRONG: a reflected figure or object with nobody/nothing to cast it, a reflection that contradicts the scene (a different person, the wrong side), a shadow that detaches from or moves against its owner, or a mirror the shot spec calls for that shows nothing. A reflection that is simply absent from glass seen straight on, or faint in bright light, is NOT a defect. (Tested 2026-11-10: the earlier wording failed 10 frames of a storefront for "no reflection of the walkers" and passed 23 identical ones.)
 19. [F] EDITORIAL: the action matches the script line, lyric or beat it is cut to (judge on the clip, not the frame).
-20. [G] LIGHTING: bright and even unless the shot says otherwise; no black vignette, spotlight, exposure jump or time-of-day jump.
+20. [G] LIGHTING: the lighting fits the look the shot or start frame sets (bright, moody, night, neon are all fine) and stays consistent through the clip: no exposure jump, no time-of-day jump, no vignette or spotlight the shot did not ask for.
 21. [G] TEXT: no garbled or nonsense generated text, no real brand logos, no watermarks; screens show what the script says. Readable, sensible set signage (a clinic poster, a street sign) and plain patches are fine and are NOT a failure. Text the shot spec forbids ("no_text") fails; otherwise a TEXT problem is a FLAG for a person (Londi, 2026-11-11, after Keycard flagged an "EYE-WASH INSTRUCTION" poster and a garbled "PRAVM POUCE" patch).
 22. [G] IMAGE QUALITY: no smears, melting, noise blocks or warped background; correct aspect ratio and resolution.
 23. [A] SOURCE MATCH: (motion transfer only; NOT CHECKED when there is no driving video) the render follows its driving video: the same number of people as the source at that moment (nobody added where the source shows one person), each character in the source actor's place for the whole shot (models map characters by position after every cut, so a whole shot can be swapped), and nothing copied from the source footage that the design and start frame do not have (an altar, chairs, a holster from the film). The last 0.5-1 s of a render often stops following the source (EP18: face merge, different action): check the tail, and trim it rather than re-render when the episode does not use it.

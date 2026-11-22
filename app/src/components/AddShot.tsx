@@ -26,7 +26,7 @@ export function AddShot({ sceneId, onDone, onCreated }: { sceneId: string; onDon
       <Text style={s.label}>The movement, from the first moment to the last. Name each character as on their card.</Text>
       <TextInput style={s.input} multiline value={action}
         onChangeText={(v) => { setAction(v); if (!durTouched) setDur(String(suggestedSeconds(v))); }}
-        placeholderTextColor={c.muted} placeholder="e.g. Layana walks to the toy shelf in front of the coffee table; King watches her from the sofa." />
+        placeholderTextColor={c.muted} placeholder="e.g. Sam walks across the room to the window; Ana watches him from the table. Add camera words if you want them (slow push-in, handheld, locked)." />
       <View style={s.row}>
         <Text style={s.label}>Seconds</Text>
         <TextInput style={[s.input, { width: 70, minHeight: 0 }]} value={dur} onChangeText={(v) => { setDur(v); setDurTouched(true); }} keyboardType="number-pad" />
