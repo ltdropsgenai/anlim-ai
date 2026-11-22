@@ -42,7 +42,7 @@ function heightOrder(chars) {
 
 // Bump on every prompt change; the worker prints it at start and saves it with each job (2026-11-12: a worker started
 // before a prompt change rendered 3 clips with the old prompt and nothing showed it).
-export const COMPILER_VERSION = "2026-11-21.1";
+export const COMPILER_VERSION = "2026-11-22.1";
 
 // Actions that move a character across the floor (same idea as frame_check/passthrough_check.MOVES).
 const MOVES = /\b(walk|walks|walking|step|steps|run|runs|running|cross|crosses|goes|go to|moves? to|dances?)\b/i;
@@ -95,6 +95,12 @@ const WALK_END = "[END] The clip never ends frozen mid-stride: by the last secon
 const noText = (shot) => wantsText(shot.action) ? "Only the text the action asks for, spelled correctly; no other text. "
   : "No text or letters. ";
 
+// 2026-11-22 (Londi's promo, shot db987418): Kling 4.0 put a hard cut at 2.0 s of a 10 s clip, from a medium shot to a
+// full-body wide, which read as the camera jumping. A shot is one take unless its words ask for a cut.
+const CUT_WORDS = /\b(cuts? to|smash cut|jump cut|montage|split screen|several shots|multiple shots)\b/i;
+const oneTake = (shot) => CUT_WORDS.test(`${shot.action || ""} ${shot.camera || ""}`) ? ""
+  : "One continuous take: no cuts, no jump to another framing or angle; the framing changes only by the camera move described. ";
+
 export function prompt(shot, chars) {
   const moving = MOVES.test(shot.action);
   const minimax = /^minimax\//.test(shot.endpoint || "");
@@ -113,8 +119,8 @@ export function prompt(shot, chars) {
     WALKING.test(shot.action) ? WALK_END : null,
     camera,
     shot.from_text
-      ? `[RULES] Only what the action describes appears. ${noText(shot)}No sound.`
-      : `[RULES] Start exactly on the given first frame. Same characters, proportions and ${lookWords(shot.look)} throughout. ` +
+      ? `[RULES] ${oneTake(shot)}Only what the action describes appears. ${noText(shot)}No sound.`
+      : `[RULES] Start exactly on the given first frame. ${oneTake(shot)}Same characters, proportions and ${lookWords(shot.look)} throughout. ` +
         `${wantsExtras(shot.action) ? "Only the extras the action calls for join them." : "Nobody else appears."} ${noText(shot)}No sound.`,
   ].filter(Boolean).join("\n");
 }
