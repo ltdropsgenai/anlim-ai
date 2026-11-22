@@ -22,6 +22,7 @@ export default function Support() {
         <Li>ChatGPT (web): Plugins › + › Add custom MCP server. Name it anlim, paste the address, choose OAuth, then sign in to anlim. ChatGPT lets only some plans use tools that make things (Business and Enterprise); on other plans it may only read your projects and clips.</Li>
         <Li>Other tools (Claude Code, Cursor, any MCP client): add a remote MCP server with the same address; the tool opens anlim's sign-in.</Li>
         <P>When the tool asks to connect, anlim shows what it may do; choose Approve. To disconnect, remove the connector in the tool.</P>
+        <P>From chat you can make images and clips, add characters from your photos, set backgrounds, build a scene shot by shot, keep or reject clips, recast a video (motion transfer) and make the cut. A chat can't send files to anlim, so when your AI tool needs a photo or a video it gives you the link anlim.ai/upload: drop the files there and tell it you're done.</P>
         <H>Contact</H>
         <P>Write to {contact()}. If you saw an error with a reference code, include it.</P>
       </Doc>

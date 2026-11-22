@@ -1,9 +1,9 @@
-// Where to go after signing in, when sign-in was asked for by the OAuth consent page (2026-11-21). Only the consent
-// page itself is accepted, so this can never send a creator to another site. @anlim
+// Where to go after signing in, when sign-in was asked for by the OAuth consent page (2026-11-21) or the AI-tool upload
+// page (2026-11-22). Only those two pages are accepted, so this can never send a creator to another site. @anlim
 import { Platform } from "react-native";
 
 const KEY = "anlim.oauthReturn";
-const OK = /^\/oauth\/consent\?authorization_id=[A-Za-z0-9%_\-.]+$/;
+const OK = /^(\/oauth\/consent\?authorization_id=[A-Za-z0-9%_\-.]+|\/upload)$/;
 
 export function setOauthReturn(path: string) {
   if (Platform.OS !== "web" || !OK.test(path)) return;

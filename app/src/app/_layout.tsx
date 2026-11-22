@@ -4,7 +4,7 @@ import { Platform, Pressable, Text, View } from "react-native";
 import { DarkTheme, Stack, ThemeProvider, router, useSegments } from "expo-router";
 import type { Session } from "@supabase/supabase-js";
 import { authFlags, supabase } from "../lib/supabase";
-import { takeOauthReturn } from "../lib/oauthReturn";
+import { setOauthReturn, takeOauthReturn } from "../lib/oauthReturn";
 import { c, pageBg } from "../lib/theme";
 import { SunStage } from "../components/SunLight";
 import { Shell } from "../components/Shell";
@@ -97,6 +97,7 @@ export default function RootLayout() {
   useEffect(() => {
     if (session === undefined) return;
     const onLogin = seg === "login";
+    if (!session && seg === "upload") { setOauthReturn("/upload"); router.replace("/login"); return; }   // AI-tool uploads: sign in, then back
     if (!session && !PUBLIC.includes(seg)) router.replace("/welcome");   // includes /reset-password without a recovery session
     if (session && onLogin && !authFlags.recovery) router.replace((takeOauthReturn() ?? "/") as never);   // back to the consent page if it sent them
   }, [session, seg]);   // eslint-disable-line react-hooks/exhaustive-deps
@@ -122,6 +123,7 @@ export default function RootLayout() {
       <Stack.Screen name="terms" options={{ title: "Terms" }} />
       <Stack.Screen name="privacy" options={{ title: "Privacy" }} />
       <Stack.Screen name="support" options={{ title: "Help & contact" }} />
+      <Stack.Screen name="upload" options={{ title: "Upload · anlim.ai" }} />
       <Stack.Screen name="oauth/consent" options={{ title: "Connect an AI tool · anlim.ai" }} />
       <Stack.Screen name="refunds" options={{ title: "Refund requests" }} />
     </Stack>
