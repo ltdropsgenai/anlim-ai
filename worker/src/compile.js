@@ -15,8 +15,11 @@ export const lookWords = (look) => look === "photoreal"
   : "drawing style";
 // What the checker's people count can rely on: only people, and only when no animal is in the shot (the detector calls
 // cartoon animals and chibi children "teddy bear", which the count treats as people).
+// No cast at all (a Home prompt: "an angry coach after his team lost") is not "0 people": the prompt itself says who is in
+// it, so there is no count to hold the clip to (2026-11-21: every such clip said "0 people", the start frame showed 3,
+// and the spec check stopped the review - NOT_REVIEWED). @anlim
 export const peopleCount = (chars) =>
-  chars.some((c) => c.kind === "animal") ? undefined : chars.filter((c) => (c.kind || "person") === "person").length;
+  !chars.length || chars.some((c) => c.kind === "animal") ? undefined : chars.filter((c) => (c.kind || "person") === "person").length;
 // The cast as the checker's frame routes take it (detector classes and matting, frame_check end_frame.subjects).
 export const subjects = (chars) => chars.map((c) => ({ name: c.name, kind: c.kind || "person", what: c.what || null }));
 
@@ -154,7 +157,7 @@ export function checkerSpec(shot, chars, clip, out, startFrameLocal, fps = 24) {
     action: shot.action,
     cast,
     style: shot.look === "photoreal" ? "photo" : "cartoon",     // frame_check names; was always "cartoon" until 2026-11-16
-    notes: [shot.style_prompt, `Exactly ${chars.length} characters (${chars.map((c) => c.kind || "person").join(", ")}); nobody else.`, order,
+    notes: [shot.style_prompt, chars.length ? `Exactly ${chars.length} characters (${chars.map((c) => c.kind || "person").join(", ")}); nobody else.` : null, order,
             `The clip must start on the approved start frame and stay in the same set and ${lookWords(shot.look)}. No text or letters.`]
       .filter(Boolean).join(" "),
     people: peopleCount(chars),
