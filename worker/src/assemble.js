@@ -71,7 +71,10 @@ function conform(format) {
 // skip: frames cut off the clip's start (the shot's trim, 2026-11-22); frames: how many are kept after that.
 // credit: "Made with anlim.ai" over the end of this (the last) shot. 2026-11-22 (Londi: "Made with anlim.ai belongs on
 // the end shot, not on an end card"): it fades in over the last CREDIT_S seconds and stays while the picture fades out.
-async function part(src, dest, format, frames, fades, skip = 0, credit = false) {
+// speed: below 1 slows the shot down with motion interpolation (2026-11-22, Londi chose it over frame blending for the
+// promo: the voiceover needed more time than the dissolve took); above 1 speeds it up by dropping frames. frames is the
+// count after the speed change.
+async function part(src, dest, format, frames, fades, skip = 0, credit = false, speed = 1) {
   const t = frames / FPS;
   const fx = [];
   if (fades.in) fx.push(`fade=t=in:st=0:d=${FADE_IN}`);
@@ -82,7 +85,9 @@ async function part(src, dest, format, frames, fades, skip = 0, credit = false) 
     fc += `[pic];[1:v]scale=${mw}:-1,format=rgba,fade=t=in:st=${st.toFixed(3)}:d=0.6:alpha=1[m];` +
           `[pic][m]overlay=(W-w)/2:H*0.87-h/2:shortest=1,format=yuv420p[v]`;
   } else fc += ",format=yuv420p[v]";
-  if (skip > 0) fc = fc.replace(`fps=${FPS},`, `fps=${FPS},trim=start_frame=${skip},setpts=PTS-STARTPTS,`);
+  const sp = speed && Math.abs(speed - 1) > 0.001 ? `setpts=PTS/${speed.toFixed(4)},` +
+    (speed < 1 ? `minterpolate=fps=${FPS}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1,` : `fps=${FPS},`) : "";
+  if (skip > 0 || sp) fc = fc.replace(`fps=${FPS},`, `fps=${FPS},` + (skip > 0 ? `trim=start_frame=${skip},setpts=PTS-STARTPTS,` : "") + sp);
   const inputs = ["-i", src, ...(credit ? ["-loop", "1", "-framerate", String(FPS), "-t", (t + 2).toFixed(3), "-i", MADE_WITH] : [])];
   await ff([...inputs, "-filter_complex", fc, "-map", "[v]", "-frames:v", String(frames), "-an", "-c:v", "libx264",
             "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", String(FPS), dest]);
@@ -247,12 +252,16 @@ async function build(a) {
     const keep = Math.max(Math.min(FPS, p.frames), p.frames - skip - cut);
     const from = Math.min(skip, p.frames - keep);
     if (from || keep < p.frames) notes.push(`Shot ${it.ord}: trimmed to ${(keep / FPS).toFixed(2)} s (from ${(from / FPS).toFixed(2)} s).`);
+    // 2026-11-22: the shot's speed (0.5 to 2); the trims are in the clip's own seconds, before the speed change
+    const speed = Math.min(2, Math.max(0.5, Number(it.speed) || 1));
+    const out = Math.max(1, Math.round(keep / speed));
+    if (out !== keep) notes.push(`Shot ${it.ord}: at ${Math.round(speed * 100)}% speed, ${(out / FPS).toFixed(2)} s in the cut.`);
     // 2026-11-22: end_card puts the credit on the last shot (style "card" keeps the old black card after it)
     const credit = !!opts.end_card && last && opts.end_card_style !== "card";
-    await part(src, dest, a.format, keep, fades, from, credit);
+    await part(src, dest, a.format, out, fades, from, credit, speed);
     if (fades.in) quiet.push([frames / FPS, frames / FPS + FADE_IN]);
-    starts.push(frames / FPS); lens.push(keep / FPS);
-    frames += keep;
+    starts.push(frames / FPS); lens.push(out / FPS);
+    frames += out;
     if (fades.out) quiet.push([frames / FPS - FADE_OUT, frames / FPS]);
     parts.push(dest);
   }

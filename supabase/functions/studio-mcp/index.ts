@@ -200,6 +200,13 @@ const TOOLS = [
       cut_end_seconds: { type: "number", minimum: 0, maximum: 60, default: 0 },
     }, required: ["shot_id"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
+  { name: "set_clip_speed", title: "Slow down or speed up a shot",
+    description: "Sets the speed of the shot's kept clip in the scene's cut: 0.5 (half speed) to 2 (double); 1 is normal. Slower " +
+      "speeds use motion interpolation (new in-between frames), good to about 0.7; beyond that, re-animating a longer shot looks " +
+      "more natural. Trims count in the clip's own seconds, before the speed change. Then make_cut again. Free.",
+    inputSchema: { type: "object", properties: { shot_id: { type: "string" }, speed: { type: "number", minimum: 0.5, maximum: 2 } },
+      required: ["shot_id", "speed"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
   { name: "make_start_image", title: "Make a shot's start image",
     description: "Makes the first frame of a shot (paid accounts; about 20 credits). Modes: 'new_setup' places the shot's characters " +
       "(their reference photos) in the scene's location background as the instruction says, the way to put a real person in a shot; " +
@@ -254,7 +261,7 @@ const TOOLS = [
     annotations: { readOnlyHint: true, openWorldHint: false } },
   { name: "make_cut", title: "Make the scene's cut",
     description: "Joins the kept clips of the project's latest scene, in shot order, into one video (free). Formats: 16x9, 9x16, 1x1, " +
-      "4x5, 4x3, 3x4, 21x9 (default: the project's shape). end_card adds a 3 s 'Made with anlim.ai' card. Follow it with get_cut.",
+      "4x5, 4x3, 3x4, 21x9 (default: the project's shape). end_card puts 'Made with anlim.ai' over the last 2 s of the final shot. Follow it with get_cut.",
     inputSchema: { type: "object", properties: {
       project_id: { type: "string" }, format: { type: "string", enum: ["16x9", "9x16", "1x1", "4x5", "4x3", "3x4", "21x9"] },
       end_card: { type: "boolean", default: true }, fade: { type: "boolean", default: true },
@@ -569,6 +576,14 @@ async function callTool(uid: string, name: string, a: Args) {
       return text(st || en ? `The cut leaves out ${st} s at the start and ${en} s at the end of this shot. Run make_cut to see it.`
                            : "Trim removed: the whole clip goes into the cut.");
     }
+    case "set_clip_speed": {
+      const sid = String(a.shot_id || "");
+      if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
+      const sp = Number(a.speed);
+      if (!(sp >= 0.5 && sp <= 2)) return text("speed is 0.5 to 2 (1 is normal).", undefined, true);
+      await asUser(uid, (tx) => tx`select studio.set_shot_speed(${sid}, ${sp}::numeric)`);
+      return text(sp === 1 ? "Normal speed." : `This shot plays at ${Math.round(sp * 100)}% speed in the cut. Run make_cut to see it.`);
+    }
     case "make_start_image": {
       const sid = String(a.shot_id || "");
       if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
@@ -668,7 +683,7 @@ async function callTool(uid: string, name: string, a: Args) {
         : String(p?.aspect ?? "16:9").replace(":", "x");
       const opts = { fade: a.fade !== false, end_card: a.end_card !== false };
       const [r] = await asUser(uid, (tx) => tx`select studio.request_assembly(${scene}, ${format}, ${tx.json(opts)}) as id`);
-      return text(`The cut is being made (${format}${opts.end_card ? ", with the Made with anlim.ai card" : ""}); usually under a minute. ` +
+      return text(`The cut is being made (${format}${opts.end_card ? ", with Made with anlim.ai on the last shot" : ""}); usually under a minute (longer with slowed shots). ` +
         "Get it with get_cut.", { cut_id: r.id });
     }
     case "get_cut": {
@@ -751,13 +766,13 @@ async function rpc(uid: string, m: Rpc) {
       const want = String(m.params?.protocolVersion || "");
       return ok(m.id, { protocolVersion: PROTOCOLS.includes(want) ? want : PROTOCOLS[1],
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "anlim", title: "anlim.ai", version: "2.2.0" },
+        serverInfo: { name: "anlim", title: "anlim.ai", version: "2.3.0" },
         instructions: "anlim makes images and short video clips and keeps them in the creator's projects. Quick: create (an image or a " +
           "clip from words) then get_creation. Step by step, for a real person, a set or several shots: new_project (or list_projects), " +
           "get_upload_link so the creator uploads photos, add_character with an upload, add_location for the background, add_shot, " +
           "(update_character, update_shot, move_shot to change them), make_end_image when someone must appear or end somewhere exact, " +
           "make_start_image (new_setup places the characters), get_creation to look, animate, review_clip (keep), then make_cut and " +
-          "get_cut (trim_clip to shorten a clip in the cut). Steps that spend credits need a paid account. Clips take minutes: tell the creator and check again rather than " +
+          "get_cut (trim_clip to shorten a clip, set_clip_speed to slow it, in the cut). Steps that spend credits need a paid account. Clips take minutes: tell the creator and check again rather than " +
           "starting the same thing twice." });
     }
     case "ping": return ok(m.id, {});
