@@ -23,7 +23,7 @@ const RESOURCE = Deno.env.get("MCP_RESOURCE_URL") || "https://mcp.anlim.ai/mcp";
 const METADATA_URL = new URL("/.well-known/oauth-protected-resource", RESOURCE).toString();
 const ISSUER = `${SUPABASE_URL}/auth/v1`;
 const CREATE_LIMIT = 5, CREATE_WINDOW_MIN = 10, SPEND_LIMIT = 10;
-const SPEND_TOOLS = ["make_start_image", "animate", "motion_transfer", "add_location"];
+const SPEND_TOOLS = ["make_start_image", "make_end_image", "animate", "motion_transfer", "add_location"];
 const APP = "https://anlim.ai";
 const ASPECTS = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
 const PROTOCOLS = ["2025-11-25", "2025-06-18", "2025-03-26"];
@@ -171,6 +171,35 @@ const TOOLS = [
       "or move them). Cannot be undone: confirm with the creator first.",
     inputSchema: { type: "object", properties: { shot_id: { type: "string" } }, required: ["shot_id"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false } },
+  // ---- v2.2 (2026-11-22): end images with the cast, and trimming clips
+  { name: "make_end_image", title: "Make a shot's end image",
+    description: "Makes the image a shot's clip must end on (paid accounts; about 20 credits). The video model then moves from the " +
+      "start image to it. Mode 'with_cast' (default) places the shot's characters from their reference photos onto the approved start " +
+      "image: the way to have someone appear, re-form or walk in with their real face. Mode 'edit' changes the start image as the " +
+      "instruction says, with no reference photos. Check it with get_creation, then approve_end_image.",
+    inputSchema: { type: "object", properties: {
+      shot_id: { type: "string" }, instruction: { type: "string", minLength: 8, maxLength: 1000, description: "Where everyone is and what they are doing at the end" },
+      mode: { type: "string", enum: ["with_cast", "edit"], default: "with_cast" },
+    }, required: ["shot_id", "instruction"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
+  { name: "approve_end_image", title: "Approve or discard an end image",
+    description: "Approves the shot's end image that is waiting (the next animate uses it), or discards it.",
+    inputSchema: { type: "object", properties: { shot_id: { type: "string" }, decision: { type: "string", enum: ["approve", "discard"] } },
+      required: ["shot_id", "decision"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
+  { name: "remove_end_image", title: "Remove a shot's end image",
+    description: "Removes the shot's end image, so the next clip ends wherever the video model takes it. Free.",
+    inputSchema: { type: "object", properties: { shot_id: { type: "string" } }, required: ["shot_id"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
+  { name: "trim_clip", title: "Trim a shot's clip",
+    description: "Sets how many seconds the scene's cut leaves out at the start and at the end of the shot's kept clip (the clip " +
+      "itself is not changed; 0 and 0 undoes it). At least 1 s is kept. Then make_cut again. Free.",
+    inputSchema: { type: "object", properties: {
+      shot_id: { type: "string" },
+      cut_start_seconds: { type: "number", minimum: 0, maximum: 60, default: 0 },
+      cut_end_seconds: { type: "number", minimum: 0, maximum: 60, default: 0 },
+    }, required: ["shot_id"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
   { name: "make_start_image", title: "Make a shot's start image",
     description: "Makes the first frame of a shot (paid accounts; about 20 credits). Modes: 'new_setup' places the shot's characters " +
       "(their reference photos) in the scene's location background as the instruction says, the way to put a real person in a shot; " +
@@ -271,6 +300,9 @@ async function callTool(uid: string, name: string, a: Args) {
       if (!UUID.test(id)) return text("shot_id must be the id that create or add_shot returned.", undefined, true);
       const [x] = await asUser(uid, (tx) => tx`
         select sh.action, sh.from_text, sh.start_frame_path, sh.start_frame_approved, sh.motion_source_path is not null as motion,
+               sh.end_frame_path, sh.end_frame_approved, sh.trim_start_s, sh.trim_end_s,
+               (select row_to_json(e) from (select status, composed_path, error from studio.frame_jobs where shot_id = sh.id and kind = 'end'
+                  order by created_at desc limit 1) e) as end_job,
                sh.approved_generation_id, se.name as series_name, se.aspect,
                f.status as frame_status, f.composed_path, f.error as frame_error, f.then_render, f.render_error, f.check_result,
                f.created_at as frame_at, g.created_at as gen_at, g.id as gen_id, g.status as gen_status, g.output_path, g.preview_path, g.error as gen_error,
@@ -305,8 +337,15 @@ async function callTool(uid: string, name: string, a: Args) {
         : "No start image yet: make_start_image or set_start_image.";
       const findings = x.gen_error?.startsWith("checker found: ") ? x.gen_error.slice(15, 400)
         : Array.isArray(x.reasons) && x.reasons.length && x.verdict && x.verdict !== "PASS" ? (x.reasons as string[]).slice(0, 4).join("; ").slice(0, 600) : null;
+      const ej = x.end_job as { status: string; composed_path: string | null; error: string | null } | null;
+      const endImg = x.end_frame_path ? await sign(x.end_frame_path) : ej && ej.status === "ready" ? await sign(ej.composed_path) : null;
+      const endLine = x.end_frame_path && x.end_frame_approved ? `End image (approved): ${endImg}`
+        : ej?.status === "ready" ? `End image waiting for approval (approve_end_image): ${endImg}`
+        : ej && ["queued", "running", "composing"].includes(ej.status) ? "The end image is being made."
+        : ej?.status === "failed" ? `The end image could not be made: ${ej.error ?? "unknown error"}. Nothing was charged for it.` : null;
+      const trimLine = Number(x.trim_start_s) || Number(x.trim_end_s) ? `Trim in the cut: ${Number(x.trim_start_s)} s off the start, ${Number(x.trim_end_s)} s off the end.` : null;
       return text([state, findings ? `The check (${x.verdict ?? "flag"}): ${findings}` : x.verdict === "PASS" ? "The check passed it." : null,
-                   image ? `Image: ${image}` : null, video ? `Video${paid ? "" : " (watermarked: free account)"}: ${video}` : null,
+                   image ? `Image: ${image}` : null, endLine, trimLine, video ? `Video${paid ? "" : " (watermarked: free account)"}: ${video}` : null,
                    `Project: ${x.series_name} (${x.aspect}). Open it at ${APP}`].filter(Boolean).join("\n"),
         { status: x.gen_status ?? x.frame_status ?? "starting", start_image_waits: waits, image_url: image, video_url: video,
           check: x.verdict ?? null, project: x.series_name, aspect: x.aspect });
@@ -496,6 +535,40 @@ async function callTool(uid: string, name: string, a: Args) {
       await asUser(uid, (tx) => tx`select studio.delete_shot(${sid})`);
       return text("Shot deleted.");
     }
+    // ---- v2.2 tools
+    case "make_end_image": {
+      const sid = String(a.shot_id || "");
+      if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
+      const ins = String(a.instruction || "").trim();
+      if (ins.length < 8) return text("Say where everyone is and what they are doing at the end.", undefined, true);
+      const gate = await spendGate(uid, "make_end_image");
+      if (gate) return gate;
+      const [r] = await asUser(uid, (tx) => a.mode === "edit" ? tx`select studio.request_end_frame(${sid}, ${ins}) as id`
+                                                               : tx`select studio.request_end_setup(${sid}, ${ins}) as id`);
+      return text(`The end image is being made (usually under a minute). Check it with get_creation (shot_id ${sid}), then approve_end_image.`, { job_id: r.id });
+    }
+    case "approve_end_image": {
+      const sid = String(a.shot_id || ""), d = a.decision === "discard" ? "discard" : "approve";
+      if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
+      const [j] = await asUser(uid, (tx) => tx`select id from studio.frame_jobs where shot_id = ${sid} and kind = 'end' and status = 'ready' order by created_at desc limit 1`);
+      if (!j) return text("No end image is waiting for a decision on this shot.", undefined, true);
+      await asUser(uid, (tx) => tx`select studio.decide_frame(${j.id}, ${d})`);
+      return text(d === "approve" ? "End image approved: the next animate ends on it." : "End image discarded.");
+    }
+    case "remove_end_image": {
+      const sid = String(a.shot_id || "");
+      if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
+      await asUser(uid, (tx) => tx`select studio.clear_end_frame(${sid})`);
+      return text("End image removed.");
+    }
+    case "trim_clip": {
+      const sid = String(a.shot_id || "");
+      if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
+      const st = Math.max(0, Number(a.cut_start_seconds) || 0), en = Math.max(0, Number(a.cut_end_seconds) || 0);
+      await asUser(uid, (tx) => tx`select studio.set_shot_trim(${sid}, ${st}::numeric, ${en}::numeric)`);
+      return text(st || en ? `The cut leaves out ${st} s at the start and ${en} s at the end of this shot. Run make_cut to see it.`
+                           : "Trim removed: the whole clip goes into the cut.");
+    }
     case "make_start_image": {
       const sid = String(a.shot_id || "");
       if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
@@ -678,13 +751,13 @@ async function rpc(uid: string, m: Rpc) {
       const want = String(m.params?.protocolVersion || "");
       return ok(m.id, { protocolVersion: PROTOCOLS.includes(want) ? want : PROTOCOLS[1],
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "anlim", title: "anlim.ai", version: "2.1.0" },
+        serverInfo: { name: "anlim", title: "anlim.ai", version: "2.2.0" },
         instructions: "anlim makes images and short video clips and keeps them in the creator's projects. Quick: create (an image or a " +
           "clip from words) then get_creation. Step by step, for a real person, a set or several shots: new_project (or list_projects), " +
           "get_upload_link so the creator uploads photos, add_character with an upload, add_location for the background, add_shot, " +
-          "(update_character, update_shot, move_shot to change them), " +
+          "(update_character, update_shot, move_shot to change them), make_end_image when someone must appear or end somewhere exact, " +
           "make_start_image (new_setup places the characters), get_creation to look, animate, review_clip (keep), then make_cut and " +
-          "get_cut. Steps that spend credits need a paid account. Clips take minutes: tell the creator and check again rather than " +
+          "get_cut (trim_clip to shorten a clip in the cut). Steps that spend credits need a paid account. Clips take minutes: tell the creator and check again rather than " +
           "starting the same thing twice." });
     }
     case "ping": return ok(m.id, {});

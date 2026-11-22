@@ -68,12 +68,14 @@ function conform(format) {
          `scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1`;
 }
 
-async function part(src, dest, format, frames, fades) {
+// skip: frames cut off the clip's start (the shot's trim, 2026-11-22); frames: how many are kept after that
+async function part(src, dest, format, frames, fades, skip = 0) {
   const t = frames / FPS;
   const fx = [];
   if (fades.in) fx.push(`fade=t=in:st=0:d=${FADE_IN}`);
   if (fades.out) fx.push(`fade=t=out:st=${(t - FADE_OUT).toFixed(3)}:d=${FADE_OUT}`);
-  const fc = conform(format) + (fx.length ? "," + fx.join(",") : "") + ",format=yuv420p[v]";
+  let fc = conform(format) + (fx.length ? "," + fx.join(",") : "") + ",format=yuv420p[v]";
+  if (skip > 0) fc = fc.replace(`fps=${FPS},`, `fps=${FPS},trim=start_frame=${skip},setpts=PTS-STARTPTS,`);
   await ff(["-i", src, "-filter_complex", fc, "-map", "[v]", "-frames:v", String(frames), "-an", "-c:v", "libx264",
             "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", String(FPS), dest]);
   const got = await probe(dest);
@@ -231,10 +233,16 @@ async function build(a) {
     const first = i === 0, last = i === a.items.length - 1;
     const fades = { in: opts.fade && first, out: opts.fade && last };
     const dest = path.join(dir, `p${String(i).padStart(3, "0")}.mp4`);
-    await part(src, dest, a.format, p.frames, fades);
+    // 2026-11-22: the shot's trims (seconds off the start and the end of its clip); at least 1 s is always kept
+    const skip = Math.max(0, Math.round(Number(it.trim_start || 0) * FPS));
+    const cut = Math.max(0, Math.round(Number(it.trim_end || 0) * FPS));
+    const keep = Math.max(Math.min(FPS, p.frames), p.frames - skip - cut);
+    const from = Math.min(skip, p.frames - keep);
+    if (from || keep < p.frames) notes.push(`Shot ${it.ord}: trimmed to ${(keep / FPS).toFixed(2)} s (from ${(from / FPS).toFixed(2)} s).`);
+    await part(src, dest, a.format, keep, fades, from);
     if (fades.in) quiet.push([frames / FPS, frames / FPS + FADE_IN]);
-    starts.push(frames / FPS); lens.push(p.frames / FPS);
-    frames += p.frames;
+    starts.push(frames / FPS); lens.push(keep / FPS);
+    frames += keep;
     if (fades.out) quiet.push([frames / FPS - FADE_OUT, frames / FPS]);
     parts.push(dest);
   }
