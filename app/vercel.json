@@ -6,6 +6,36 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/mcp",
+      "has": [
+        {
+          "type": "host",
+          "value": "mcp.anlim.ai"
+        }
+      ],
+      "destination": "https://zejyuxnuzmvlcbpfklrg.supabase.co/functions/v1/studio-mcp"
+    },
+    {
+      "source": "/.well-known/oauth-protected-resource/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "mcp.anlim.ai"
+        }
+      ],
+      "destination": "https://zejyuxnuzmvlcbpfklrg.supabase.co/functions/v1/studio-mcp/.well-known/oauth-protected-resource"
+    },
+    {
+      "source": "/.well-known/oauth-protected-resource",
+      "has": [
+        {
+          "type": "host",
+          "value": "mcp.anlim.ai"
+        }
+      ],
+      "destination": "https://zejyuxnuzmvlcbpfklrg.supabase.co/functions/v1/studio-mcp/.well-known/oauth-protected-resource"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

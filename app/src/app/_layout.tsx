@@ -4,6 +4,7 @@ import { Platform, Pressable, Text, View } from "react-native";
 import { DarkTheme, Stack, ThemeProvider, router, useSegments } from "expo-router";
 import type { Session } from "@supabase/supabase-js";
 import { authFlags, supabase } from "../lib/supabase";
+import { takeOauthReturn } from "../lib/oauthReturn";
 import { c, pageBg } from "../lib/theme";
 import { SunStage } from "../components/SunLight";
 import { Shell } from "../components/Shell";
@@ -91,13 +92,13 @@ export default function RootLayout() {
 
   // Pages anyone may open (2026-11-19): the landing page, the try-it prompt (start), sign-in, Terms, Privacy, Help.
   // Signed-out visitors to any other page go to the landing page.
-  const PUBLIC = ["welcome", "start", "login", "terms", "privacy", "support"];
+  const PUBLIC = ["welcome", "start", "login", "terms", "privacy", "support", "oauth"];   // oauth: the AI-tool consent page (2026-11-21)
   const seg = (segments[0] as string | undefined) ?? "";
   useEffect(() => {
     if (session === undefined) return;
     const onLogin = seg === "login";
     if (!session && !PUBLIC.includes(seg)) router.replace("/welcome");   // includes /reset-password without a recovery session
-    if (session && onLogin && !authFlags.recovery) router.replace("/");
+    if (session && onLogin && !authFlags.recovery) router.replace((takeOauthReturn() ?? "/") as never);   // back to the consent page if it sent them
   }, [session, seg]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const bare = PUBLIC.includes(seg) || seg === "reset-password" || !session;   // no studio frame on public pages
@@ -121,6 +122,7 @@ export default function RootLayout() {
       <Stack.Screen name="terms" options={{ title: "Terms" }} />
       <Stack.Screen name="privacy" options={{ title: "Privacy" }} />
       <Stack.Screen name="support" options={{ title: "Help & contact" }} />
+      <Stack.Screen name="oauth/consent" options={{ title: "Connect an AI tool · anlim.ai" }} />
       <Stack.Screen name="refunds" options={{ title: "Refund requests" }} />
     </Stack>
   );
