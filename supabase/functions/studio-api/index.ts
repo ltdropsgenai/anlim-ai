@@ -233,7 +233,7 @@ async function handle(req: Request): Promise<Response> {
         // every model a creator may pick by hand, with its price for this shot's length (override chips)
         // models.looks (2026-11-20): Seedance 2.0 is cartoon only (fal refuses real-person likenesses)
         const models = await sql`select id, label, credits_per_second * ${sh.duration_s}::int as credits from studio.models
-                                  where active and provider <> 'mock' and kind = 'clip' and (looks is null or ${sh.look ?? "cartoon"} = any(looks))
+                                  where active and provider <> 'mock' and kind = 'clip' and (looks is null or ${sh.look} = any(looks))
                                   order by usd_per_second desc`;
         const [{ paid: canPick }] = await sql`select studio.has_paid(${uid}) as paid`;   // free accounts use Auto (2026-11-20)
         // height check of the current start still when it was uploaded (frame_jobs kind 'height', 2026-11-16)
@@ -250,7 +250,7 @@ async function handle(req: Request): Promise<Response> {
       case "quick_create": {
         const prompt = String(body.prompt || "");
         const camera = null;
-        const [r] = await asUser(uid, (tx) => tx`select studio.quick_create(${prompt}, ${String(body.look || "cartoon")},
+        const [r] = await asUser(uid, (tx) => tx`select studio.quick_create(${prompt}, ${body.look == null ? null : String(body.look)},
           ${Number(body.duration_s || 5)}::int, ${String(body.output || "video")}, ${camera},
           ${body.series_id ? String(body.series_id) : null}::uuid, ${body.model ? String(body.model) : null}::text,
           ${String(body.aspect || "16:9")}::text) as r`);
@@ -269,7 +269,7 @@ async function handle(req: Request): Promise<Response> {
         const refs = Array.isArray(body.ref_paths) ? body.ref_paths.map((x: unknown) => String(x)).slice(0, 8) : [];
         const [r] = await asUser(uid, (tx) => tx`select studio.motion_create(${String(body.source_path || "")}, ${refs}::text[],
           ${String(body.prompt || "")}, ${Number(body.seconds || 0)}::numeric, ${String(body.model || "")},
-          ${body.series_id ? String(body.series_id) : null}::uuid) as r`);
+          ${body.series_id ? String(body.series_id) : null}::uuid, ${body.look == null ? null : String(body.look)}::text) as r`);
         return json(r.r);
       }
       case "prompt_models": {
@@ -483,7 +483,7 @@ async function handle(req: Request): Promise<Response> {
       }
       case "series_create": {
         const [r] = await asUser(uid, (tx) => tx`select studio.create_series(${String(body.name || "")}, ${body.style == null ? null : String(body.style)},
-                                                   ${body.look == null ? "cartoon" : String(body.look)}) as id`);
+                                                   ${body.look == null ? null : String(body.look)}) as id`);
         if (body.genre) await asUser(uid, (tx) => tx`select studio.set_series_genre(${r.id}, ${String(body.genre)})`);
         if (body.aspect) await asUser(uid, (tx) => tx`select studio.set_series_aspect(${r.id}, ${String(body.aspect)})`);
         return json({ ok: true, id: r.id });

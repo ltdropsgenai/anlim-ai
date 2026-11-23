@@ -75,7 +75,9 @@ export async function frameContext(job) {
     [shot.scene_id]) : [];
   // every plate of the location, one per camera framing, latest first (2026-11-16, migration studio_location_framings)
   const platePaths = loc ? [loc.layout_path, ...[...(loc.other_plates || [])].reverse()].filter(Boolean) : [];
-  return { shot, characters: chars, platePath: loc?.layout_path || null, platePaths, look: se?.look || "cartoon",
+  // 2026-11-23 (Londi): no default look; a job whose project cannot be found fails instead of being drawn as a cartoon
+  if (!se?.look) throw new Error("the project of this job was not found (no look)");
+  return { shot, characters: chars, platePath: loc?.layout_path || null, platePaths, look: se.look,
            stylePrompt: se?.style_prompt || null, aspect: se?.aspect || "16:9" };
 }
 

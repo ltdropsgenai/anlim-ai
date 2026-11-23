@@ -310,9 +310,9 @@ export const api = {
     call<QuickCreated>({ op: "quick_create", prompt, look, duration_s: durationS, output, series_id: seriesId, model, aspect }),
   promptModels: () => call<{ paid: boolean; models: PromptModel[] }>({ op: "prompt_models" }),
   motionModels: () => call<{ paid: boolean; models: MotionModel[] }>({ op: "motion_models" }),
-  motionCreate: (sourcePath: string, refPaths: string[], prompt: string, seconds: number, model: string, seriesId: string | null) =>
+  motionCreate: (sourcePath: string, refPaths: string[], prompt: string, seconds: number, model: string, seriesId: string | null, look: Look) =>
     call<{ series_id: string; scene_id: string; shot_id: string; generation_id: string; series_name: string; seconds: number; credits: number }>(
-      { op: "motion_create", source_path: sourcePath, ref_paths: refPaths, prompt, seconds, model, series_id: seriesId }),
+      { op: "motion_create", source_path: sourcePath, ref_paths: refPaths, prompt, seconds, model, series_id: seriesId, look }),
   creation: (shotId: string) => call<Creation>({ op: "creation", shot_id: shotId }),
   keepCreation: (generationId: string) => call<{ ok: true }>({ op: "creation_keep", generation_id: generationId }),
   // refunds (2026-11-20): credits back at once, reviewed by anlim, may be reversed with a reason

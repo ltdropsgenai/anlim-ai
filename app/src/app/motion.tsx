@@ -40,7 +40,8 @@ export default function Motion() {
   const [refs, setRefs] = useState<Picked[]>([]);
   const [who, setWho] = useState("");
   const [family, setFamily] = useState("genjutsu");
-  const [look, setLook] = useState<Look>("cartoon");   // labels the new project; the model takes the look from the images
+  // labels the new project; the model takes the look from the images. 2026-11-23 (Londi): no default, the creator picks
+  const [look, setLook] = useState<Look | null>(null);
   const [res, setRes] = useState("720p");
   const [agreed, setAgreed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -64,6 +65,7 @@ export default function Motion() {
     : !src || secs == null ? "Add your source clip."
     : secs < 4 ? "The source clip must be at least 4 seconds long."
     : refs.length === 0 ? "Add at least one reference image."
+    : !look ? "Choose Cartoon or Photoreal."
     : !agreed ? "Confirm you may use this footage."
     : cost != null && avail != null && cost > avail ? `This needs ${cost.toLocaleString()} credits; you have ${avail.toLocaleString()}.`
     : null;
@@ -76,7 +78,7 @@ export default function Motion() {
   }
 
   async function go() {
-    if (why || !src || !model || !me || secs == null) return;
+    if (why || !src || !model || !me || secs == null || !look) return;
     setErr(null);
     try {
       setBusy("Uploading your clip…");
@@ -85,10 +87,7 @@ export default function Motion() {
       const refPaths: string[] = [];
       for (const r of refs) refPaths.push(await uploadMotionFile(me.user_id, "ref", r.file, r.file.type));
       setBusy("Starting…");
-      const r = await api.motionCreate(sourcePath, refPaths, who.trim(), Math.round(secs * 1000) / 1000, model.id, null);
-      // the project is made as cartoon; a photoreal recast labels it photoreal (studio-api will pass the look to the
-      // 7-argument studio.motion_create on its next deploy)
-      if (look === "photoreal") await api.updateSeries(r.series_id, "photoreal").catch(() => {});
+      const r = await api.motionCreate(sourcePath, refPaths, who.trim(), Math.round(secs * 1000) / 1000, model.id, null, look);
       setMade(r.shot_id);
     } catch (e) { setErr((e as Error).message); }
     finally { setBusy(null); }
@@ -175,6 +174,7 @@ export default function Motion() {
                 </View>
                 <Text style={s.hint}>{look === "photoreal"
                   ? "Up to 8 images: photos of the people to put in the clip, and the place. Use only people who have agreed to it. A similar build to the person they replace keeps the motion clean."
+                  : !look ? "Choose Cartoon or Photoreal above, then add up to 8 images: the people to put in the clip, and the place."
                   : "Up to 8 images. One image can hold the whole cast and the setting. Give each person in the clip someone to become, with a similar build, so the motion maps cleanly."}</Text>
               </View>
 

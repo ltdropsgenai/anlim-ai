@@ -18,7 +18,7 @@ const isBusy = (r: ShotRow) => (!!r.gen_status && BUSY_GEN.includes(r.gen_status
 function NewSeries({ onDone }: { onDone: (id?: string, err?: string) => void }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [look, setLook] = useState<Look>("cartoon");
+  const [look, setLook] = useState<Look | null>(null);   // 2026-11-23 (Londi): no default look
   const [aspect, setAspect] = useState<Aspect>("16:9");
   const [genre, setGenre] = useState<Genre | null>(null);
   const [busy, setBusy] = useState(false);
@@ -53,8 +53,9 @@ function NewSeries({ onDone }: { onDone: (id?: string, err?: string) => void }) 
         ))}
       </View>
       <View style={s.row}>
-        <Pressable style={[s.btn, (!name.trim() || busy) && { opacity: 0.5 }]} disabled={!name.trim() || busy} accessibilityRole="button"
+        <Pressable style={[s.btn, (!name.trim() || !look || busy) && { opacity: 0.5 }]} disabled={!name.trim() || !look || busy} accessibilityRole="button"
           onPress={async () => {
+            if (!look) return;
             setBusy(true);
             try { const r = await api.createSeries(name, look, undefined, genre, aspect); setOpen(false); setName(""); onDone(r.id); }
             catch (e) { onDone(undefined, (e as Error).message); }

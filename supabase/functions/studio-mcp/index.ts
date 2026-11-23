@@ -83,7 +83,7 @@ const TOOLS = [
     inputSchema: { type: "object", properties: {
       prompt: { type: "string", minLength: 8, maxLength: 2000, description: "What the shot shows and what happens in it" },
       output: { type: "string", enum: ["video", "image"], default: "video" },
-      look: { type: "string", enum: ["cartoon", "photoreal"], default: "cartoon", description: "For a new project (an existing project keeps its look)" },
+      look: { type: "string", enum: ["cartoon", "photoreal"], description: "Required for a new project: ask the creator which (there is no default). An existing project keeps its look" },
       seconds: { type: "integer", enum: [5, 10], default: 5, description: "Clip length (videos)" },
       aspect: { type: "string", enum: ASPECTS, default: "16:9", description: "Frame shape for a new project: 16:9 landscape, 9:16 vertical (Shorts, Reels, TikTok), 1:1 square, 4:3, 3:4, 21:9" },
       project_id: { type: "string", description: "Add the shot to this project (from list_projects); leave out for a new project" },
@@ -109,10 +109,10 @@ const TOOLS = [
     description: "Creates an empty project (no credits). Use it before adding characters, locations and shots by hand.",
     inputSchema: { type: "object", properties: {
       name: { type: "string", minLength: 1, maxLength: 200 },
-      look: { type: "string", enum: ["cartoon", "photoreal"], default: "photoreal" },
+      look: { type: "string", enum: ["cartoon", "photoreal"], description: "Ask the creator which; there is no default" },
       aspect: { type: "string", enum: ASPECTS, default: "16:9" },
       style: { type: "string", maxLength: 1000, description: "Optional style notes applied to every image and clip" },
-    }, required: ["name"], additionalProperties: false },
+    }, required: ["name", "look"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
   { name: "add_character", title: "Add a character",
     description: "Adds a character to a project with a reference photo (an upload id from list_uploads), so start images can show that " +
@@ -324,7 +324,7 @@ const TOOLS = [
       reference_upload_ids: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 8 },
       prompt: { type: "string", maxLength: 2000, description: "Optional: who is who, setting notes" },
       model: { type: "string", description: "A motion model id from list_models" },
-      look: { type: "string", enum: ["cartoon", "photoreal"], default: "photoreal" },
+      look: { type: "string", enum: ["cartoon", "photoreal"], description: "Required without project_id (a new project): ask the creator which; there is no default" },
       project_id: { type: "string" },
     }, required: ["source_upload_id", "reference_upload_ids", "model"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
@@ -437,11 +437,13 @@ async function callTool(uid: string, name: string, a: Args) {
       if (!paid) return text("Creating from chat comes with a paid anlim account. Buy credits or a plan at https://anlim.ai, then try again.", undefined, true);
       const prompt = String(a.prompt || "").trim();
       const output = a.output === "image" ? "image" : "video";
-      const look = a.look === "photoreal" ? "photoreal" : "cartoon";
+      // 2026-11-23 (Londi): no default look; a new project needs the creator's choice
+      const look = a.look === "photoreal" || a.look === "cartoon" ? String(a.look) : null;
       const seconds = Number(a.seconds) === 10 ? 10 : 5;
       const aspect = ASPECTS.includes(String(a.aspect)) ? String(a.aspect) : "16:9";
       const project = a.project_id ? String(a.project_id) : null;
       if (project && !UUID.test(project)) return text("project_id must be an id from list_projects.", undefined, true);
+      if (!project && !look) return text("Ask the creator: cartoon or photoreal? A new project needs a look (there is no default).", undefined, true);
       // counted even if it fails below
       if (!await rateGate(uid, "create", ["create"], CREATE_LIMIT))
         return text(`Limit reached: ${CREATE_LIMIT} creates per ${CREATE_WINDOW_MIN} minutes from chat. Wait a few minutes, or use anlim.ai.`, undefined, true);
@@ -490,7 +492,8 @@ async function callTool(uid: string, name: string, a: Args) {
       return text(lines.join("\n"), { project: p, characters: chars, locations: locs, shots });
     }
     case "new_project": {
-      const look = a.look === "cartoon" ? "cartoon" : "photoreal", aspect = ASPECTS.includes(String(a.aspect)) ? String(a.aspect) : "16:9";
+      if (a.look !== "cartoon" && a.look !== "photoreal") return text("Ask the creator: cartoon or photoreal? There is no default look.", undefined, true);
+      const look = String(a.look), aspect = ASPECTS.includes(String(a.aspect)) ? String(a.aspect) : "16:9";
       const id = await asUser(uid, async (tx) => {
         const [r] = await tx`select studio.create_series(${String(a.name || "")}, ${a.style ? String(a.style) : null}, ${look}) as id`;
         await tx`select studio.set_series_aspect(${r.id}, ${aspect})`;
@@ -848,10 +851,12 @@ async function callTool(uid: string, name: string, a: Args) {
       }
       const pid = a.project_id ? String(a.project_id) : null;
       if (pid && !UUID.test(pid)) return text("project_id must be an id from list_projects.", undefined, true);
+      const mlook = a.look === "cartoon" || a.look === "photoreal" ? String(a.look) : null;
+      if (!pid && !mlook) return text("Ask the creator: cartoon or photoreal? A new project needs a look (there is no default).", undefined, true);
       const gate = await spendGate(uid, "motion_transfer");
       if (gate) return gate;
       const [r] = await asUser(uid, (tx) => tx`select studio.motion_create(${src.path}, ${refs}::text[], ${String(a.prompt || "")},
-        ${src.seconds}::numeric, ${String(a.model || "")}, ${pid}::uuid, ${a.look === "cartoon" ? "cartoon" : "photoreal"}) as r`);
+        ${src.seconds}::numeric, ${String(a.model || "")}, ${pid}::uuid, ${mlook}::text) as r`);
       const q = r.r as Record<string, unknown>;
       return text(`Motion transfer started: ${q.seconds} s, about ${q.credits} credits, in "${q.series_name}". shot_id ${q.shot_id}; ` +
         `project_id ${q.series_id}. It usually takes 8 to 15 minutes; follow it with get_creation.`, q);

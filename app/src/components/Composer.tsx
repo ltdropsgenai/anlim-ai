@@ -26,12 +26,15 @@ const IDEAS: Record<Look, string[]> = {
     "A man walks into a quiet living room and sets his keys on the table",
   ],
 };
+// with no look chosen yet, the ideas alternate between the two; picking one also picks its look
+const MIXED = [0, 1].flatMap((i) => [{ t: IDEAS.cartoon[i], l: "cartoon" as Look }, { t: IDEAS.photoreal[i], l: "photoreal" as Look }]);
 const LENGTHS = [5, 10];
 const CLIP_CREDITS_PER_S = 40;   // Kling 4.0, Auto's pick (studio.models); the server checks the real price
 
 export function Composer({ narrow, guest = false, afterBanner = false }: { narrow: boolean; guest?: boolean; afterBanner?: boolean }) {
   const [text, setText] = useState("");
-  const [look, setLook] = useState<Look>("cartoon");
+  // 2026-11-23 (Londi): no default look; the creator picks Cartoon or Photoreal for every new project
+  const [look, setLook] = useState<Look | null>(null);
   const [len, setLen] = useState(5);
   // 2026-11-21 (Londi): every creator picks the shape (was always 16:9); a picked project keeps its own
   const [aspect, setAspect] = useState<Aspect>("16:9");
@@ -61,25 +64,25 @@ export function Composer({ narrow, guest = false, afterBanner = false }: { narro
   }, [guest]);   // eslint-disable-line react-hooks/exhaustive-deps
   const picked = useMemo(() => series.find((x) => x.id === target) ?? null, [series, target]);
   // adding to an existing project uses that project's look; the toggle is for new projects
-  const effLook: Look = picked ? picked.look : look;
+  const effLook: Look | null = picked ? picked.look : look;
   const effAspect: Aspect = picked ? picked.aspect ?? "16:9" : aspect;
-  const ready = text.trim().length >= 8 && !busy;
+  const ready = text.trim().length >= 8 && !busy && effLook !== null;
   // models that can make this video: the look and the length must fit
-  const fits = useMemo(() => models.filter((m) => (!m.looks || m.looks.includes(effLook)) && len >= m.min_duration_s && len <= m.max_duration_s),
+  const fits = useMemo(() => models.filter((m) => (!m.looks || !effLook || m.looks.includes(effLook)) && len >= m.min_duration_s && len <= m.max_duration_s),
     [models, effLook, len]);
   useEffect(() => { if (model && !fits.some((m) => m.id === model)) setModel(null); }, [fits, model]);
   const chosen = models.find((m) => m.id === model) ?? null;
   const perS = chosen?.credits_per_second ?? CLIP_CREDITS_PER_S;
 
   async function go() {
-    if (!ready) return;
+    if (!ready || !effLook) return;
     if (guest) {
       // visitors: keep the prompt, ask for an account; the shot is made as soon as they are signed in
-      saveDraft({ text: text.trim(), look, len, output, aspect });
+      saveDraft({ text: text.trim(), look: effLook, len, output, aspect });
       router.navigate({ pathname: "/login", params: { mode: "signup" } });
       return;
     }
-    await make(text.trim(), look, len, output, picked, output === "video" ? model : null, aspect);
+    await make(text.trim(), effLook, len, output, picked, output === "video" ? model : null, aspect);
   }
 
   async function make(action: string, lk: Look, ln: number, out: Output, p: Series | null, m: string | null = null, a: Aspect = "16:9") {
@@ -107,7 +110,7 @@ export function Composer({ narrow, guest = false, afterBanner = false }: { narro
           value={text}
           onChangeText={(t) => { setText(t); if (error) setError(null); }}
           onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
-          placeholder={IDEAS[effLook][0] + "…"}
+          placeholder={(effLook ? IDEAS[effLook][0] : "Describe a shot") + "…"}
           placeholderTextColor={c.muted}
           multiline
           maxLength={2000}
@@ -216,14 +219,15 @@ export function Composer({ narrow, guest = false, afterBanner = false }: { narro
         </View>
       )}
 
+      {!effLook && text.trim().length >= 8 && <Text style={{ color: c.link, marginTop: 12, textAlign: "center" }}>Choose Cartoon or Photoreal for the new project.</Text>}
       {busy && <Text style={{ color: c.link, marginTop: 12, textAlign: "center" }}>Starting…</Text>}
       {error && <Text style={{ color: c.fail, marginTop: 12, textAlign: "center" }}>{error}</Text>}
 
       {made && <CreationCard key={made.shot} shotId={made.shot} output={made.output} onAgain={() => { setMade(null); setText(""); input.current?.focus(); }} />}
 
       {!made && <View style={[s.row, { marginTop: 18, justifyContent: "center" }]}>
-        {IDEAS[effLook].slice(narrow ? 2 : 0).map((idea) => (
-          <Pressable key={idea} style={s.idea} onPress={() => { setText(idea); input.current?.focus(); }} accessibilityRole="button"
+        {(effLook ? IDEAS[effLook].map((t) => ({ t, l: effLook })) : MIXED).slice(narrow ? 2 : 0).map(({ t: idea, l }) => (
+          <Pressable key={idea} style={s.idea} onPress={() => { setText(idea); if (!effLook) setLook(l); input.current?.focus(); }} accessibilityRole="button"
             accessibilityLabel={`Use idea: ${idea}`}>
             <Text style={{ color: c.sub, fontSize: 13 }} numberOfLines={1}>{idea}</Text>
           </Pressable>

@@ -46,7 +46,7 @@ export default function LibraryScreen() {
     { name: "", height: "", wardrobe: "", kind: "person", what: "" });
   const [loc, setLoc] = useState({ name: "", description: "" });
   const [newSeries, setNewSeries] = useState("");
-  const [newLook, setNewLook] = useState<Look>("cartoon");
+  const [newLook, setNewLook] = useState<Look | null>(null);   // 2026-11-23 (Londi): no default look
   const [newQuality, setNewQuality] = useState<Quality>("balanced");   // 2026-11-19: asked when the series is made
   const [style, setStyle] = useState<string | null>(null);         // the current series' style text while it is edited
   const [platePick, setPlatePick] = useState<string | null>(null);   // location whose "make from a shot" list is open
@@ -95,8 +95,10 @@ export default function LibraryScreen() {
             <Text style={newQuality === q ? { color: c.onAccent } : { color: c.ink }}>{QUALITY_NAMES[q]}</Text>
           </Pressable>
         ))}
-        <Pressable style={[s.btn, !newSeries.trim() && { opacity: 0.5 }]} disabled={!newSeries.trim() || busy} accessibilityRole="button"
+        <Pressable style={[s.btn, (!newSeries.trim() || !newLook) && { opacity: 0.5 }]} disabled={!newSeries.trim() || !newLook || busy} accessibilityRole="button"
+          accessibilityHint={newLook ? undefined : "Choose Cartoon or Photoreal first"}
           onPress={() => run(async () => {
+            if (!newLook) return;
             const r = await api.createSeries(newSeries, newLook);
             if (newQuality !== "balanced") await api.setSeriesQuality(r.id, newQuality);
             setNewSeries(""); setSid(r.id);

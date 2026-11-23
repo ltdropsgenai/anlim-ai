@@ -34,7 +34,7 @@ const later = (ms) => new Date(Date.now() + ms);
 
 // What every checker frame route is told about the shot (2026-11-16): the look and the cast's kinds, which pick the
 // detector classes and the matting model (frame_check end_frame.subjects).
-const who = (look, characters) => ({ look: look || "cartoon", subjects: subjects(characters || []) });
+const who = (look, characters) => { if (!look) throw new Error("no look for this job"); return { look, subjects: subjects(characters || []) }; };
 
 // A cast member in a prompt: name, what it is, how it looks ("Rex (golden retriever): red collar").
 const castText = (c) => [c.what ? `${c.name} (${c.what})` : c.name, c.wardrobe].filter(Boolean).join(": ");
@@ -46,7 +46,7 @@ const sameLooks = (chars) => {
 };
 
 // Same wording as the bake-off prompts that worked: say what changes, then pin everything else.
-export function editPrompt(instruction, chars, look = "cartoon") {
+export function editPrompt(instruction, chars, look) {
   const cast = chars.map(castText).join("; ");
   return `Edit this image. ${instruction.trim().replace(/\.?$/, ".")} ` +
     "Only the characters change: where they are, their poses and where they look. Keep the setting (room or outdoors), " +
@@ -59,7 +59,7 @@ export function editPrompt(instruction, chars, look = "cartoon") {
 // 2026-11-13 live (S1 hand-off): "remove every character" left the toy truck Layana was holding floating in mid-air,
 // so anything a character holds or carries goes with them.
 // 2026-11-16: people and animals always go; a cast member that is an object (a robot, a toy that is a character) too.
-export function platePrompt(look = "cartoon", chars = []) {
+export function platePrompt(look, chars = []) {
   const objs = chars.filter((c) => c.kind === "object").map(castText);
   return "Edit this image. Remove every person and every animal completely, together with anything they are holding " +
     "or carrying (a toy in a character's hands goes too; nothing is left floating in the air)" +
@@ -95,7 +95,7 @@ function setupWardrobe(names, chars) {
 }
 
 // New setup: image 1 is the plate, then one reference image per character (2026-11-13 feasibility prompt).
-export function setupPrompt(instruction, names, heights = [], look = "cartoon", chars = []) {
+export function setupPrompt(instruction, names, heights = [], look, chars = []) {
   const who = names.map((n, i) => `image ${i + 2} is ${n}`).join(", ");
   const h = names.map((n, i) => ({ n, v: Number(heights[i]) })).filter((x) => x.v > 0).sort((a, b) => b.v - a.v);
   const sizes = h.slice(1).map((x, i) => (x.v < h[i].v * 0.97 ? `${x.n} is shorter than ${h[i].n}.` : `${x.n} is about as tall as ${h[i].n}.`));
@@ -111,7 +111,7 @@ export function setupPrompt(instruction, names, heights = [], look = "cartoon", 
 // Start frame from the description (mode "prompt", 2026-11-19): a new project's first shot has no room, cast or
 // previous clip to start from, so the still is drawn from the shot's words alone (text to image, 16:9). The creator
 // can then cut character references out of it, and later shots continue from its clip.
-export function framePrompt(instruction, look = "cartoon", style = null, chars = [], aspect = "16:9") {
+export function framePrompt(instruction, look, style = null, chars = [], aspect = "16:9") {
   // 2026-11-19 held-out test: the first wording ("everyone in their starting positions", "real people and places",
   // "a wide or medium shot that shows the whole setting") made Nano Banana 2 add people who were never asked for on
   // 9 of 20 first-time-user prompts (a family around the cat, a film crew next to the horse, four gardeners and no
