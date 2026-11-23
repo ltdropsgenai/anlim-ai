@@ -56,7 +56,8 @@ export default function BillingScreen() {
 
   return (
     <ScrollView style={{ backgroundColor: pageBg }} contentContainerStyle={s.page}>
-      {!b.ready && <Text style={[s.note, { color: c.flag }]}>Payments are not switched on yet (no Stripe key on the server).</Text>}
+      {!b.ready && <Text style={[s.note, { color: c.flag }]}>Purchases open soon.</Text>}
+      {b.ready && b.mode === "test" && <Text style={s.note}>Test account: checkout uses the Stripe sandbox (no real charge).</Text>}
       {params.paid && <Text style={[s.note, { color: c.pass }]}>
         Payment received by Stripe. {waitTries < 10 ? "Your credits appear here in a few seconds…" : "If the credits are not here yet, refresh in a minute."}</Text>}
       {params.cancelled && <Text style={s.note}>Checkout cancelled: nothing was charged.</Text>}

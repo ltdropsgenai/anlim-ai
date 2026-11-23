@@ -4,8 +4,12 @@
 //   Public (no sign-in): POST ?public=plans -> the active price list, for the landing page (2026-11-19).
 //   Stripe webhook: POST with a Stripe-Signature header -> signature checked -> studio.apply_stripe_event(event).
 // Deployed with verify_jwt off (Stripe sends no Supabase JWT); creator ops check the sign-in themselves.
-// Secrets: STRIPE_SECRET_KEY (sk_test_… while testing), STRIPE_WEBHOOK_SECRET (whsec_…), APP_URLS (allowed return
-// origins, comma separated; default http://localhost:8081).
+// Two Stripe modes, one account (anlim.ai, 2026-11-23): accounts with studio.accounts.billing_test pay in the sandbox,
+// everyone else pays live. Secrets: STRIPE_LIVE_SECRET_KEY + STRIPE_LIVE_WEBHOOK_SECRET (live), STRIPE_TEST_SECRET_KEY +
+// STRIPE_TEST_WEBHOOK_SECRET (sandbox); APP_URLS (allowed return origins, comma separated; default http://localhost:8081).
+// A mode without its key is simply closed: its accounts see "Purchases open soon" and cannot check out. Each webhook
+// event is matched to its mode by the secret that signed it, and studio.apply_stripe_event_checked refuses an event
+// whose mode does not match the account it would change.
 // Stripe prices are made on first use from studio.price_plans (lookup_key = plan id, one product per tier/pack).
 import { createClient } from "npm:@supabase/supabase-js@2";
 import postgres from "npm:postgres@3.4.5";
@@ -13,8 +17,19 @@ import { verifyStripeSignature } from "./stripe_sig.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
 const sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, { prepare: false, max: 3 });
-const STRIPE_KEY = Deno.env.get("STRIPE_SECRET_KEY") || "";
-const WEBHOOK_SECRET = Deno.env.get("STRIPE_WEBHOOK_SECRET") || "";
+type Mode = "live" | "test";
+// A key is used only if its prefix matches its mode, so a sandbox key pasted into the live slot (or the reverse) is
+// ignored rather than used.
+const keyFor = (name: string, mode: Mode) => {
+  const k = (Deno.env.get(name) || "").trim();
+  if (!k) return "";
+  if (!new RegExp(`^(sk|rk)_${mode}_`).test(k)) { console.error(`${name} is not a ${mode} key; ignored`); return ""; }
+  return k;
+};
+const KEYS: Record<Mode, string> = { live: keyFor("STRIPE_LIVE_SECRET_KEY", "live"), test: keyFor("STRIPE_TEST_SECRET_KEY", "test") };
+const HOOK_SECRETS: Record<Mode, string> = {
+  live: (Deno.env.get("STRIPE_LIVE_WEBHOOK_SECRET") || "").trim(), test: (Deno.env.get("STRIPE_TEST_WEBHOOK_SECRET") || "").trim() };
+const CLOSED = "Purchases open soon.";
 const APP_URLS = (Deno.env.get("APP_URLS") || "http://localhost:8081").split(",").map((s) => s.trim()).filter(Boolean);
 
 const cors = {
@@ -34,11 +49,12 @@ function form(o: Record<string, unknown>, prefix = "", out = new URLSearchParams
   }
   return out;
 }
-async function stripe(method: "GET" | "POST", path: string, body?: Record<string, unknown>, idem?: string) {
-  if (!STRIPE_KEY) throw new Error("billing is not set up yet (no Stripe key)");
+async function stripe(mode: Mode, method: "GET" | "POST", path: string, body?: Record<string, unknown>, idem?: string) {
+  const key = KEYS[mode];
+  if (!key) throw new Error(CLOSED);
   const url = `https://api.stripe.com/v1/${path}` + (method === "GET" && body ? `?${form(body)}` : "");
   const r = await fetch(url, {
-    method, headers: { Authorization: `Bearer ${STRIPE_KEY}`, "Content-Type": "application/x-www-form-urlencoded",
+    method, headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/x-www-form-urlencoded",
                        ...(idem ? { "Idempotency-Key": idem } : {}) },
     body: method === "POST" && body ? form(body) : undefined,
   });
@@ -48,38 +64,45 @@ async function stripe(method: "GET" | "POST", path: string, body?: Record<string
 }
 
 type Plan = { id: string; kind: "pack" | "plan"; tier: string | null; billing_interval: "month" | "year" | null; name: string;
-              price_cents: number; credits: number; stripe_price_id: string | null };
+              price_cents: number; credits: number; stripe_price_id: string | null; stripe_price_id_test: string | null };
+
+// Which Stripe mode an account pays in (no account row yet: live).
+async function modeFor(uid: string): Promise<Mode> {
+  const [a] = await sql`select billing_test from studio.accounts where owner = ${uid}`;
+  return a?.billing_test ? "test" : "live";
+}
 
 // one Stripe product per tier ("studio_pro") or pack ("studio_pack_pack_1000_v1"); custom ids make this idempotent
-async function productFor(p: Plan) {
+async function productFor(mode: Mode, p: Plan) {
   const id = p.kind === "plan" ? `studio_${p.tier}` : `studio_pack_${p.id}`;
-  try { await stripe("GET", `products/${id}`); }
+  try { await stripe(mode, "GET", `products/${id}`); }
   catch (e) {
     if ((e as { status?: number }).status !== 404) throw e;
-    await stripe("POST", "products", { id, name: p.kind === "plan" ? `${p.name} plan` : p.name,
+    await stripe(mode, "POST", "products", { id, name: p.kind === "plan" ? `${p.name} plan` : p.name,
       metadata: { app: "studio" } }, `product-${id}`);
   }
   return id;
 }
-async function priceFor(p: Plan) {
-  if (p.stripe_price_id) return p.stripe_price_id;
-  const found = await stripe("GET", "prices", { lookup_keys: [p.id], active: true, limit: 1 });
+async function priceFor(mode: Mode, p: Plan) {
+  const cached = mode === "live" ? p.stripe_price_id : p.stripe_price_id_test;
+  if (cached) return cached;
+  const found = await stripe(mode, "GET", "prices", { lookup_keys: [p.id], active: true, limit: 1 });
   let price = found.data?.[0]?.id as string | undefined;
   if (!price) {
-    const created = await stripe("POST", "prices", {
-      product: await productFor(p), currency: "usd", unit_amount: p.price_cents, lookup_key: p.id,
+    const created = await stripe(mode, "POST", "prices", {
+      product: await productFor(mode, p), currency: "usd", unit_amount: p.price_cents, lookup_key: p.id,
       recurring: p.billing_interval ? { interval: p.billing_interval } : undefined,
       metadata: { plan_id: p.id, credits: p.credits },
     }, `price-${p.id}`);
     price = created.id as string;
   }
-  await sql`select studio.set_stripe_price(${p.id}, ${price})`;
+  await sql`select studio.set_stripe_price_mode(${p.id}, ${mode === "live"}, ${price})`;
   return price;
 }
-async function customerFor(uid: string, email: string | undefined) {
+async function customerFor(mode: Mode, uid: string, email: string | undefined) {
   const [a] = await sql`select stripe_customer_id from studio.accounts where owner = ${uid}`;
   if (a?.stripe_customer_id) return a.stripe_customer_id as string;
-  const c = await stripe("POST", "customers", { email, metadata: { owner: uid } }, `customer-${uid}`);
+  const c = await stripe(mode, "POST", "customers", { email, metadata: { owner: uid } }, `customer-${uid}`);
   await sql`select studio.set_stripe_customer(${uid}, ${c.id})`;
   const [b] = await sql`select stripe_customer_id from studio.accounts where owner = ${uid}`;   // a parallel call may have won
   return b.stripe_customer_id as string;
@@ -92,17 +115,17 @@ function returnUrl(u: unknown) {
 
 // The billing portal configuration: ours (metadata app=studio) if it exists, else made once: cancel at period end,
 // switch between the plan prices (proration invoiced now), update card, invoices.
-async function portalConfig() {
-  const list = await stripe("GET", "billing_portal/configurations", { active: true, limit: 100 });
+async function portalConfig(mode: Mode) {
+  const list = await stripe(mode, "GET", "billing_portal/configurations", { active: true, limit: 100 });
   const ours = (list.data || []).find((c: { metadata?: Record<string, string> }) => c.metadata?.app === "studio");
   if (ours) return ours.id as string;
   const plans = await sql<Plan[]>`select * from studio.price_plans where active and kind = 'plan' order by sort`;
   const byProduct = new Map<string, string[]>();
   for (const p of plans) {
-    const prod = await productFor(p), price = await priceFor(p);
+    const prod = await productFor(mode, p), price = await priceFor(mode, p);
     byProduct.set(prod, [...(byProduct.get(prod) || []), price]);
   }
-  const cfg = await stripe("POST", "billing_portal/configurations", {
+  const cfg = await stripe(mode, "POST", "billing_portal/configurations", {
     business_profile: { headline: "Manage your plan" }, metadata: { app: "studio" },
     features: {
       subscription_cancel: { enabled: true, mode: "at_period_end" },
@@ -116,13 +139,16 @@ async function portalConfig() {
 }
 
 async function handleWebhook(req: Request) {
-  const raw = await req.text();
-  if (!await verifyStripeSignature(raw, req.headers.get("Stripe-Signature"), WEBHOOK_SECRET)) return json({ error: "bad signature" }, 400);
+  const raw = await req.text(), header = req.headers.get("Stripe-Signature");
+  // The secret that signed it says which mode it came from: live endpoint or sandbox endpoint.
+  let mode: Mode | null = null;
+  for (const m of ["live", "test"] as Mode[])
+    if (HOOK_SECRETS[m] && await verifyStripeSignature(raw, header, HOOK_SECRETS[m])) { mode = m; break; }
+  if (!mode) return json({ error: "bad signature" }, 400);
   const event = JSON.parse(raw);
-  if (event.livemode && STRIPE_KEY.startsWith("sk_test_")) return json({ received: true, result: "live event ignored by a test key" });
   try {
-    const [r] = await sql`select studio.apply_stripe_event(${event}::jsonb) as result`;
-    console.log(`stripe ${event.type} ${event.id}: ${r.result}`);
+    const [r] = await sql`select studio.apply_stripe_event_checked(${event}::jsonb, ${mode === "live"}) as result`;
+    console.log(`stripe ${mode} ${event.type} ${event.id}: ${r.result}`);
     return json({ received: true, result: r.result });
   } catch (e) {
     console.error(`stripe ${event.type} ${event.id} failed: ${(e as Error).message}`);
@@ -154,22 +180,25 @@ async function handle(req: Request): Promise<Response> {
         const plans = await sql`select id, kind, tier, billing_interval, name, price_cents, credits from studio.price_plans
                                  where active order by sort`;
         await sql`select studio.refresh_plan(${uid})`;
+        const mode = await modeFor(uid);
         const [a] = await sql`select balance, reserved, plan_credits, plan_id, plan_status, plan_period_end, plan_next_refresh,
                                      plan_cancel_at_period_end, plan_cancel_at, stripe_customer_id is not null as has_customer
                                 from studio.accounts where owner = ${uid}`;
-        return json({ plans, account: a ?? null, ready: !!STRIPE_KEY });
+        return json({ plans, account: a ?? null, ready: !!KEYS[mode], mode });
       }
       case "checkout": {
         const [p] = await sql<Plan[]>`select * from studio.price_plans where id = ${String(body.plan_id || "")} and active`;
         if (!p) return json({ error: "unknown plan" }, 400);
+        const mode = await modeFor(uid);
+        if (!KEYS[mode]) return json({ error: CLOSED, code: "billing_closed" }, 503);
         const [a] = await sql`select plan_status from studio.accounts where owner = ${uid}`;
         if (p.kind === "plan" && ["active", "trialing", "past_due"].includes(a?.plan_status))
           return json({ error: "you already have a plan: use Manage plan to change it" }, 400);
         const back = returnUrl(body.return_url), meta = { owner: uid, plan_id: p.id };
-        const session = await stripe("POST", "checkout/sessions", {
+        const session = await stripe(mode, "POST", "checkout/sessions", {
           mode: p.kind === "pack" ? "payment" : "subscription",
-          customer: await customerFor(uid, who.user.email),
-          line_items: [{ price: await priceFor(p), quantity: 1 }],
+          customer: await customerFor(mode, uid, who.user.email),
+          line_items: [{ price: await priceFor(mode, p), quantity: 1 }],
           success_url: `${back}?paid=${p.id}`, cancel_url: `${back}?cancelled=1`,
           metadata: meta, client_reference_id: uid,
           ...(p.kind === "pack" ? { payment_intent_data: { metadata: meta } } : { subscription_data: { metadata: meta } }),
@@ -179,8 +208,10 @@ async function handle(req: Request): Promise<Response> {
       case "portal": {
         const [a] = await sql`select stripe_customer_id from studio.accounts where owner = ${uid}`;
         if (!a?.stripe_customer_id) return json({ error: "nothing to manage yet: buy a plan or a pack first" }, 400);
-        const configuration = await portalConfig();
-        const s = await stripe("POST", "billing_portal/sessions", { customer: a.stripe_customer_id, return_url: returnUrl(body.return_url), configuration });
+        const mode = await modeFor(uid);
+        if (!KEYS[mode]) return json({ error: CLOSED, code: "billing_closed" }, 503);
+        const configuration = await portalConfig(mode);
+        const s = await stripe(mode, "POST", "billing_portal/sessions", { customer: a.stripe_customer_id, return_url: returnUrl(body.return_url), configuration });
         return json({ url: s.url });
       }
       case "account_delete": {
@@ -193,10 +224,13 @@ async function handle(req: Request): Promise<Response> {
         const email = String(who.user.email || "").toLowerCase();
         if (!email || String(body.confirm || "").trim().toLowerCase() !== email)
           return json({ error: "Type your email address exactly to confirm." }, 400);
-        const [a] = await sql`select stripe_customer_id from studio.accounts where owner = ${uid}`;
-        if (a?.stripe_customer_id && STRIPE_KEY) {
+        const [a] = await sql`select stripe_customer_id, billing_test from studio.accounts where owner = ${uid}`;
+        const delKey = KEYS[a?.billing_test ? "test" : "live"];
+        if (a?.stripe_customer_id && !delKey)
+          return json({ error: "Your plan could not be cancelled with Stripe right now, so nothing was deleted. Try again later or contact support." }, 503);
+        if (a?.stripe_customer_id) {
           const r = await fetch(`https://api.stripe.com/v1/customers/${encodeURIComponent(a.stripe_customer_id)}`,
-            { method: "DELETE", headers: { Authorization: `Bearer ${STRIPE_KEY}` } });
+            { method: "DELETE", headers: { Authorization: `Bearer ${delKey}` } });
           if (!r.ok && r.status !== 404) return json({ error: "Your plan could not be cancelled with Stripe, so nothing was deleted. Try again or contact support." }, 502);
         }
         const conns = await sql`delete from studio.connections where owner = ${uid} returning secret_id`;

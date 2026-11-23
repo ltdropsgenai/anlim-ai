@@ -109,7 +109,7 @@ export type LibLocation = {
 export type PricePlan = { id: string; kind: "pack" | "plan"; tier: string | null; billing_interval: "month" | "year" | null;
   name: string; price_cents: number; credits: number };
 export type Billing = {
-  plans: PricePlan[]; ready: boolean;
+  plans: PricePlan[]; ready: boolean; mode?: "live" | "test";
   account: { balance: number; reserved: number; plan_credits: number; plan_id: string | null; plan_status: string | null;
              plan_period_end: string | null; plan_next_refresh: string | null; plan_cancel_at_period_end: boolean;
              plan_cancel_at: string | null; has_customer: boolean } | null;
