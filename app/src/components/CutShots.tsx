@@ -44,7 +44,10 @@ function ShotCard({ row, ratio, onSaved }: { row: ShotRow; ratio: number; onSave
   const [box, setBox] = useState({ w: 0, h: 0 });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  useEffect(() => { setD(draftOf(row)); }, [row]);
+  // Reset the draft only when this shot's saved values change (its own save), not whenever the list reloads: saving one
+  // card reloads every row, and resetting on the new row object wiped unsaved edits on the other cards (review 2026-11-23).
+  const saved = JSON.stringify(draftOf(row));
+  useEffect(() => { setD(draftOf(row)); }, [row.id, saved]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const clipLen = Number(row.clip_s) || Number(row.duration_s) || 0;
   const previewRow = { ...row, speed: d.speed, trim_start_s: num(d.trimStart) || 0, trim_end_s: num(d.trimEnd) || 0 };
