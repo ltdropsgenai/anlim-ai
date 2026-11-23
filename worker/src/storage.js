@@ -57,3 +57,16 @@ export async function signedUrl(objectPath, seconds = 3600) {
   const j = await r.json();
   return `${base()}${j.signedURL}`;
 }
+
+// Storage clean-up (2026-11-23): asks the studio-storage function to run its daily sweep. The worker names no files;
+// the function chooses them (see migration studio_retention). Only in "function" mode (the live worker).
+export async function retention(days = 30) {
+  if (config.storage !== "function") return null;
+  const r = await fetch(`${config.supabaseUrl}/functions/v1/studio-storage`, {
+    method: "POST", headers: { "x-worker-token": config.storageToken, "Content-Type": "application/json" },
+    body: JSON.stringify({ op: "retention", days }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(`studio-storage retention: ${r.status} ${j.error || ""}`);
+  return j;
+}

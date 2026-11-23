@@ -423,8 +423,17 @@ async function refreshPlans() {
 // from collecting finished renders for 10+ min (2026-11-19). Checks now run beside the tick, at most checkerSlots at a
 // time (the checker service runs CHECKER_MAX_JOBS); a check claimed while all slots are busy is put back for 20 s.
 const inflight = new Map();
+// Storage clean-up, once a day (the first run 10 minutes after start, so a crash loop cannot run it again and again)
+let nextRetention = Date.now() + 10 * 60_000;
+function maybeRetention() {
+  if (Date.now() < nextRetention) return;
+  nextRetention = Date.now() + 24 * 3600_000;
+  storage.retention(30).then((r) => r && console.log(`retention: ${r.done} removed (${r.files} files, ${Math.round((r.bytes || 0) / 1e6)} MB), ` +
+    `${r.skipped} skipped, ${r.candidates} due`)).catch((e) => console.error("retention:", e.message));
+}
 export async function tick() {
   await refreshPlans();
+  maybeRetention();
   const jobs = await db.claim(config.workerId, config.batch, 1500);
   const now = [];
   for (const g of jobs) {

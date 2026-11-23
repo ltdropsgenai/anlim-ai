@@ -15,7 +15,9 @@ export default function Account() {
   const [error, setError] = useState<string | null>(null);
   const [welcome, setWelcome] = useState<WelcomeStatus>(null);
   const loadMe = () => api.me().then((m) => setWelcome(m.welcome_status)).catch(() => null);
-  useEffect(() => { loadMe(); }, []);
+  // 2026-11-23: how much this account stores (studio.my_storage)
+  const [use, setUse] = useState<{ bytes: number; files: number } | null>(null);
+  useEffect(() => { loadMe(); api.storageUse().then(setUse).catch(() => null); }, []);
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setEmail(data.user?.email ?? null);
@@ -32,6 +34,7 @@ export default function Account() {
         <Text style={s.label}>Signed in as</Text>
         <Text style={s.big}>{email ?? " "}</Text>
         {since && <Text style={s.sub}>Creator since {since}</Text>}
+        {use && <Text style={s.sub}>Storage: {use.bytes >= 1e9 ? `${(use.bytes / 1e9).toFixed(2)} GB` : `${Math.round(use.bytes / 1e6)} MB`} in {use.files.toLocaleString("en-US")} file{use.files === 1 ? "" : "s"}. Clips that failed or were rejected, discarded frames and old cuts (beyond each scene's 3 newest) are removed after 30 days; everything you keep stays.</Text>}
       </View>
       {welcome === "needs_phone" && <PhoneCheck onDone={loadMe} />}
       <Connections />

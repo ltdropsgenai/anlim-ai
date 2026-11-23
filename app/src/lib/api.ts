@@ -305,6 +305,7 @@ export const api = {
   setSeriesGenre: (seriesId: string, genre: Genre | null) => call<{ ok: true }>({ op: "series_genre", series_id: seriesId, genre }),
   assets: (q: AssetQuery) => call<{ items: Asset[]; total: number; counts: Record<string, number> }>({ op: "assets", ...q }),
   home: () => call<HomeData>({ op: "home" }),
+  storageUse: () => call<{ bytes: number; files: number }>({ op: "storage_use" }),
   quickCreate: (prompt: string, look: Look, durationS: number, output: Output, seriesId: string | null, model: string | null = null,
                 aspect: Aspect = "16:9") =>
     call<QuickCreated>({ op: "quick_create", prompt, look, duration_s: durationS, output, series_id: seriesId, model, aspect }),

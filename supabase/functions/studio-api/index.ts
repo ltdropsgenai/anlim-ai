@@ -642,6 +642,11 @@ async function handle(req: Request): Promise<Response> {
           recent: await Promise.all(recent.map(async ({ thumb_path, ...r }) => ({ ...r, thumb_url: await thumb(thumb_path) }))),
           last: last ? { ...last, start_frame_path: undefined, thumb_url: await thumb(last.start_frame_path) } : null });
       }
+      // ---- how much the creator stores (2026-11-23, Account page)
+      case "storage_use": {
+        const [r] = await asUser(uid, (tx) => tx`select bytes, files from studio.my_storage()`);
+        return json({ bytes: Number(r?.bytes ?? 0), files: Number(r?.files ?? 0) });
+      }
       // ---- connections (ElevenLabs, 2026-11-19)
       case "connections": {
         const rows = await asUser(uid, (tx) => tx`select provider, key_hint, account, status, checked_at, created_at from studio.connections`);
