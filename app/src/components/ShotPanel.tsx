@@ -48,7 +48,7 @@ function HeightBadge({ h, mode }: { h?: HeightCheck; mode: StartMode }) {
 
 function StagingBadge({ st }: { st?: StagingCheck }) {
   if (!st) return null;
-  if (st.verdict === "OK") return <Text style={[s.badge, { color: c.pass, borderColor: c.pass }]}>Poses: everyone is placed as the text says (seated people on the seat, feet on the floor)</Text>;
+  if (st.verdict === "OK") return <Text style={[s.badge, { color: c.pass, borderColor: c.pass }]}>Poses: everyone is placed as the text says</Text>;
   if (st.verdict === "WRONG") return (<>
     <Text style={[s.badge, { color: c.flag, borderColor: c.flag }]}>Poses: wrong. The video would start from this; discard and make it again.</Text>
     {st.problems.map((p, i) => <Text key={i} style={s.sub}>{p}</Text>)}
