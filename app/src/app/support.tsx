@@ -1,13 +1,18 @@
 // Help & contact (2026-11-19): short answers to what creators ask, and how to reach a person. @anlim
+import { useEffect, useState } from "react";
 import { View } from "react-native";
+import { supabase } from "../lib/supabase";
 import { Doc, H, Li, P, PublicFrame } from "../components/PublicFrame";
 import { contact } from "./terms";
 import { TUTORIALS } from "../lib/tutorials";
 import { TutorialVideo } from "../components/TutorialVideo";
 
 export default function Support() {
+  // signed in: the top bar offers "Open the studio" (back to the app) instead of "Sign in" / "Start free"
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => { supabase.auth.getSession().then(({ data }) => setSignedIn(!!data.session)).catch(() => {}); }, []);
   return (
-    <PublicFrame>
+    <PublicFrame signedIn={signedIn}>
       <Doc title="Help & contact">
         {TUTORIALS.length > 0 && <>
           <H>Video guides</H>

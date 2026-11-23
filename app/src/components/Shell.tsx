@@ -15,7 +15,7 @@ import { Logo } from "./Logo";
 import { NavGlow, Wash } from "./NavGlow";
 export { Logo };
 
-type Href = "/" | "/workspace" | "/motion" | "/storage" | "/review" | "/library" | "/billing";
+type Href = "/" | "/workspace" | "/motion" | "/storage" | "/review" | "/library" | "/billing" | "/support";
 type Item = { href: Href; label: string; long?: string; icon: IconName; match: (p: string) => boolean; phone: boolean };
 // 2026-11-19 (Londi): Home (features, models, tools), Workspace (where things are made), Assets (everything made).
 const ITEMS: Item[] = [
@@ -28,6 +28,8 @@ const ITEMS: Item[] = [
   { href: "/review", label: "Review", icon: "review", match: (p) => p.startsWith("/review") || p.startsWith("/clip/"), phone: true },
   { href: "/library", label: "Cast", long: "Cast & places", icon: "cast", match: (p) => p.startsWith("/library"), phone: true },
   { href: "/billing", label: "Credits", icon: "credits", match: (p) => p.startsWith("/billing"), phone: false },
+  // 2026-11-23: Help & contact and the video guides, in the compact rail too (phones reach it from Account)
+  { href: "/support", label: "Help", long: "Help & support", icon: "play", match: (p) => p.startsWith("/support"), phone: false },
 ];
 // compact rail and tab bar geometry (the tally light's position is computed from it)
 const RAIL_W = 72, ITEM_H = 52, TAB_H = 58, GAP = 14, TALLY = 22, GROUP_BREAK = 5;   // Cast and Credits sit apart (index of Cast in the rail)
@@ -207,6 +209,9 @@ export function Shell({ children }: { children: ReactNode }) {
         it.href === "/review" && toReview > 0 ? String(toReview) : null))}
       {section("LIBRARY")}
       {sideRow("/library", "cast", "Cast & places", ITEMS[5].match(path), () => router.navigate("/library"))}
+      {/* 2026-11-23 (Londi: "there's no menu item that reads Support"): Help & contact, with the video guides */}
+      {section("SUPPORT")}
+      {sideRow("/support", "play", "Help & support", path.startsWith("/support"), () => router.navigate("/support"))}
       {me?.is_admin && <>
         {section("ADMIN")}
         {sideRow("/refunds", "review", "Refund requests", path.startsWith("/refunds"), () => router.navigate("/refunds" as never))}
