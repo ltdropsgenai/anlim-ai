@@ -689,10 +689,14 @@ async function callTool(uid: string, name: string, a: Args) {
       // 2026-11-23: a voiceover without a shot is the scene's narration (one take over the whole cut, from at_s)
       const narration = name === "make_voiceover" && !sid;
       let sh: { scene_id: string } | undefined;
+      // checks first, then the limit, then the scene (review 2026-11-23: a refused call used to leave an empty "Scene 1")
+      const pid = String(a.project_id || "");
       if (narration) {
-        const pid = String(a.project_id || "");
         if (!UUID.test(pid)) return text("Give shot_id for a shot's line, or project_id for the scene's narration.", undefined, true);
-        sh = { scene_id: await latestScene(uid, pid) };
+        if (a.at_s != null && !(typeof a.at_s === "number" && isFinite(a.at_s) && a.at_s >= 0 && a.at_s <= 600))
+          return text("at_s is where the narration starts in the cut: a number of seconds from 0 to 600.", undefined, true);
+        const [p] = await asUser(uid, (tx) => tx`select id from studio.series where id = ${pid}`);
+        if (!p) return text("Project not found.", undefined, true);
       } else {
         if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
         [sh] = await asUser(uid, (tx) => tx`select scene_id from studio.shots where id = ${sid}`);
@@ -700,6 +704,7 @@ async function callTool(uid: string, name: string, a: Args) {
       }
       const gate = await audioGate(uid, name);
       if (gate) return gate;
+      if (narration) sh = { scene_id: await latestScene(uid, pid) };
       const vo = name === "make_voiceover";
       let voiceName = "";
       if (vo) {
@@ -757,6 +762,7 @@ async function callTool(uid: string, name: string, a: Args) {
     case "set_narration_start": {
       const id = String(a.audio_id || "");
       if (!UUID.test(id)) return text("audio_id must be an id from list_audio.", undefined, true);
+      if (!(typeof a.at_s === "number" && isFinite(a.at_s))) return text("at_s must be a number of seconds from 0 to 600.", undefined, true);
       await asUser(uid, (tx) => tx`select studio.set_narration_start(${id}, ${Number(a.at_s)})`);
       return text(`The narration now starts at ${Number(a.at_s)} s in the cut. Make the cut again to hear it.`);
     }
@@ -1047,15 +1053,33 @@ function claims(token: string): Record<string, unknown> {
     return JSON.parse(atob(p + "=".repeat((4 - p.length % 4) % 4)));
   } catch { return {}; }
 }
+// The AI tools whose OAuth clients may use this server (review 2026-11-23): a client counts only if every redirect URI
+// it registered is on one of these hosts. The sign-in code is only ever delivered to the registered redirect, so a
+// client someone registers with their own (or a localhost) redirect is refused even though registration is open.
+// MCP_ALLOWED_REDIRECT_HOSTS (comma separated) overrides the list.
+const AI_HOSTS = (Deno.env.get("MCP_ALLOWED_REDIRECT_HOSTS") || "claude.ai,claude.com,chatgpt.com,chat.openai.com")
+  .split(",").map((h) => h.trim().toLowerCase()).filter(Boolean);
+function allowedRedirects(uris: string | null) {
+  const list = String(uris || "").split(/[\s,]+/).filter(Boolean);
+  return list.length > 0 && list.every((u) => {
+    try { const x = new URL(u); return x.protocol === "https:" && AI_HOSTS.includes(x.hostname.toLowerCase()); } catch { return false; }
+  });
+}
 async function isOAuthToken(token: string, uid: string) {
   const c = claims(token);
   if (c.sub !== uid) return false;
-  if (typeof c.client_id === "string" && c.client_id) return true;
-  if (typeof c.session_id !== "string" || !/^[0-9a-f-]{36}$/i.test(c.session_id)) return false;
   try {
-    const [s] = await sql`select oauth_client_id from auth.sessions where id = ${c.session_id}::uuid and user_id = ${uid}::uuid`;
-    return !!s?.oauth_client_id;
-  } catch (e) { console.error("oauth session check:", (e as Error).message); return false; }
+    let client = typeof c.client_id === "string" && /^[0-9a-f-]{36}$/i.test(c.client_id) ? c.client_id : null;
+    if (!client) {
+      if (typeof c.session_id !== "string" || !/^[0-9a-f-]{36}$/i.test(c.session_id)) return false;
+      const [s] = await sql`select oauth_client_id from auth.sessions where id = ${c.session_id}::uuid and user_id = ${uid}::uuid`;
+      client = s?.oauth_client_id ?? null;
+    }
+    if (!client) return false;
+    const [oc] = await sql`select redirect_uris from auth.oauth_clients where id = ${client}::uuid and deleted_at is null`;
+    if (!oc || !allowedRedirects(oc.redirect_uris)) { console.error(`mcp: client ${client} is not an allowed AI tool`); return false; }
+    return true;
+  } catch (e) { console.error("oauth check:", (e as Error).message); return false; }
 }
 
 Deno.serve(async (req) => {

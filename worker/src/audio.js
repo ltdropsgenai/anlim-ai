@@ -109,11 +109,19 @@ async function handle(j) {
     if (!secs) throw new Error("ElevenLabs sent an empty file");
     const out = `${j.owner}/audio/${j.kind}/${j.id}.mp3`;
     await storage.upload(dest, out, "audio/mpeg");
-    // the newest finished piece is the one the cut uses, for its shot and kind (for the scene, for a score)
-    await db.q(`update studio.audio_jobs set in_cut = false, updated_at = now()
-                 where scene_id = $1 and kind = $2 and shot_id is not distinct from $3 and in_cut`, [j.scene_id, j.kind, j.shot_id]);
-    await db.q(`update studio.audio_jobs set status = 'done', in_cut = true, output_path = $2, duration_s = $3, meta = $4, error = null,
-                       locked_by = null, locked_until = null, updated_at = now() where id = $1`, [j.id, out, secs.toFixed(3), JSON.stringify(meta || {})]);
+    // the newest finished piece is the one the cut uses, for its shot and kind (for the scene, for a score). One
+    // transaction, locked per scene/kind/shot: two takes finishing at once used to both end up in the cut (review 2026-11-23).
+    const c = await db.pool.connect();
+    try {
+      await c.query("begin");
+      await c.query("select pg_advisory_xact_lock(hashtext($1))", [`audio:${j.scene_id}:${j.kind}:${j.shot_id ?? "scene"}`]);
+      await c.query(`update studio.audio_jobs set in_cut = false, updated_at = now()
+                      where scene_id = $1 and kind = $2 and shot_id is not distinct from $3 and in_cut`, [j.scene_id, j.kind, j.shot_id]);
+      await c.query(`update studio.audio_jobs set status = 'done', in_cut = true, output_path = $2, duration_s = $3, meta = $4, error = null,
+                            locked_by = null, locked_until = null, updated_at = now() where id = $1`, [j.id, out, secs.toFixed(3), JSON.stringify(meta || {})]);
+      await c.query("commit");
+    } catch (err) { await c.query("rollback").catch(() => null); throw err; }
+    finally { c.release(); }
     log(j, `done, ${secs.toFixed(2)} s${MOCK ? " (mock)" : ""}`);
   } catch (e) {
     const x = e.final ? { msg: e.final, retry: false } : explain(e);

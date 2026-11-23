@@ -41,7 +41,7 @@ const TITLES: [RegExp, string][] = [
 // 7685 -> "7.7k", 950 -> "950": the mini gauge's label
 const short = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n));
 type Me = { email?: string; balance: number; reserved: number; plan_status: string | null; plan_id?: string | null;
-            plan_credits?: number; is_admin?: boolean };
+            plan_credits?: number; is_admin?: boolean; paid?: boolean };
 
 export function Shell({ children }: { children: ReactNode }) {
   const path = usePathname();
@@ -236,7 +236,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={{ color: c.ink, fontSize: 13, fontWeight: "500" }} numberOfLines={1}>{me?.email?.split("@")[0] ?? "Account"}</Text>
-          <Text style={{ color: c.muted, fontSize: 11 }} numberOfLines={1}>{hasPlan ? "Plan active" : "Free account"}</Text>
+          <Text style={{ color: c.muted, fontSize: 11 }} numberOfLines={1}>{hasPlan ? "Plan active" : me?.paid ? "Paid account" : "Free account"}</Text>
         </View>
       </Pressable>
     </View>
@@ -353,7 +353,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </View>
       </Pressable>
       {hv("/account") && <View style={{ position: "absolute", left: 0, bottom: 14, width: RAIL_W, height: ITEM_H }} pointerEvents="none">
-        {tip(me?.email?.split("@")[0] ?? "Account", ITEM_H, hasPlan ? "plan active" : "free")}</View>}
+        {tip(me?.email?.split("@")[0] ?? "Account", ITEM_H, hasPlan ? "plan active" : me?.paid ? "paid" : "free")}</View>}
     </View>
   );
   return (

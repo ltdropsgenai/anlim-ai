@@ -126,7 +126,9 @@ async function handle(req: Request): Promise<Response> {
           return tx`select balance, reserved, plan_credits, plan_id, plan_status, welcome_status, debt, studio.is_admin() as is_admin
                       from studio.accounts where owner = ${uid}`;
         });
-        return json({ user_id: uid, email: who.user.email, balance: acc?.balance ?? 0, reserved: acc?.reserved ?? 0,
+        // paid: has ever bought credits or a plan (no watermark); the app's account label uses it (2026-11-23)
+        const [{ paid }] = await sql`select studio.has_paid(${uid}) as paid`;
+        return json({ user_id: uid, email: who.user.email, balance: acc?.balance ?? 0, reserved: acc?.reserved ?? 0, paid: !!paid,
           plan_credits: acc?.plan_credits ?? 0, plan_id: acc?.plan_id ?? null, plan_status: acc?.plan_status ?? null,
           welcome_status: acc?.welcome_status ?? null, debt: acc?.debt ?? 0, is_admin: !!acc?.is_admin });
       }
@@ -395,8 +397,13 @@ async function handle(req: Request): Promise<Response> {
         const id = String(body.shot_id || "");
         await asUser(uid, async (tx) => {
           if (body.speed !== undefined) await tx`select studio.set_shot_speed(${id}, ${Number(body.speed)})`;
-          if (body.trim_start_s !== undefined || body.trim_end_s !== undefined)
-            await tx`select studio.set_shot_trim(${id}, ${Number(body.trim_start_s || 0)}, ${Number(body.trim_end_s || 0)})`;
+          if (body.trim_start_s !== undefined || body.trim_end_s !== undefined) {
+            // a trim that was not sent keeps its current value (review 2026-11-23: it used to be reset to 0)
+            const [cur] = await tx`select trim_start_s, trim_end_s from studio.shots where id = ${id}`;
+            const ts = body.trim_start_s !== undefined ? Number(body.trim_start_s || 0) : Number(cur?.trim_start_s ?? 0);
+            const te = body.trim_end_s !== undefined ? Number(body.trim_end_s || 0) : Number(cur?.trim_end_s ?? 0);
+            await tx`select studio.set_shot_trim(${id}, ${ts}, ${te})`;
+          }
           // studio.set_shot_words refuses anything that is not a list, with a message for the creator. tx.json, not
           // JSON.stringify + ::jsonb: a stringified value arrives as one jsonb string ("words must be a list", 2026-11-23 test)
           if (body.words !== undefined)

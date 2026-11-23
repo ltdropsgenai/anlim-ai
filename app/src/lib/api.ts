@@ -264,7 +264,7 @@ export type AdminRefund = { id: string; generation_id: string; owner: string; em
   owner_requests: number; owner_reversed: number; clip_url: string | null; start_url: string | null };
 
 export const api = {
-  me: () => call<{ user_id: string; email: string; balance: number; reserved: number; plan_credits: number; is_admin?: boolean; debt?: number;
+  me: () => call<{ user_id: string; email: string; balance: number; reserved: number; plan_credits: number; is_admin?: boolean; debt?: number; paid?: boolean;
                    plan_id: string | null; plan_status: string | null;
                    welcome_status: WelcomeStatus }>({ op: "me" }),
   // billing (studio-billing Edge Function: Stripe Checkout and billing portal)

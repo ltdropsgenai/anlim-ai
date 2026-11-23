@@ -270,6 +270,12 @@ async function mix(dir, a, opts, starts, lens, total, notes) {
   // the whole mix: one fixed gain to -14 LUFS, a brickwall only for the peaks that would pass -1.5 dBTP
   const { I, tp } = await measure(summed);
   const out = path.join(dir, "audio.wav");
+  // a mix that measures silent (-inf) has nothing to level; gain NaN would fail the cut (review 2026-11-23)
+  if (!isFinite(I) || I < -70) {
+    notes.push("The sound measured silent, so it was left as it is.");
+    await ff(["-i", summed, "-c:a", "pcm_s16le", out]);
+    return { out, lufs: null, gain_db: 0, limiter: false, lufs_out: null, voiceovers: vo.length, narration: !!nar, effects: fx.length, music_lufs_before: bed.lufs };
+  }
   const lv = await levelTo(summed, out, I, tp, LUFS, [`atrim=0:${total.toFixed(3)}`]);
   return { out, lufs: I, ...lv, voiceovers: vo.length, narration: !!nar, effects: fx.length, music_lufs_before: bed.lufs };
 }
