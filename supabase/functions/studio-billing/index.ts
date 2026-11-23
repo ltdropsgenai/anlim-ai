@@ -2,7 +2,7 @@
 //   Creator ops (signed in): POST {op: "plans"} | {op: "checkout", plan_id, return_url} | {op: "portal", return_url}
 //                            | {op: "account_delete", confirm: "<the account's email>"} (2026-11-19)
 //   Public (no sign-in): POST ?public=plans -> the active price list, for the landing page (2026-11-19).
-//   Stripe webhook: POST with a Stripe-Signature header -> signature checked -> studio.apply_stripe_event(event).
+//   Stripe webhook: POST with a Stripe-Signature header -> signature checked -> studio.apply_stripe_event_checked(event, live).
 // Deployed with verify_jwt off (Stripe sends no Supabase JWT); creator ops check the sign-in themselves.
 // Two Stripe modes, one account (anlim.ai, 2026-11-23): accounts with studio.accounts.billing_test pay in the sandbox,
 // everyone else pays live. Secrets: STRIPE_LIVE_SECRET_KEY + STRIPE_LIVE_WEBHOOK_SECRET (live), STRIPE_TEST_SECRET_KEY +
