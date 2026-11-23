@@ -74,9 +74,10 @@ function conform(format) {
 // speed: below 1 slows the shot down with motion interpolation (2026-11-22, Londi chose it over frame blending for the
 // promo: the voiceover needed more time than the dissolve took); above 1 speeds it up by dropping frames. frames is the
 // count after the speed change.
-async function part(src, dest, format, frames, fades, skip = 0, credit = false, speed = 1) {
+async function part(src, dest, format, frames, fades, skip = 0, credit = false, speed = 1, words = []) {
   const t = frames / FPS;
   const fx = [];
+  if (words.length) fx.push(...await wordFilters(words, path.dirname(dest), path.basename(dest, ".mp4"), ...SIZES[format]));
   if (fades.in) fx.push(`fade=t=in:st=0:d=${FADE_IN}`);
   if (fades.out) fx.push(`fade=t=out:st=${(t - FADE_OUT).toFixed(3)}:d=${FADE_OUT}`);
   let fc = conform(format) + (fx.length ? "," + fx.join(",") : "");
@@ -98,6 +99,33 @@ async function part(src, dest, format, frames, fades, skip = 0, credit = false, 
 // "Made with anlim.ai" end card: the words and the anlim mark on black, fading in. 2026-11-22 (Londi: "Video should end
 // with a clear Made with Anlim.ai"): the card said only "anlim.ai"; it now says "Made with", is larger and stays 3 s.
 const MADE_WITH = path.join(path.dirname(MARK), "made_with.png");
+
+// 2026-11-23 (Londi's promo: "actual words falling from him as the VO delivers them"): words drawn over a shot, each
+// appearing at a point in the frame at a moment of the shot (cut time, after the speed change), then falling with
+// gravity, drifting on the breeze and fading as they land. Drawn here rather than by the video model, which misspelled
+// every word it was asked to write. The text goes through a file with expansion off, so nothing in it is interpreted.
+const WORD_FONT = path.join(path.dirname(MARK), "fonts", "Montserrat-Bold.ttf");
+async function wordFilters(words, dir, tag, W, H) {
+  const out = [];
+  for (const [k, w] of (words || []).slice(0, 12).entries()) {
+    const text = String(w.text || "").trim().slice(0, 40);
+    if (!text) continue;
+    const file = path.join(dir, `${tag}_word${k}.txt`);
+    await fs.writeFile(file, text);
+    const t0 = Math.max(0, Number(w.at_s) || 0), d = Math.min(6, Math.max(1, Number(w.dur_s) || 2.6));
+    const x0 = Math.min(1, Math.max(0, Number(w.x ?? 0.5))) * W, y0 = Math.min(1, Math.max(0, Number(w.y ?? 0.4))) * H;
+    // size: 6% of the frame's width, smaller for long lines so a line never needs more than 90% of it
+    const size = Math.round(Math.min(W * 0.06, (W * 0.9) / (text.length * 0.66)));
+    const g = H * 0.09, wind = W * 0.05;                       // px/s^2 fall, px/s drift to the right
+    const T = `(t-${t0.toFixed(3)})`;
+    out.push(`drawtext=fontfile=${WORD_FONT}:textfile=${file}:expansion=none:fontsize=${size}:fontcolor=0xFFF1D6` +
+      `:shadowcolor=black@0.55:shadowx=2:shadowy=3:enable='between(t,${t0.toFixed(3)},${(t0 + d).toFixed(3)})'` +
+      `:x='max(${Math.round(W * 0.03)},min(W-tw-${Math.round(W * 0.03)},${x0.toFixed(1)}-tw/2+${wind.toFixed(1)}*${T}))'` +
+      `:y='${y0.toFixed(1)}-th/2+0.5*${g.toFixed(1)}*${T}*${T}'` +
+      `:alpha='if(lt(${T},0.25),${T}/0.25,if(gt(${T},${(d - 0.8).toFixed(3)}),max(0,(${d.toFixed(3)}-${T})/0.8),1))'`);
+  }
+  return out;
+}
 async function endCard(dest, format) {
   const [W, H] = SIZES[format], frames = Math.round(CARD_S * FPS), mw = Math.round(Math.min(W, H) * 0.66 / 2) * 2;
   await ff(["-f", "lavfi", "-i", `color=c=0x08080A:s=${W}x${H}:r=${FPS}:d=${CARD_S}`, "-i", MADE_WITH, "-filter_complex",
@@ -270,7 +298,8 @@ async function build(a) {
     // 2026-11-22: end_card puts the credit over the last 2 s of the last shot
     const credit = !!opts.end_card && last;
     await renew(a);                                                // slowed shots take minutes each: keep the lease
-    await part(src, dest, a.format, out, fades, from, credit, speed);
+    await part(src, dest, a.format, out, fades, from, credit, speed, Array.isArray(it.words) ? it.words : []);
+    if ((it.words || []).length) notes.push(`Shot ${it.ord}: ${it.words.length} word${it.words.length > 1 ? "s" : ""} drawn over it.`);
     if (fades.in) quiet.push([frames / FPS, frames / FPS + FADE_IN]);
     starts.push(frames / FPS); lens.push(out / FPS);
     frames += out;

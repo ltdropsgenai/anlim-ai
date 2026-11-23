@@ -210,6 +210,22 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { shot_id: { type: "string" }, speed: { type: "number", minimum: 0.5, maximum: 2 } },
       required: ["shot_id", "speed"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
+  // ---- v2.6 (2026-11-23): words drawn over a shot in the cut (spelled exactly; the video model is not asked to write them)
+  { name: "set_words", title: "Words over a shot",
+    description: "Sets the words drawn over a shot in the scene's cut (replaces any already set; an empty list removes them). Each word " +
+      "appears at a moment of the shot as it plays in the cut (seconds after the shot starts, after any speed change: time it to " +
+      "the voiceover), at a point in the frame (x and y from 0 to 1, from the top left; put it on the person it comes from), then " +
+      "falls, drifts on the breeze and fades. Spelled exactly as given. Up to 12 words of up to 40 characters. Then make_cut. Free.",
+    inputSchema: { type: "object", properties: {
+      shot_id: { type: "string" },
+      words: { type: "array", maxItems: 12, items: { type: "object", properties: {
+        text: { type: "string", minLength: 1, maxLength: 40 },
+        at_seconds: { type: "number", minimum: 0, maximum: 600 },
+        x: { type: "number", minimum: 0, maximum: 1, default: 0.5 }, y: { type: "number", minimum: 0, maximum: 1, default: 0.4 },
+        seconds: { type: "number", minimum: 1, maximum: 6, default: 2.6, description: "How long it stays (falling)" },
+      }, required: ["text", "at_seconds"], additionalProperties: false } },
+    }, required: ["shot_id", "words"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
   // ---- v2.4 (2026-11-22): sound, on the creator's own ElevenLabs account (connected in anlim: Account > Connections)
   { name: "list_voices", title: "Voices",
     description: "The voices in the creator's ElevenLabs library (their cloned voices, saved and default voices): id, name, kind. " +
@@ -635,6 +651,16 @@ async function callTool(uid: string, name: string, a: Args) {
       await asUser(uid, (tx) => tx`select studio.set_shot_speed(${sid}, ${sp}::numeric)`);
       return text(sp === 1 ? "Normal speed." : `This shot plays at ${Math.round(sp * 100)}% speed in the cut. Run make_cut to see it.`);
     }
+    case "set_words": {
+      const sid = String(a.shot_id || "");
+      if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
+      const list = Array.isArray(a.words) ? (a.words as Record<string, unknown>[]).slice(0, 12) : [];
+      const words = list.map((w) => ({ text: String(w.text ?? ""), at_s: Number(w.at_seconds ?? 0), x: w.x == null ? 0.5 : Number(w.x),
+                                       y: w.y == null ? 0.4 : Number(w.y), dur_s: w.seconds == null ? 2.6 : Number(w.seconds) }));
+      await asUser(uid, (tx) => tx`select studio.set_shot_words(${sid}, ${tx.json(words)})`);
+      return text(words.length ? `${words.length} word${words.length > 1 ? "s" : ""} set on this shot: ` +
+        words.map((w) => `"${w.text}" at ${w.at_s} s`).join(", ") + ". Run make_cut to see them." : "Words removed from this shot.");
+    }
     // ---- v2.4 sound
     case "list_voices": {
       const key = await xiKey(uid);
@@ -955,13 +981,13 @@ async function rpc(uid: string, m: Rpc) {
       const want = String(m.params?.protocolVersion || "");
       return ok(m.id, { protocolVersion: PROTOCOLS.includes(want) ? want : PROTOCOLS[1],
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "anlim", title: "anlim.ai", version: "2.5.0" },
+        serverInfo: { name: "anlim", title: "anlim.ai", version: "2.6.0" },
         instructions: "anlim makes images and short video clips and keeps them in the creator's projects. Quick: create (an image or a " +
           "clip from words) then get_creation. Step by step, for a real person, a set or several shots: new_project (or list_projects), " +
           "get_upload_link so the creator uploads photos, add_character with an upload, add_location for the background, add_shot, " +
           "(update_character, update_shot, move_shot to change them), make_end_image when someone must appear or end somewhere exact, " +
           "make_start_image (new_setup places the characters), get_creation to look, animate, review_clip (keep), then make_cut and " +
-          "get_cut (trim_clip to shorten a clip, set_clip_speed to slow it, in the cut; make_voiceover, make_sound_effect and " +
+          "get_cut (trim_clip to shorten a clip, set_clip_speed to slow it, set_words to draw words over it, in the cut; make_voiceover, make_sound_effect and " +
           "make_score add sound on the creator's ElevenLabs account). Steps that spend credits need a paid account. Clips take minutes: tell the creator and check again rather than " +
           "starting the same thing twice." });
     }
