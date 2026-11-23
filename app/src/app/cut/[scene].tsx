@@ -105,7 +105,7 @@ export default function SceneCut() {
         {owner && <SoundPanel refresh={shotsVersion} sceneId={scene} owner={owner} endCard={card} music={music} setMusic={setMusic}
           voiceOn={voiceOn} setVoiceOn={setVoiceOn} sfxOn={sfxOn} setSfxOn={setSfxOn} />}
         <Text style={s.sub}>
-          The sound is set to −14 LUFS, the loudness YouTube, Instagram and TikTok play at, at one steady level (no pumping).
+          The sound is set to −14 LUFS, a common target for YouTube, Instagram and TikTok, at one steady level (no pumping).
           Without music, voiceover or effects the cut is silent.
         </Text>
 
