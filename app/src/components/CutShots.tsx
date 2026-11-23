@@ -9,11 +9,13 @@ import { c } from "../lib/theme";
 
 const SPEEDS = [0.5, 0.75, 1, 1.5, 2];
 const MAX_WORDS = 12;
-type Draft = { speed: number; trimStart: string; trimEnd: string; words: ShotWord[] };
+// times are kept as the typed text (a number per keystroke turned "1." into 1, so 1.5 could not be typed; 2026-11-23 test)
+type DraftWord = Omit<ShotWord, "at_s" | "dur_s"> & { at: string; dur: string };
+type Draft = { speed: number; trimStart: string; trimEnd: string; words: DraftWord[] };
 const draftOf = (r: ShotRow): Draft => ({
   speed: Number(r.speed) || 1,
   trimStart: String(Number(r.trim_start_s) || 0), trimEnd: String(Number(r.trim_end_s) || 0),
-  words: (r.words ?? []).map((w) => ({ ...w })),
+  words: (r.words ?? []).map(({ at_s, dur_s, ...w }) => ({ ...w, at: String(at_s), dur: String(dur_s) })),
 });
 const num = (v: string) => (v.trim() === "" ? 0 : Number(v));
 
@@ -48,7 +50,7 @@ function ShotCard({ row, ratio, onSaved }: { row: ShotRow; ratio: number; onSave
   const previewRow = { ...row, speed: d.speed, trim_start_s: num(d.trimStart) || 0, trim_end_s: num(d.trimEnd) || 0 };
   const len = cutSeconds(previewRow);
   const dirty = JSON.stringify(d) !== JSON.stringify(draftOf(row));
-  const setWord = (i: number, w: Partial<ShotWord>) => setD((x) => ({ ...x, words: x.words.map((o, k) => (k === i ? { ...o, ...w } : o)) }));
+  const setWord = (i: number, w: Partial<DraftWord>) => setD((x) => ({ ...x, words: x.words.map((o, k) => (k === i ? { ...o, ...w } : o)) }));
 
   // the same checks the database makes (studio.set_shot_trim / set_shot_words), shown before saving
   const problems: string[] = [];
@@ -58,21 +60,22 @@ function ShotCard({ row, ratio, onSaved }: { row: ShotRow; ratio: number; onSave
   d.words.forEach((w, i) => {
     const t = w.text.trim();
     if (!t || t.length > 40) problems.push(`Word ${i + 1}: 1 to 40 characters.`);
-    if (!(w.at_s >= 0) || w.at_s >= len) problems.push(`Word ${i + 1}: it must appear between 0 and ${len.toFixed(1)} s (the shot's length in the cut).`);
-    if (!(w.dur_s >= 1 && w.dur_s <= 6)) problems.push(`Word ${i + 1}: it stays 1 to 6 seconds.`);
+    const at = num(w.at), dur = num(w.dur);
+    if (!(at >= 0) || at >= len) problems.push(`Word ${i + 1}: it must appear between 0 and ${len.toFixed(1)} s (the shot's length in the cut).`);
+    if (!(dur >= 1 && dur <= 6)) problems.push(`Word ${i + 1}: it stays 1 to 6 seconds.`);
   });
 
   async function save() {
     setBusy(true); setMsg(null);
     try {
       await api.shotCutEdit(row.id, { speed: d.speed, trim_start_s: ts, trim_end_s: te,
-        words: d.words.map((w) => ({ ...w, text: w.text.trim() })) });
+        words: d.words.map(({ at, dur, ...w }) => ({ ...w, text: w.text.trim(), at_s: num(at), dur_s: num(dur) })) });
       setMsg({ ok: true, text: "Saved. The next cut uses it." }); onSaved();
     } catch (e) { setMsg({ ok: false, text: (e as Error).message }); }
     setBusy(false);
   }
   function place(x: number, y: number) {
-    if (sel === null || !box.w || !box.h) return;
+    if (sel === null || !box.w || !box.h || !isFinite(x) || !isFinite(y)) return;
     setWord(sel, { x: Math.min(1, Math.max(0, x / box.w)), y: Math.min(1, Math.max(0, y / box.h)) });
   }
 
@@ -83,7 +86,10 @@ function ShotCard({ row, ratio, onSaved }: { row: ShotRow; ratio: number; onSave
       <View style={s.cols}>
         {/* the picture: tap to place the selected word; words show at their size and place */}
         <View style={{ width: W }}>
-          <Pressable onPress={(e) => place(e.nativeEvent.locationX, e.nativeEvent.locationY)} disabled={sel === null}
+          {/* on the web the press event has no locationX (it was undefined, so the word stayed put and its place became NaN;
+              2026-11-23 test): there offsetX/Y of the picture box are used */}
+          <Pressable onPress={(e) => { const n = e.nativeEvent as unknown as { locationX?: number; locationY?: number; offsetX?: number; offsetY?: number };
+              place(n.locationX ?? n.offsetX ?? NaN, n.locationY ?? n.offsetY ?? NaN); }} disabled={sel === null}
             accessibilityRole="button" accessibilityLabel={sel === null ? "Shot picture" : `Place word ${sel + 1} here`}
             onLayout={(e) => setBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
             style={[s.pic, { aspectRatio: ratio }, sel !== null && { borderColor: c.accent }]}>
@@ -131,11 +137,11 @@ function ShotCard({ row, ratio, onSaved }: { row: ShotRow; ratio: number; onSave
                 placeholderTextColor={c.muted} onFocus={() => setSel(i)}
                 onChangeText={(v) => setWord(i, { text: v.replace(/[\r\n\t]/g, " ") })} />
               <Text style={s.sub}>at</Text>
-              <TextInput style={s.num} value={String(w.at_s)} keyboardType="decimal-pad" onFocus={() => setSel(i)}
-                onChangeText={(v) => setWord(i, { at_s: num(v) })} />
+              <TextInput style={s.num} value={w.at} keyboardType="decimal-pad" onFocus={() => setSel(i)}
+                onChangeText={(v) => setWord(i, { at: v })} />
               <Text style={s.sub}>s, for</Text>
-              <TextInput style={s.num} value={String(w.dur_s)} keyboardType="decimal-pad" onFocus={() => setSel(i)}
-                onChangeText={(v) => setWord(i, { dur_s: num(v) })} />
+              <TextInput style={s.num} value={w.dur} keyboardType="decimal-pad" onFocus={() => setSel(i)}
+                onChangeText={(v) => setWord(i, { dur: v })} />
               <Text style={s.sub}>s</Text>
               <Pressable onPress={() => { setD((x) => ({ ...x, words: x.words.filter((_, k) => k !== i) })); setSel(null); }}
                 accessibilityRole="button" accessibilityLabel={`Remove word ${i + 1}`}>
@@ -145,8 +151,8 @@ function ShotCard({ row, ratio, onSaved }: { row: ShotRow; ratio: number; onSave
           ))}
           {d.words.length < MAX_WORDS && (
             <Pressable style={s.ghost} accessibilityRole="button" onPress={() => {
-              const at = d.words.length ? Math.min(len - 0.5, d.words[d.words.length - 1].at_s + 1) : 0;
-              setD((x) => ({ ...x, words: [...x.words, { text: "", at_s: Math.max(0, Number(at.toFixed(2))), x: 0.5, y: 0.4, dur_s: 2.6 }] }));
+              const at = d.words.length ? Math.min(len - 0.5, (num(d.words[d.words.length - 1].at) || 0) + 1) : 0;
+              setD((x) => ({ ...x, words: [...x.words, { text: "", at: String(Math.max(0, Number(at.toFixed(2)))), x: 0.5, y: 0.4, dur: "2.6" }] }));
               setSel(d.words.length);
             }}>
               <Text style={{ color: c.ink }}>Add a word</Text>

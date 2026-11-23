@@ -397,8 +397,10 @@ async function handle(req: Request): Promise<Response> {
           if (body.speed !== undefined) await tx`select studio.set_shot_speed(${id}, ${Number(body.speed)})`;
           if (body.trim_start_s !== undefined || body.trim_end_s !== undefined)
             await tx`select studio.set_shot_trim(${id}, ${Number(body.trim_start_s || 0)}, ${Number(body.trim_end_s || 0)})`;
-          if (body.words !== undefined)   // studio.set_shot_words refuses anything that is not a list, with a message for the creator
-            await tx`select studio.set_shot_words(${id}, ${JSON.stringify(body.words)}::jsonb)`;
+          // studio.set_shot_words refuses anything that is not a list, with a message for the creator. tx.json, not
+          // JSON.stringify + ::jsonb: a stringified value arrives as one jsonb string ("words must be a list", 2026-11-23 test)
+          if (body.words !== undefined)
+            await tx`select studio.set_shot_words(${id}, ${tx.json(body.words as postgres.JSONValue)})`;
         });
         return json({ ok: true });
       }
