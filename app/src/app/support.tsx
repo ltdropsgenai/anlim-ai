@@ -1,11 +1,21 @@
 // Help & contact (2026-11-19): short answers to what creators ask, and how to reach a person. @anlim
+import { View } from "react-native";
 import { Doc, H, Li, P, PublicFrame } from "../components/PublicFrame";
 import { contact } from "./terms";
+import { TUTORIALS } from "../lib/tutorials";
+import { TutorialVideo } from "../components/TutorialVideo";
 
 export default function Support() {
   return (
     <PublicFrame>
       <Doc title="Help & contact">
+        {TUTORIALS.length > 0 && <>
+          <H>Video guides</H>
+          {TUTORIALS.map((t) => (<View key={t.ep} style={{ gap: 6, marginBottom: 12 }}>
+            <TutorialVideo t={t} />
+            <P>{t.title} · {Math.round(t.seconds / 60) || 1} min. {t.what}</P>
+          </View>))}
+        </>}
         <H>A clip didn't come out right</H>
         <P>Open it in Review: the anlim check lists what it saw. Render it again if it is not what you wanted. Every clip is charged when it is made, because the video model is paid for every render. If a clip is unusable (a broken body, an object that changes, the wrong action), open it in Review and choose Reject: say what is wrong and when. We look at every rejected clip within a few days. If we can see the problem, the credits come back to you; if we cannot, we tell you why and the charge stands.</P>
         <H>My characters look different from shot to shot</H>
