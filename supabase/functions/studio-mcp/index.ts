@@ -1054,15 +1054,21 @@ function claims(token: string): Record<string, unknown> {
   } catch { return {}; }
 }
 // The AI tools whose OAuth clients may use this server (review 2026-11-23): a client counts only if every redirect URI
-// it registered is on one of these hosts. The sign-in code is only ever delivered to the registered redirect, so a
-// client someone registers with their own (or a localhost) redirect is refused even though registration is open.
-// MCP_ALLOWED_REDIRECT_HOSTS (comma separated) overrides the list.
+// it registered is on one of these hosts (https), or on this computer (localhost / 127.0.0.1 / [::1], http or https:
+// local tools such as Claude Code and Cursor, which the Help page lists; Londi, 2026-11-23, option A). The sign-in code
+// is only ever delivered to the registered redirect, so a client registered with some other website is refused even
+// though registration is open. MCP_ALLOWED_REDIRECT_HOSTS (comma separated) overrides the hosted list.
 const AI_HOSTS = (Deno.env.get("MCP_ALLOWED_REDIRECT_HOSTS") || "claude.ai,claude.com,chatgpt.com,chat.openai.com")
   .split(",").map((h) => h.trim().toLowerCase()).filter(Boolean);
+const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 function allowedRedirects(uris: string | null) {
   const list = String(uris || "").split(/[\s,]+/).filter(Boolean);
   return list.length > 0 && list.every((u) => {
-    try { const x = new URL(u); return x.protocol === "https:" && AI_HOSTS.includes(x.hostname.toLowerCase()); } catch { return false; }
+    try {
+      const x = new URL(u), host = x.hostname.toLowerCase();
+      if (LOCAL_HOSTS.includes(host)) return x.protocol === "http:" || x.protocol === "https:";
+      return x.protocol === "https:" && AI_HOSTS.includes(host);
+    } catch { return false; }
   });
 }
 async function isOAuthToken(token: string, uid: string) {
