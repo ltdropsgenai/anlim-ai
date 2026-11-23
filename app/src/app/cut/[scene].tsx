@@ -124,6 +124,7 @@ export default function SceneCut() {
             {x.duration_s ? ` · ${Number(x.duration_s).toFixed(1)} s` : ""} · {STATUS[x.status] ?? x.status}
           </Text>
           <Text style={s.sub}>{new Date(x.created_at).toLocaleString()}{[x.options.music_path ? (x.options.music_path.includes("/audio/music/") ? "generated score" : "your track") : null,
+            x.report?.narration ? "narration" : null,   // 2026-11-23 (ep16): a cut with only the narration read "silent"
             x.report?.voiceovers ? `${x.report.voiceovers} voiceover${x.report.voiceovers > 1 ? "s" : ""}` : null,
             x.report?.effects ? `${x.report.effects} sound effect${x.report.effects > 1 ? "s" : ""}` : null].filter(Boolean).map((t) => ` · ${t}`).join("") || " · silent"}</Text>
           {(x.status === "queued" || x.status === "running") && <ActivityIndicator style={{ alignSelf: "flex-start", marginVertical: 6 }} />}

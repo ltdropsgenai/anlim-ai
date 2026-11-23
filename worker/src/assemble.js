@@ -74,10 +74,10 @@ function conform(format) {
 // speed: below 1 slows the shot down with motion interpolation (2026-11-22, Londi chose it over frame blending for the
 // promo: the voiceover needed more time than the dissolve took); above 1 speeds it up by dropping frames. frames is the
 // count after the speed change.
-async function part(src, dest, format, frames, fades, skip = 0, credit = false, speed = 1, words = []) {
+async function part(src, dest, format, frames, fades, skip = 0, credit = false, speed = 1, words = [], srcSize = null) {
   const t = frames / FPS;
   const fx = [];
-  if (words.length) fx.push(...await wordFilters(words, path.dirname(dest), path.basename(dest, ".mp4"), ...SIZES[format]));
+  if (words.length) fx.push(...await wordFilters(words, path.dirname(dest), path.basename(dest, ".mp4"), ...SIZES[format], picRect(format, srcSize)));
   if (fades.in) fx.push(`fade=t=in:st=0:d=${FADE_IN}`);
   if (fades.out) fx.push(`fade=t=out:st=${(t - FADE_OUT).toFixed(3)}:d=${FADE_OUT}`);
   let fc = conform(format) + (fx.length ? "," + fx.join(",") : "");
@@ -105,7 +105,17 @@ const MADE_WITH = path.join(path.dirname(MARK), "made_with.png");
 // gravity, drifting on the breeze and fading as they land. Drawn here rather than by the video model, which misspelled
 // every word it was asked to write. The text goes through a file with expansion off, so nothing in it is interpreted.
 const WORD_FONT = path.join(path.dirname(MARK), "fonts", "Montserrat-Bold.ttf");
-async function wordFilters(words, dir, tag, W, H) {
+// 2026-11-23 (ep16 recording): x and y are placed on the shot's picture, as the creator tapped it, not on the whole
+// frame: in a cut of another shape (a 16:9 clip in a 9:16 cut) the picture is fitted inside the frame over a blurred
+// fill, and a word tapped low on the picture used to land below it, on the fill. picRect is where conform() puts the picture.
+function picRect(format, size) {
+  const [W, H] = SIZES[format];
+  if (!size?.w || !size?.h) return { x: 0, y: 0, w: W, h: H };
+  const k = Math.min(W / size.w, H / size.h);
+  const w = Math.floor(Math.round(size.w * k) / 2) * 2, h = Math.floor(Math.round(size.h * k) / 2) * 2;
+  return { x: Math.floor((W - w) / 2), y: Math.floor((H - h) / 2), w, h };
+}
+async function wordFilters(words, dir, tag, W, H, pic = { x: 0, y: 0, w: W, h: H }) {
   const out = [];
   for (const [k, w] of (words || []).slice(0, 12).entries()) {
     const text = String(w.text || "").trim().slice(0, 40);
@@ -113,14 +123,14 @@ async function wordFilters(words, dir, tag, W, H) {
     const file = path.join(dir, `${tag}_word${k}.txt`);
     await fs.writeFile(file, text);
     const t0 = Math.max(0, Number(w.at_s) || 0), d = Math.min(6, Math.max(1, Number(w.dur_s) || 2.6));
-    const x0 = Math.min(1, Math.max(0, Number(w.x ?? 0.5))) * W, y0 = Math.min(1, Math.max(0, Number(w.y ?? 0.4))) * H;
-    // size: 6% of the frame's width, smaller for long lines so a line never needs more than 90% of it
-    const size = Math.round(Math.min(W * 0.06, (W * 0.9) / (text.length * 0.66)));
-    const g = H * 0.09, wind = W * 0.05;                       // px/s^2 fall, px/s drift to the right
+    const x0 = pic.x + Math.min(1, Math.max(0, Number(w.x ?? 0.5))) * pic.w, y0 = pic.y + Math.min(1, Math.max(0, Number(w.y ?? 0.4))) * pic.h;
+    // size: 6% of the picture's width, smaller for long lines so a line never needs more than 90% of it
+    const size = Math.round(Math.min(pic.w * 0.06, (pic.w * 0.9) / (text.length * 0.66)));
+    const g = pic.h * 0.09, wind = pic.w * 0.05;               // px/s^2 fall, px/s drift to the right
     const T = `(t-${t0.toFixed(3)})`;
     out.push(`drawtext=fontfile=${WORD_FONT}:textfile=${file}:expansion=none:fontsize=${size}:fontcolor=0xFFF1D6` +
       `:shadowcolor=black@0.55:shadowx=2:shadowy=3:enable='between(t,${t0.toFixed(3)},${(t0 + d).toFixed(3)})'` +
-      `:x='max(${Math.round(W * 0.03)},min(W-tw-${Math.round(W * 0.03)},${x0.toFixed(1)}-tw/2+${wind.toFixed(1)}*${T}))'` +
+      `:x='max(${Math.round(pic.x + pic.w * 0.03)},min(${Math.round(pic.x + pic.w * 0.97)}-tw,${x0.toFixed(1)}-tw/2+${wind.toFixed(1)}*${T}))'` +
       `:y='${y0.toFixed(1)}-th/2+0.5*${g.toFixed(1)}*${T}*${T}'` +
       `:alpha='if(lt(${T},0.25),${T}/0.25,if(gt(${T},${(d - 0.8).toFixed(3)}),max(0,(${d.toFixed(3)}-${T})/0.8),1))'`);
   }
@@ -342,7 +352,7 @@ async function build(a) {
     // 2026-11-22: end_card puts the credit over the last 2 s of the last shot
     const credit = !!opts.end_card && last;
     await renew(a);                                                // slowed shots take minutes each: keep the lease
-    await part(src, dest, a.format, out, fades, from, credit, speed, Array.isArray(it.words) ? it.words : []);
+    await part(src, dest, a.format, out, fades, from, credit, speed, Array.isArray(it.words) ? it.words : [], { w: p.w, h: p.h });
     if ((it.words || []).length) notes.push(`Shot ${it.ord}: ${it.words.length} word${it.words.length > 1 ? "s" : ""} drawn over it.`);
     if (fades.in) quiet.push([frames / FPS, frames / FPS + FADE_IN]);
     starts.push(frames / FPS); lens.push(out / FPS);

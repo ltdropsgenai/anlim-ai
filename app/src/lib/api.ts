@@ -152,7 +152,7 @@ export type CutFormat = "16x9" | "9x16" | "4x5" | "1x1" | "4x3" | "3x4" | "21x9"
 export type Cut = {
   id: string; format: CutFormat; options: { fade: boolean; end_card: boolean; music_path: string | null; voice?: boolean; sfx?: boolean };
   status: "queued" | "running" | "done" | "failed"; duration_s: string | null; error: string | null; skipped: number[]; shots: number;
-  report: { checks: { name: string; ok: boolean; detail: string }[]; notes: string[]; voiceovers?: number; effects?: number } | null;
+  report: { checks: { name: string; ok: boolean; detail: string }[]; notes: string[]; voiceovers?: number; narration?: boolean; effects?: number } | null;
   watermarked: boolean; url: string | null; created_at: string;
 };
 export type Series = {
