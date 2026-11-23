@@ -49,6 +49,15 @@ export function Shell({ children }: { children: ReactNode }) {
   const narrow = width < 760, wide = width >= 1100;
   const [me, setMe] = useState<Me | null>(null);
   useEffect(() => { api.me().then(setMe).catch(() => setMe(null)); }, [path]);
+  // 2026-11-23 (tutorial tests): the balance only refreshed on a page change, so it stayed stale while a creator spent
+  // credits on one page (Workspace frames and renders). It now refreshes every 20 s while the tab is visible, and on focus.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const tick = () => { if (document.visibilityState === "visible") api.me().then(setMe).catch(() => {}); };
+    const id = setInterval(tick, 20000);
+    window.addEventListener("focus", tick);
+    return () => { clearInterval(id); window.removeEventListener("focus", tick); };
+  }, []);
   const [hover, setHover] = useState<string | null>(null);
   // Collapsible sidebar (2026-11-20, Londi: "expanded will show the titles, collapsed just the icons, which still
   // display the name when pointed at"). The choice is remembered in this browser; mid widths are always collapsed.
