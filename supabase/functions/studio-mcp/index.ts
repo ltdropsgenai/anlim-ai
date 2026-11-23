@@ -23,6 +23,9 @@ const RESOURCE = Deno.env.get("MCP_RESOURCE_URL") || "https://mcp.anlim.ai/mcp";
 const METADATA_URL = new URL("/.well-known/oauth-protected-resource", RESOURCE).toString();
 const ISSUER = `${SUPABASE_URL}/auth/v1`;
 const CREATE_LIMIT = 5, CREATE_WINDOW_MIN = 10, SPEND_LIMIT = 10;
+// 2026-11-23 (review): sound runs on the creator's own ElevenLabs credits and cuts on anlim's worker; neither had a limit
+// from chat, so a looping agent could drain one or hold the other.
+const AUDIO_TOOLS = ["make_voiceover", "make_sound_effect", "make_score"], AUDIO_LIMIT = 15, CUT_LIMIT = 6;
 const SPEND_TOOLS = ["make_start_image", "make_end_image", "animate", "motion_transfer", "add_location"];
 const APP = "https://anlim.ai";
 const ASPECTS = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
@@ -405,9 +408,6 @@ async function callTool(uid: string, name: string, a: Args) {
     case "create": {
       const [{ paid }] = await sql`select studio.has_paid(${uid}) as paid`;
       if (!paid) return text("Creating from chat comes with a paid anlim account. Buy credits or a plan at https://anlim.ai, then try again.", undefined, true);
-      const [{ n }] = await sql`select count(*)::int as n from studio.mcp_calls where owner = ${uid} and tool = 'create'
-                                  and at > now() - interval '10 minutes'`;   // CREATE_WINDOW_MIN
-      if (n >= CREATE_LIMIT) return text(`Limit reached: ${CREATE_LIMIT} creates per ${CREATE_WINDOW_MIN} minutes from chat. Wait a few minutes, or use anlim.ai.`, undefined, true);
       const prompt = String(a.prompt || "").trim();
       const output = a.output === "image" ? "image" : "video";
       const look = a.look === "photoreal" ? "photoreal" : "cartoon";
@@ -415,7 +415,9 @@ async function callTool(uid: string, name: string, a: Args) {
       const aspect = ASPECTS.includes(String(a.aspect)) ? String(a.aspect) : "16:9";
       const project = a.project_id ? String(a.project_id) : null;
       if (project && !UUID.test(project)) return text("project_id must be an id from list_projects.", undefined, true);
-      await sql`insert into studio.mcp_calls(owner, tool) values (${uid}, 'create')`;   // counted even if it fails below
+      // counted even if it fails below
+      if (!await rateGate(uid, "create", ["create"], CREATE_LIMIT))
+        return text(`Limit reached: ${CREATE_LIMIT} creates per ${CREATE_WINDOW_MIN} minutes from chat. Wait a few minutes, or use anlim.ai.`, undefined, true);
       const [r] = await asUser(uid, (tx) => tx`select studio.quick_create(${prompt}, ${look}, ${seconds}::int, ${output}, ${null},
         ${project}::uuid, ${null}::text, ${aspect}::text) as r`);
       const q = r.r as Record<string, unknown>;
@@ -507,18 +509,22 @@ async function callTool(uid: string, name: string, a: Args) {
         if (a.remove_people) {
           const gate = await spendGate(uid, "add_location");
           if (gate) return gate;
-          if (!f.start_frame_path) await asUser(uid, async (tx) => {   // the plate is made from the shot's (approved) start image
-            const [j] = await tx`select id from studio.frame_jobs where shot_id = ${sid} and kind = 'start' and status = 'ready' order by created_at desc limit 1`;
-            if (j) await tx`select studio.decide_frame(${j.id}, 'approve')`;
-          });
-          plateShot = sid;
+          plateShot = sid;   // the start image is approved in the same transaction as the plate request (below)
         } else plate = await copyStored(src, `${uid}/locations/plate-${Date.now()}-${rand()}.${ext(src)}`);
       }
       const locId = await asUser(uid, async (tx) => {
         const [r] = await tx`select studio.create_location(${pid}, ${String(a.name || "")}, ${a.description ? String(a.description) : null}) as id`;
         await tx`select studio.set_scene_location(${scene}, ${r.id})`;
         if (plate) await tx`select studio.set_location_plate(${r.id}, ${plate})`;
-        if (plateShot) await tx`select studio.request_plate(${r.id}, ${plateShot})`;
+        if (plateShot) {
+          // the plate is made from the shot's (approved) start image; approving it and asking for the plate succeed or fail
+          // together, so a refused plate (credits) leaves the start image as it was (review 2026-11-23)
+          const [j] = await tx`select f.id from studio.frame_jobs f join studio.shots sh on sh.id = f.shot_id
+                                where f.shot_id = ${plateShot} and f.kind = 'start' and f.status = 'ready' and sh.start_frame_path is null
+                                order by f.created_at desc limit 1`;
+          if (j) await tx`select studio.decide_frame(${j.id}, 'approve')`;
+          await tx`select studio.request_plate(${r.id}, ${plateShot})`;
+        }
         return r.id as string;
       });
       return text(`Location "${a.name}" added and set for the project's latest scene. ` +
@@ -646,6 +652,8 @@ async function callTool(uid: string, name: string, a: Args) {
       if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
       const [sh] = await asUser(uid, (tx) => tx`select scene_id from studio.shots where id = ${sid}`);
       if (!sh) return text("Shot not found.", undefined, true);
+      const gate = await audioGate(uid, name);
+      if (gate) return gate;
       const vo = name === "make_voiceover";
       let voiceName = "";
       if (vo) {
@@ -666,26 +674,22 @@ async function callTool(uid: string, name: string, a: Args) {
       if (!UUID.test(pid)) return text("project_id must be an id from list_projects.", undefined, true);
       const scene = await latestScene(uid, pid);
       const styles = String(a.styles || "").trim();
-      const shots = await asUser(uid, (tx) => tx`select sh.ord, sh.duration_s, sh.trim_start_s, sh.trim_end_s, sh.speed from studio.shots sh
-                                                   where sh.scene_id = ${scene} and sh.approved_generation_id is not null order by sh.ord`);
+      const shots = await asUser(uid, (tx) => tx`select sh.ord, sh.duration_s, sh.trim_start_s, sh.trim_end_s, sh.speed, g.clip_s
+                                                   from studio.shots sh join studio.generations g on g.id = sh.approved_generation_id
+                                                  where sh.scene_id = ${scene} order by sh.ord`);
       if (!shots.length) return text("Keep at least one clip in this scene first.", undefined, true);
-      const len = (r: any) => Math.max(1, (Number(r.duration_s) - Number(r.trim_start_s) - Number(r.trim_end_s)) / (Number(r.speed) || 1));
-      const total = shots.reduce((t: number, r: any) => t + len(r), 0) + 1;
+      const gate = await audioGate(uid, "make_score");
+      if (gate) return gate;
       const moods = Array.isArray(a.moods) ? (a.moods as unknown[]).map((x) => String(x).slice(0, 500)) : [];
-      let input: Record<string, unknown>;
-      if (a.follow_shots !== false) {
-        const secs: { label: string; seconds: number; styles: string }[] = [];
-        shots.forEach((r: any, i: number) => {
-          const sec = len(r) + (i === shots.length - 1 ? 1 : 0);
-          if (sec < 3 && secs.length) { secs[secs.length - 1].seconds += sec; return; }
-          secs.push({ label: `Shot ${String(r.ord).padStart(2, "0")}`, seconds: Math.max(3, sec), styles: moods[i] ?? "" });
-        });
-        input = { text: styles, styles, sections: secs.map((x) => ({ ...x, seconds: Math.round(x.seconds * 10) / 10 })), instrumental: true };
-      } else input = { text: styles, length_s: Math.ceil(total), instrumental: true };
+      const secs = scoreSections(shots, moods);
+      const total = Math.round(secs.reduce((t, x) => t + x.seconds, 0) * 10) / 10;
+      const input: Record<string, unknown> = a.follow_shots !== false
+        ? { text: styles, styles, sections: secs, instrumental: true }
+        : { text: styles, length_s: Math.max(3, total), instrumental: true };
       const [r] = await asUser(uid, (tx) => tx`select studio.request_audio(${scene}, ${null}, 'music', ${tx.json(input)}) as id`);
-      const n = Array.isArray(input.sections) ? (input.sections as unknown[]).length : 0;
-      return text(`The score is being composed: ${Math.ceil(total)} s${n ? ` in ${n} section${n > 1 ? "s" : ""}, one per shot` : ""}, instrumental, ` +
-        `on your ElevenLabs credits (usually a minute or two). audio_id ${r.id}. Check it with list_audio.`, { audio_id: r.id });
+      const n = a.follow_shots !== false ? secs.length : 0;
+      return text(`The score is being composed: ${total} s${n ? ` in ${n} section${n > 1 ? "s" : ""}, one per shot` : ""}, instrumental, ` +
+        `on your ElevenLabs credits (usually a minute or two). audio_id ${r.id}. Check it with list_audio.`, { audio_id: r.id, seconds: total });
     }
     case "list_audio": {
       const pid = String(a.project_id || "");
@@ -804,6 +808,8 @@ async function callTool(uid: string, name: string, a: Args) {
       const [p] = await asUser(uid, (tx) => tx`select aspect from studio.series where id = ${pid}`);
       const format = ["16x9", "9x16", "1x1", "4x5", "4x3", "3x4", "21x9"].includes(String(a.format)) ? String(a.format)
         : String(p?.aspect ?? "16:9").replace(":", "x");
+      if (!await rateGate(uid, "make_cut", ["make_cut"], CUT_LIMIT))
+        return text(`Limit reached: ${CUT_LIMIT} cuts per 10 minutes from chat. Wait a few minutes.`, undefined, true);
       // 2026-11-22: the scene's sound goes in too: the voiceovers and effects in the cut, and the score in the cut
       const [score] = a.music === false ? [] : await asUser(uid, (tx) => tx`select id from studio.audio_jobs where scene_id = ${scene}
                                                     and kind = 'music' and in_cut and status = 'done' order by created_at desc limit 1`);
@@ -881,11 +887,61 @@ async function latestScene(uid: string, pid: string): Promise<string> {
 async function spendGate(uid: string, tool: string) {
   const [{ paid }] = await sql`select studio.has_paid(${uid}) as paid`;
   if (!paid) return text(`This comes with a paid anlim account. Buy credits or a plan at ${APP}, then try again.`, undefined, true);
-  const [{ n }] = await sql`select count(*)::int as n from studio.mcp_calls where owner = ${uid} and tool = any(${SPEND_TOOLS}::text[])
-                              and at > now() - interval '10 minutes'`;
-  if (n >= SPEND_LIMIT) return text(`Limit reached: ${SPEND_LIMIT} paid steps per 10 minutes from chat. Wait a few minutes, or use ${APP}.`, undefined, true);
-  await sql`insert into studio.mcp_calls(owner, tool) values (${uid}, ${tool})`;
+  if (!await rateGate(uid, tool, SPEND_TOOLS, SPEND_LIMIT))
+    return text(`Limit reached: ${SPEND_LIMIT} paid steps per 10 minutes from chat. Wait a few minutes, or use ${APP}.`, undefined, true);
   return null;
+}
+// Counts this account's calls to `tools` in the last 10 minutes and records this one, in one transaction locked per
+// account, so parallel calls cannot all pass the count before any of them is recorded (review 2026-11-23). False = full.
+async function rateGate(uid: string, tool: string, tools: string[], limit: number) {
+  return sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtext(${"mcp:" + uid}))`;
+    const [{ n }] = await tx`select count(*)::int as n from studio.mcp_calls where owner = ${uid} and tool = any(${tools}::text[])
+                              and at > now() - interval '10 minutes'`;
+    if (n >= limit) return false;
+    await tx`insert into studio.mcp_calls(owner, tool) values (${uid}, ${tool})`;
+    return true;
+  });
+}
+const audioGate = async (uid: string, tool: string) => await rateGate(uid, tool, AUDIO_TOOLS, AUDIO_LIMIT) ? null
+  : text(`Limit reached: ${AUDIO_LIMIT} voiceovers, sound effects and scores per 10 minutes from chat (they use your ElevenLabs credits). Wait a few minutes.`, undefined, true);
+
+// The length of each kept shot in the cut, in seconds, exactly as the worker's assemble.js makes it: the clip's real
+// length (or the shot's asked length for clips made before 2026-11-23), trims in whole frames with at least 1 s kept,
+// then the speed. Used to shape the score's sections.
+const FPS = 24;
+function cutSeconds(r: Record<string, unknown>) {
+  const frames = Math.round((Number(r.clip_s) || Number(r.duration_s) || 0) * FPS);
+  const skip = Math.max(0, Math.round(Number(r.trim_start_s || 0) * FPS)), cut = Math.max(0, Math.round(Number(r.trim_end_s || 0) * FPS));
+  const keep = Math.max(Math.min(FPS, frames), frames - skip - cut);
+  const speed = Math.min(2, Math.max(0.5, Number(r.speed) || 1));
+  return Math.max(1, Math.round(keep / speed)) / FPS;
+}
+// One section per shot; a shot under 3 s (ElevenLabs' shortest section) joins the section before it, or the one after it
+// when it is first. Section ends are rounded on the running total, so rounding never adds up. The last section runs 1 s
+// past the cut (the fade). Each section takes the mood of its longest shot.
+type Sec = { label: string; seconds: number; styles: string };
+function scoreSections(shots: Record<string, unknown>[], moods: string[]): Sec[] {
+  const lens = shots.map(cutSeconds);
+  lens[lens.length - 1] += 1;
+  const groups: { idx: number[]; len: number }[] = [];
+  let carry: { idx: number[]; len: number } | null = null;
+  lens.forEach((len, i) => {
+    let g = { idx: [i], len };
+    if (carry) { g = { idx: [...carry.idx, i], len: carry.len + len }; carry = null; }
+    if (g.len >= 3) groups.push(g);
+    else if (groups.length) { groups[groups.length - 1].idx.push(...g.idx); groups[groups.length - 1].len += g.len; }
+    else carry = g;
+  });
+  if (carry) groups.push({ ...carry, len: Math.max(3, carry.len) });      // the whole scene is under 3 s
+  let end = 0, prev = 0;
+  return groups.map((g) => {
+    end += g.len;
+    const r = Math.round(end * 10) / 10, seconds = Math.round((r - prev) * 10) / 10;
+    prev = r;
+    const main = g.idx.reduce((m, i) => (lens[i] > lens[m] ? i : m), g.idx[0]);
+    return { label: `Shot ${String(shots[g.idx[0]].ord).padStart(2, "0")}`, seconds: Math.max(3, seconds), styles: moods[main] ?? "" };
+  });
 }
 
 // ---- JSON-RPC
@@ -899,7 +955,7 @@ async function rpc(uid: string, m: Rpc) {
       const want = String(m.params?.protocolVersion || "");
       return ok(m.id, { protocolVersion: PROTOCOLS.includes(want) ? want : PROTOCOLS[1],
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "anlim", title: "anlim.ai", version: "2.4.0" },
+        serverInfo: { name: "anlim", title: "anlim.ai", version: "2.5.0" },
         instructions: "anlim makes images and short video clips and keeps them in the creator's projects. Quick: create (an image or a " +
           "clip from words) then get_creation. Step by step, for a real person, a set or several shots: new_project (or list_projects), " +
           "get_upload_link so the creator uploads photos, add_character with an upload, add_location for the background, add_shot, " +

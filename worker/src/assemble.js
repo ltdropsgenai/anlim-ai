@@ -174,10 +174,13 @@ async function mix(dir, a, opts, starts, lens, total, notes) {
     await storage.download(v.path, src);
     await stem(src, dest, -16, null);
     const len = await audioDur(dest), at = starts[v.i] + LEAD, ord = a.items[v.i].ord;
-    if (at + len > starts[v.i] + lens[v.i] + 0.05) {
+    // 2026-11-23 (review): the speech starts LEAD after the cut, so a voiceover as long as its shot still ends a little after
+    // it; only a real carry-over (more than 0.3 s) is noted, and the note says by how much
+    const spill = at + len - (starts[v.i] + lens[v.i]);
+    if (spill > 0.3) {
       const next = vo.find((x) => x.i > v.i);
       const overlap = next && at + len > starts[next.i] + LEAD;
-      notes.push(`Shot ${ord}'s voiceover is ${len.toFixed(1)} s, longer than the shot (${lens[v.i].toFixed(1)} s): it carries into the next shot` +
+      notes.push(`Shot ${ord}'s voiceover ends ${spill.toFixed(1)} s after the shot: it carries into the next shot` +
                  (overlap ? `, and runs into shot ${a.items[next.i].ord}'s voiceover. Shorten one of them.` : "."));
     }
     if (at + len > total + 0.05) notes.push(`Shot ${ord}'s voiceover is cut off at the end of the video.`);
@@ -230,6 +233,14 @@ async function checks(file, format, expectFrames, quiet, hasMusic) {
   return res;
 }
 
+// 2026-11-23 (review): the claim's lease is 15 minutes; a long cut (slowed shots) renews it before each step, so another
+// worker loop never claims the same cut while it is being built. A lease that was lost stops the build.
+async function renew(a) {
+  const r = await db.q(`update studio.assemblies set locked_until = now() + interval '15 minutes', updated_at = now()
+                         where id = $1 and locked_by = $2 and status = 'running' returning id`, [a.id, config.workerId]);
+  if (!r.length) throw Object.assign(new Error("the cut's lease was lost (claimed again or cancelled)"), { leaseLost: true });
+}
+
 async function build(a) {
   const dir = path.join(config.workDir, "cuts", a.id);
   await fs.mkdir(dir, { recursive: true });
@@ -256,8 +267,9 @@ async function build(a) {
     const speed = Math.min(2, Math.max(0.5, Number(it.speed) || 1));
     const out = Math.max(1, Math.round(keep / speed));
     if (out !== keep) notes.push(`Shot ${it.ord}: at ${Math.round(speed * 100)}% speed, ${(out / FPS).toFixed(2)} s in the cut.`);
-    // 2026-11-22: end_card puts the credit on the last shot (style "card" keeps the old black card after it)
-    const credit = !!opts.end_card && last && opts.end_card_style !== "card";
+    // 2026-11-22: end_card puts the credit over the last 2 s of the last shot
+    const credit = !!opts.end_card && last;
+    await renew(a);                                                // slowed shots take minutes each: keep the lease
     await part(src, dest, a.format, out, fades, from, credit, speed);
     if (fades.in) quiet.push([frames / FPS, frames / FPS + FADE_IN]);
     starts.push(frames / FPS); lens.push(out / FPS);
@@ -265,16 +277,12 @@ async function build(a) {
     if (fades.out) quiet.push([frames / FPS - FADE_OUT, frames / FPS]);
     parts.push(dest);
   }
-  if (opts.end_card && opts.end_card_style === "card") {
-    const dest = path.join(dir, "p_card.mp4"), n = await endCard(dest, a.format);
-    quiet.push([frames / FPS, (frames + n) / FPS]);
-    frames += n; parts.push(dest);
-  }
   const list = path.join(dir, "list.txt");
   await fs.writeFile(list, parts.map((p) => `file '${p.replace(/\\/g, "/").replace(/'/g, "'\\''")}'`).join("\n") + "\n");
   const picture = path.join(dir, "picture.mp4");
   await ff(["-f", "concat", "-safe", "0", "-i", list, "-c", "copy", picture]);
   const total = frames / FPS;
+  await renew(a);
   const sound = await mix(dir, a, opts, starts, lens, total, notes);
   const audio = sound.out;
   const final = path.join(dir, "cut.mp4");
@@ -301,16 +309,17 @@ export async function handle(a) {
     }
     await storage.upload(final, output);
     await db.q(`update studio.assemblies set status = 'done', output_path = $2, preview_path = $3, duration_s = $4, report = $5,
-                       error = null, locked_by = null, locked_until = null, updated_at = now() where id = $1`,
-               [a.id, output, preview, total.toFixed(3), JSON.stringify(report)]);
+                       error = null, locked_by = null, locked_until = null, updated_at = now() where id = $1 and locked_by = $6`,
+               [a.id, output, preview, total.toFixed(3), JSON.stringify(report), config.workerId]);
     const bad = report.checks.filter((c) => !c.ok).map((c) => c.name);
     log(a, `done: ${a.items.length} shots, ${total.toFixed(2)} s, ${a.format}${preview ? ", watermarked copy" : ""}` +
            (bad.length ? `; checks to look at: ${bad.join(", ")}` : "; all checks passed"));
   } catch (e) {
+    if (e.leaseLost) { log(a, `stopped: ${e.message}`); return; }  // the other claim owns the job now
     const tries = (a.tries || 0) + 1, give = tries >= 3;
     await db.q(`update studio.assemblies set tries = $2, error = $3, status = $4, locked_by = null, locked_until = null,
-                       next_try_at = now() + make_interval(secs => $5), updated_at = now() where id = $1`,
-               [a.id, tries, String(e.message || e).slice(0, 1000), give ? "failed" : "queued", 30 * tries]);
+                       next_try_at = now() + make_interval(secs => $5), updated_at = now() where id = $1 and locked_by = $6`,
+               [a.id, tries, String(e.message || e).slice(0, 1000), give ? "failed" : "queued", 30 * tries, config.workerId]);
     log(a, `${give ? "failed" : "error, will retry"}: ${e.message}`);
   }
 }

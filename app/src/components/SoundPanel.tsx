@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
-import { api, AudioJob, AudioKind, Connection, cutSeconds as shotCutSeconds, ScoreSection, ShotRow, uploadMusic, Voice } from "../lib/api";
+import { api, AudioJob, AudioKind, Connection, cutSeconds as shotCutSeconds, scoreSections, ShotRow, uploadMusic, Voice } from "../lib/api";
 import { c, font } from "../lib/theme";
 import { pad2 } from "../lib/shotStatus";
 import { StillPicker } from "./StillPicker";
@@ -161,17 +161,9 @@ export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, 
   // last shot and adds no time.
   const cutSeconds = shots.reduce((t, r) => t + shotCutSeconds(r), 0) + (shots.length ? 1 : 0);
   // one section per kept shot, as long as the shot is in the cut (trims and speed included); the last one gets the
-  // spare second; a section shorter than ElevenLabs' 3 s joins the one before it
-  const sections: ScoreSection[] = useMemo(() => {
-    const out: ScoreSection[] = [];
-    shots.forEach((r, i) => {
-      const secs = shotCutSeconds(r) + (i === shots.length - 1 ? 1 : 0);
-      const mood = (moods[r.id] ?? "").trim();
-      if (secs < 3 && out.length) { out[out.length - 1].seconds += secs; return; }
-      out.push({ label: `Shot ${pad2(r.ord)}`, seconds: Math.round(Math.max(3, secs) * 10) / 10, styles: mood });
-    });
-    return out.map((x) => ({ ...x, seconds: Math.round(x.seconds * 10) / 10 }));
-  }, [shots, moods]);
+  // spare second; a section shorter than ElevenLabs' 3 s joins a neighbour (lib/api.ts scoreSections, same as the connector)
+  const plan = useMemo(() => scoreSections(shots, (r) => moods[r.id] ?? ""), [shots, moods]);
+  const sections = plan.sections;
   const scores = useMemo(() => jobs.filter((j) => j.kind === "music"), [jobs]);
   const scorePath = (j: AudioJob) => `${owner}/audio/music/${j.id}.mp3`;
   // the score in the cut follows the chosen one
@@ -221,16 +213,18 @@ export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, 
           <View style={s.row}>
             <Chip on={follow && shots.length > 0} disabled={!shots.length} text="Follow the shots" onPress={() => setFollow(true)} />
             <Chip on={!follow || !shots.length} text="One piece" onPress={() => setFollow(false)} />
-            <Text style={s.small}>Instrumental (no singing)</Text>
+            {follow && shots.length > 0
+              ? <Text style={s.small}>Instrumental (no singing)</Text>
+              : <Chip on={instrumental} text="Instrumental" onPress={() => setInstrumental((v) => !v)} />}
           </View>
           {follow && shots.length > 0 ? (
             <View style={{ gap: 8 }}>
               <Text style={s.sub}>Each shot gets its own section, exactly as long as the shot is in the cut, so the music changes where the picture does.</Text>
               {shots.map((r, i) => {
-                const sec = shotCutSeconds(r) + (i === shots.length - 1 ? 1 : 0);
+                const sec = plan.lens[i], joins = plan.joins[i];
                 return (
                   <View key={r.id} style={s.shot}>
-                    <Text style={[s.small, font.mono, { color: c.sub }]}>SH {pad2(r.ord)} · {sec.toFixed(1)} S{sec < 3 ? " · JOINS THE SECTION BEFORE" : ""}</Text>
+                    <Text style={[s.small, font.mono, { color: c.sub }]}>SH {pad2(r.ord)} · {sec.toFixed(1)} S{joins === "before" ? " · JOINS THE SECTION BEFORE" : joins === "after" ? " · JOINS THE NEXT SECTION" : ""}</Text>
                     <Text style={{ color: c.ink, fontSize: 13, marginBottom: 4 }} numberOfLines={1}>{r.action}</Text>
                     <TextInput value={moods[r.id] ?? ""} onChangeText={(t) => setMoods((m) => ({ ...m, [r.id]: t }))} placeholderTextColor={c.muted}
                       style={[s.input, { minHeight: 0 }]} placeholder="The mood here, e.g. somber, sparse, minor key" />
@@ -241,7 +235,7 @@ export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, 
                   </View>
                 );
               })}
-              <Text style={s.small}>Length: {Math.ceil(sections.reduce((t, x) => t + x.seconds, 0))} s in {sections.length} section{sections.length > 1 ? "s" : ""}. It fades out at the end of the cut.</Text>
+              <Text style={s.small}>Length: {plan.total} s in {sections.length} section{sections.length > 1 ? "s" : ""}. It fades out at the end of the cut.</Text>
             </View>
           ) : (
             <Text style={s.small}>Length: {Math.ceil(cutSeconds)} s, the length of the cut. It fades out at the end.</Text>

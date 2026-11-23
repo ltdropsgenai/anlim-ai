@@ -29,11 +29,47 @@ export type ShotRow = {
   gen_status: string | null; gen_id: string | null; frame_status: string | null; frame_kind: "end" | "start" | null;
   thumb_url: string | null; has_approved_clip: boolean; gen_model: string | null;   // 2026-11-19 board
   trim_start_s?: number | string; trim_end_s?: number | string; speed?: number | string;   // 2026-11-22: the cut's trims and speed
+  clip_s?: number | string | null;   // 2026-11-23: the kept clip's real length (null for clips made before)
 };
-// A shot's length in the scene cut: its clip, less the trims, at its speed (2026-11-22)
-export const cutSeconds = (r: ShotRow) =>
-  Math.max(1, (Number(r.duration_s) - Number(r.trim_start_s || 0) - Number(r.trim_end_s || 0)) / (Number(r.speed || 1) || 1));
+// A shot's length in the scene cut, exactly as the worker's assemble.js makes it (2026-11-23, review): the clip's real
+// length (or the shot's asked length), trims in whole frames with at least 1 s of the clip kept, then the speed.
+const FPS = 24;
+export const cutSeconds = (r: ShotRow) => {
+  const frames = Math.round((Number(r.clip_s) || Number(r.duration_s) || 0) * FPS);
+  const skip = Math.max(0, Math.round(Number(r.trim_start_s || 0) * FPS)), cut = Math.max(0, Math.round(Number(r.trim_end_s || 0) * FPS));
+  const keep = Math.max(Math.min(FPS, frames), frames - skip - cut);
+  const speed = Math.min(2, Math.max(0.5, Number(r.speed) || 1));
+  return Math.max(1, Math.round(keep / speed)) / FPS;
+};
 export type ScoreSection = { label: string; seconds: number; styles: string; avoid?: string };
+// The score's sections, one per kept shot (same rules as the connector's make_score, studio-mcp): a shot under 3 s
+// (ElevenLabs' shortest section) joins the section before it, or the one after it when it is first; section ends are
+// rounded on the running total so rounding never adds up; the last section runs 1 s past the cut; each section takes
+// the mood of its longest shot. `joins` says, per shot, where a short shot went.
+export function scoreSections(shots: ShotRow[], moodOf: (r: ShotRow) => string) {
+  const lens = shots.map(cutSeconds);
+  if (lens.length) lens[lens.length - 1] += 1;
+  const groups: { idx: number[]; len: number }[] = [];
+  const joins: ("" | "before" | "after")[] = shots.map(() => "");
+  let carry: { idx: number[]; len: number } | null = null;
+  lens.forEach((len, i) => {
+    let g = { idx: [i], len };
+    if (carry) { g = { idx: [...carry.idx, i], len: carry.len + len }; carry = null; }
+    if (g.len >= 3) groups.push(g);
+    else if (groups.length) { groups[groups.length - 1].idx.push(...g.idx); groups[groups.length - 1].len += g.len; g.idx.forEach((k) => { joins[k] = "before"; }); }
+    else { carry = g; g.idx.forEach((k) => { joins[k] = "after"; }); }
+  });
+  if (carry) { const c: { idx: number[]; len: number } = carry; groups.push({ ...c, len: Math.max(3, c.len) }); c.idx.forEach((k) => { joins[k] = ""; }); }
+  let end = 0, prev = 0;
+  const sections: ScoreSection[] = groups.map((g) => {
+    end += g.len;
+    const r = Math.round(end * 10) / 10, seconds = Math.round((r - prev) * 10) / 10;
+    prev = r;
+    const main = g.idx.reduce((m, i) => (lens[i] > lens[m] ? i : m), g.idx[0]);
+    return { label: `Shot ${String(shots[g.idx[0]].ord).padStart(2, "0")}`, seconds: Math.max(3, seconds), styles: moodOf(shots[main]).trim() };
+  });
+  return { sections, lens, joins, total: Math.round(sections.reduce((t, x) => t + x.seconds, 0) * 10) / 10 };
+}
 export type HeightCheck = { verdict: "OK" | "WRONG" | "UNSURE" | "NOT CHECKED"; problems: string[]; notes: string[] };
 // 2026-11-17: is everyone physically doing what was asked (sitting ON the seat, feet on the floor, hands holding)?
 export type StagingCheck = { verdict: "OK" | "WRONG" | "UNSURE" | "NOT CHECKED"; problems: string[]; notes?: string[] };

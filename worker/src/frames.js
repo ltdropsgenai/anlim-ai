@@ -402,7 +402,10 @@ async function stepComposing(j) {
   // the plate fits this still (otherwise from the edit, and the area is shown to the creator). Not for new_setup (its
   // base IS the plate) or plate jobs.
   const plates = [];
-  if (j.kind !== "plate" && j.mode !== "new_setup") plates.push(...await localPlates(j, platePaths));
+  // 2026-11-23 (review): an end frame with the cast (kind end, mode new_setup) builds on the approved start still, which
+  // has people in it, so it uses the room plates like any edit; only a START new setup sits on the empty plate itself.
+  const onPlate = j.kind === "start" && j.mode === "new_setup";
+  if (j.kind !== "plate" && !onPlate) plates.push(...await localPlates(j, platePaths));
   const res = await checker("/compose", { start: base, edited: raw, out_png: out, out: path.join(dir, "check"), plates, ...who(look, characters),
                                           // the shot's cast, when it names one (an empty cast_ids means "anyone in the series": no count)
                                           expect: j.kind === "plate" ? undefined : ((shot?.cast_ids || []).length || undefined),
@@ -413,9 +416,9 @@ async function stepComposing(j) {
   await db.settleFrame(j.id, "charge");
   const check = { verdict: res.verdict, drift: res.drift || [], align: res.align || null, why: res.why || null,
                   revealed: res.revealed || [], plate_used: !!res.plate_used };
-  // new_setup's base is the location's empty-room plate: it helps cut the characters out
+  // a start new_setup's base is the location's empty-room plate: it helps cut the characters out
   // start stills and (2026-11-16) end frames: the video keeps the sizes of both
-  if (j.kind === "start" || j.kind === "end") check.height = await heightCheck(j, characters, out, j.mode === "new_setup" ? base : null, look);
+  if (j.kind === "start" || j.kind === "end") check.height = await heightCheck(j, characters, out, onPlate ? base : null, look);
   // 2026-11-17: is anyone sitting on nothing, floating, or passing through furniture? (frame_check still_check, ~$0.01)
   if ((j.kind === "start" || j.kind === "end") && j.instruction) check.staging = await stagingCheck(j, characters, out, look);
   if (res.room_diff) check.room_diff = res.room_diff;

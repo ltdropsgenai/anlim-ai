@@ -241,8 +241,14 @@ async function stepRunning(g) {
     log(g, `first frame stored as the shot's start frame (${framePath})`);
   }
   const usd = shot.usd_per_second * shot.duration_s;
+  // 2026-11-23 (review): the clip's real length, so trims and the score's sections use it rather than the asked length
+  let clipS = null;
+  try {
+    const { stdout } = await run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", clip]);
+    const v = parseFloat(stdout); if (isFinite(v) && v > 0) clipS = Number(v.toFixed(3));
+  } catch { /* the length stays unknown; the shot's length is used instead */ }
   await db.unlock(g.id, { status: "checking", output_path: objectPath, preview_path: previewPath, provider_usd: usd,
-                          next_poll_at: null, tries: 0 });
+                          clip_s: clipS, next_poll_at: null, tries: 0 });
   log(g, `clip stored (${objectPath}${previewPath ? `; watermarked copy ${previewPath}` : ""}), provider $${usd.toFixed(3)}`);
 }
 

@@ -14,22 +14,34 @@ const VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
 const MAX_IMAGE_MB = 15, MAX_VIDEO_MB = 250;
 type Row = { name: string; id?: string; state: "uploading" | "done" | "failed"; note?: string; kind: "image" | "video"; seconds?: number };
 
+// A video's length in seconds. WebM recordings (MediaRecorder) often report Infinity until the browser has read to the
+// end; seeking far past the end makes it work the length out (review 2026-11-23). NaN if it still cannot be read.
 function videoSeconds(file: File): Promise<number> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file), v = document.createElement("video");
+    let settled = false;
+    const done = (x: number) => { if (settled) return; settled = true; URL.revokeObjectURL(url); resolve(x); };
     v.preload = "metadata";
-    v.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(v.duration); };
-    v.onerror = () => { URL.revokeObjectURL(url); reject(new Error("This video could not be read. Try an MP4 file.")); };
+    v.onloadedmetadata = () => {
+      if (isFinite(v.duration) && v.duration > 0) return done(v.duration);
+      v.ondurationchange = () => { if (isFinite(v.duration) && v.duration > 0) done(v.duration); };
+      v.currentTime = 1e7;
+      setTimeout(() => done(NaN), 8000);
+    };
+    v.onerror = () => { if (settled) return; settled = true; URL.revokeObjectURL(url); reject(new Error("This video could not be read. Try an MP4 file.")); };
     v.src = url;
   });
 }
+// five random base-36 characters (the upload id's second part must be 3 to 8 of them: studio-mcp UPLOAD_ID)
+const randomPart = () => Array.from(crypto.getRandomValues(new Uint8Array(5)), (b) => (b % 36).toString(36)).join("");
 
 export default function Upload() {
   const [owner, setOwner] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [drag, setDrag] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-  useEffect(() => { api.me().then((m) => setOwner(m.user_id)).catch(() => {}); }, []);
+  const [signInError, setSignInError] = useState<string | null>(null);
+  useEffect(() => { api.me().then((m) => setOwner(m.user_id)).catch((e) => setSignInError((e as Error).message || "Could not sign you in.")); }, []);
 
   const set = (i: number, r: Partial<Row>) => setRows((xs) => xs.map((x, k) => (k === i ? { ...x, ...r } : x)));
 
@@ -43,10 +55,11 @@ export default function Upload() {
         if (!video && !IMAGE_TYPES.includes(f.type)) throw new Error("Use a PNG, JPEG or WebP image, or an MP4, MOV or WebM video.");
         if (f.size > (video ? MAX_VIDEO_MB : MAX_IMAGE_MB) * 1024 * 1024) throw new Error(`Over ${video ? MAX_VIDEO_MB : MAX_IMAGE_MB} MB.`);
         const secs = video ? await videoSeconds(f) : null;
-        const id = `up-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+        const id = `up-${Date.now().toString(36)}-${randomPart()}`;
         const ext = f.type === "image/jpeg" ? "jpg" : f.type === "image/webp" ? "webp" : f.type === "image/png" ? "png"
           : f.type === "video/quicktime" ? "mov" : f.type === "video/webm" ? "webm" : "mp4";
-        const path = `${owner}/motion/${id}${secs ? `_d${Math.round(secs * 100)}` : ""}.${ext}`;
+        if (video && !(secs && isFinite(secs))) throw new Error("This video's length could not be read, so it cannot be used for motion transfer. Try an MP4 file.");
+        const path = `${owner}/motion/${id}${secs && isFinite(secs) ? `_d${Math.round(secs * 100)}` : ""}.${ext}`;
         const { error } = await supabase.storage.from("studio").upload(path, f, { contentType: f.type, upsert: false });
         if (error) throw new Error(error.message);
         set(i, { state: "done", id, seconds: secs ?? undefined });
@@ -77,7 +90,7 @@ export default function Upload() {
                    padding: 36, textAlign: "center", background: drag ? "rgba(255,138,61,0.06)" : c.card, color: c.sub, fontSize: 15 }}>
           <input type="file" multiple accept={[...IMAGE_TYPES, ...VIDEO_TYPES].join(",")} style={{ display: "none" }} disabled={!owner}
             onChange={(e) => { const fs = Array.from(e.target.files ?? []); e.target.value = ""; if (fs.length) send(fs); }} />
-          {owner ? "Drop files here, or click to choose" : "Signing you in…"}
+          {owner ? "Drop files here, or click to choose" : signInError ? `Not signed in: ${signInError} Sign in at anlim.ai, then open this page again.` : "Signing you in…"}
         </label>
         {rows.map((r, i) => (
           <View key={i} style={s.row}>

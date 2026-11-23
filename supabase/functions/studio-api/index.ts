@@ -182,6 +182,7 @@ async function handle(req: Request): Promise<Response> {
                  g.status as gen_status, g.id as gen_id, f.status as frame_status, f.kind as frame_kind,
                  sh.start_frame_path, sh.approved_generation_id is not null as has_approved_clip,
                  sh.trim_start_s, sh.trim_end_s, sh.speed,
+                 (select a.clip_s from studio.generations a where a.id = sh.approved_generation_id) as clip_s,
                  coalesce((select a.model_id from studio.generations a where a.id = sh.approved_generation_id), g.model_id) as gen_model
             from studio.shots sh join studio.scenes sc on sc.id = sh.scene_id join studio.series se on se.id = sc.series_id
             left join lateral (select id, status, model_id from studio.generations where shot_id = sh.id order by created_at desc limit 1) g on true
