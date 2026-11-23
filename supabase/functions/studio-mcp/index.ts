@@ -232,14 +232,25 @@ const TOOLS = [
       "Needs ElevenLabs connected in anlim (Account > Connections).",
     inputSchema: { type: "object", properties: { search: { type: "string", maxLength: 60 } }, additionalProperties: false },
     annotations: { readOnlyHint: true, openWorldHint: true } },
-  { name: "make_voiceover", title: "Make a shot's voiceover",
-    description: "Speaks a line over a shot with an ElevenLabs voice (eleven_v3: audio tags like [whispers], [sighs], [pause] set the " +
-      "delivery). It starts with the shot in the cut. Uses the creator's ElevenLabs credits, not anlim's. Follow it with list_audio.",
+  { name: "make_voiceover", title: "Make a voiceover or the scene's narration",
+    description: "Speaks text with an ElevenLabs voice (eleven_v3: audio tags like [whispers], [sighs], [pause] set the delivery). " +
+      "With shot_id it is that shot's line and starts with the shot in the cut. Without shot_id, give project_id: it is the " +
+      "narration of the project's latest scene, ONE take over the whole cut from at_s seconds (default 0); use that when one voice " +
+      "tells the story across shots (separate lines per shot sound like joins). Uses the creator's ElevenLabs credits, not anlim's. " +
+      "Follow it with list_audio.",
     inputSchema: { type: "object", properties: {
-      shot_id: { type: "string" }, text: { type: "string", minLength: 1, maxLength: 3000 },
+      shot_id: { type: "string", description: "For a shot's line" },
+      project_id: { type: "string", description: "For the scene's narration (no shot_id)" },
+      at_s: { type: "number", minimum: 0, maximum: 600, description: "Narration only: where it starts in the cut, seconds" },
+      text: { type: "string", minLength: 1, maxLength: 3000 },
       voice_id: { type: "string", description: "From list_voices" },
-    }, required: ["shot_id", "text", "voice_id"], additionalProperties: false },
+    }, required: ["text", "voice_id"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } },
+  { name: "set_narration_start", title: "Move the narration",
+    description: "Sets where the scene's narration (audio id from list_audio) starts in the cut, in seconds, without making it again.",
+    inputSchema: { type: "object", properties: { audio_id: { type: "string" }, at_s: { type: "number", minimum: 0, maximum: 600 } },
+      required: ["audio_id", "at_s"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
   { name: "make_sound_effect", title: "Make a shot's sound effect",
     description: "A sound effect for a shot (ElevenLabs), 0.5 to 30 s, starting with the shot. Creator's ElevenLabs credits.",
     inputSchema: { type: "object", properties: {
@@ -675,9 +686,18 @@ async function callTool(uid: string, name: string, a: Args) {
     case "make_voiceover":
     case "make_sound_effect": {
       const sid = String(a.shot_id || "");
-      if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
-      const [sh] = await asUser(uid, (tx) => tx`select scene_id from studio.shots where id = ${sid}`);
-      if (!sh) return text("Shot not found.", undefined, true);
+      // 2026-11-23: a voiceover without a shot is the scene's narration (one take over the whole cut, from at_s)
+      const narration = name === "make_voiceover" && !sid;
+      let sh: { scene_id: string } | undefined;
+      if (narration) {
+        const pid = String(a.project_id || "");
+        if (!UUID.test(pid)) return text("Give shot_id for a shot's line, or project_id for the scene's narration.", undefined, true);
+        sh = { scene_id: await latestScene(uid, pid) };
+      } else {
+        if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
+        [sh] = await asUser(uid, (tx) => tx`select scene_id from studio.shots where id = ${sid}`);
+        if (!sh) return text("Shot not found.", undefined, true);
+      }
       const gate = await audioGate(uid, name);
       if (gate) return gate;
       const vo = name === "make_voiceover";
@@ -689,10 +709,11 @@ async function callTool(uid: string, name: string, a: Args) {
           if (r.ok) voiceName = String((await r.json())?.name || "").slice(0, 80);
         }
       }
-      const input = vo ? { text: String(a.text || ""), voice_id: String(a.voice_id || ""), voice_name: voiceName }
+      const input = vo ? { text: String(a.text || ""), voice_id: String(a.voice_id || ""), voice_name: voiceName,
+                           ...(narration ? { at_s: a.at_s == null ? 0 : Number(a.at_s) } : {}) }
                        : { text: String(a.text || ""), duration_s: a.seconds == null ? null : Number(a.seconds) };
-      const [r] = await asUser(uid, (tx) => tx`select studio.request_audio(${sh.scene_id}, ${sid}, ${vo ? "voiceover" : "sfx"}, ${tx.json(input)}) as id`);
-      return text(`The ${vo ? "voiceover" : "sound effect"} is being made (usually under a minute) on your ElevenLabs credits. ` +
+      const [r] = await asUser(uid, (tx) => tx`select studio.request_audio(${sh!.scene_id}, ${narration ? null : sid}, ${vo ? "voiceover" : "sfx"}, ${tx.json(input)}) as id`);
+      return text(`The ${narration ? "narration" : vo ? "voiceover" : "sound effect"} is being made (usually under a minute) on your ElevenLabs credits. ` +
         `audio_id ${r.id}. Check it with list_audio; the newest finished take goes in the cut.`, { audio_id: r.id });
     }
     case "make_score": {
@@ -725,11 +746,19 @@ async function callTool(uid: string, name: string, a: Args) {
                                                        sh.ord as shot_ord from studio.audio_jobs a left join studio.shots sh on sh.id = a.shot_id
                                                  where a.scene_id = ${scene} order by a.created_at desc limit 30`);
       if (!rows.length) return text("No sound yet: make_voiceover, make_sound_effect or make_score.");
-      const items = await Promise.all(rows.map(async (x: any) => ({ id: x.id, kind: x.kind, shot: x.shot_ord ?? null, status: x.status,
+      const items = await Promise.all(rows.map(async (x: any) => ({ id: x.id,
+        kind: x.kind === "voiceover" && x.shot_ord == null ? `narration from ${Number(x.input?.at_s ?? 0)} s` : x.kind,
+        shot: x.shot_ord ?? null, status: x.status,
         in_cut: x.in_cut, seconds: x.duration_s == null ? null : Number(x.duration_s), error: x.error,
         text: String(x.input?.text ?? "").slice(0, 80), url: x.status === "done" ? await sign(x.output_path) : null })));
       return text(items.map((x) => `${x.kind}${x.shot ? ` shot ${x.shot}` : ""} [${x.id}] ${x.status}${x.seconds ? ` ${x.seconds.toFixed(1)} s` : ""}` +
         `${x.in_cut ? " (in the cut)" : ""}${x.error ? `: ${x.error}` : ""}${x.url ? `: ${x.url}` : ""}`).join("\n"), { audio: items });
+    }
+    case "set_narration_start": {
+      const id = String(a.audio_id || "");
+      if (!UUID.test(id)) return text("audio_id must be an id from list_audio.", undefined, true);
+      await asUser(uid, (tx) => tx`select studio.set_narration_start(${id}, ${Number(a.at_s)})`);
+      return text(`The narration now starts at ${Number(a.at_s)} s in the cut. Make the cut again to hear it.`);
     }
     case "use_audio": {
       const id = String(a.audio_id || "");
@@ -981,14 +1010,14 @@ async function rpc(uid: string, m: Rpc) {
       const want = String(m.params?.protocolVersion || "");
       return ok(m.id, { protocolVersion: PROTOCOLS.includes(want) ? want : PROTOCOLS[1],
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "anlim", title: "anlim.ai", version: "2.6.0" },
+        serverInfo: { name: "anlim", title: "anlim.ai", version: "2.7.0" },
         instructions: "anlim makes images and short video clips and keeps them in the creator's projects. Quick: create (an image or a " +
           "clip from words) then get_creation. Step by step, for a real person, a set or several shots: new_project (or list_projects), " +
           "get_upload_link so the creator uploads photos, add_character with an upload, add_location for the background, add_shot, " +
           "(update_character, update_shot, move_shot to change them), make_end_image when someone must appear or end somewhere exact, " +
           "make_start_image (new_setup places the characters), get_creation to look, animate, review_clip (keep), then make_cut and " +
-          "get_cut (trim_clip to shorten a clip, set_clip_speed to slow it, set_words to draw words over it, in the cut; make_voiceover, make_sound_effect and " +
-          "make_score add sound on the creator's ElevenLabs account). Steps that spend credits need a paid account. Clips take minutes: tell the creator and check again rather than " +
+          "get_cut (trim_clip to shorten a clip, set_clip_speed to slow it, set_words to draw words over it, in the cut; make_voiceover (a shot's line, or without a shot the scene's narration over the whole cut), " +
+          "make_sound_effect and make_score add sound on the creator's ElevenLabs account). Steps that spend credits need a paid account. Clips take minutes: tell the creator and check again rather than " +
           "starting the same thing twice." });
     }
     case "ping": return ok(m.id, {});

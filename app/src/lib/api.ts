@@ -30,7 +30,11 @@ export type ShotRow = {
   thumb_url: string | null; has_approved_clip: boolean; gen_model: string | null;   // 2026-11-19 board
   trim_start_s?: number | string; trim_end_s?: number | string; speed?: number | string;   // 2026-11-22: the cut's trims and speed
   clip_s?: number | string | null;   // 2026-11-23: the kept clip's real length (null for clips made before)
+  words?: ShotWord[] | null;          // 2026-11-23: words drawn over the shot in the cut
 };
+// A word drawn over a shot in the cut (studio.set_shot_words): it appears at at_s seconds into the shot as it plays in the
+// cut (after trims and speed), at x,y (fractions of the frame, from the top left), falls and fades over dur_s seconds.
+export type ShotWord = { text: string; at_s: number; x: number; y: number; dur_s: number };
 // A shot's length in the scene cut, exactly as the worker's assemble.js makes it (2026-11-23, review): the clip's real
 // length (or the shot's asked length), trims in whole frames with at least 1 s of the clip kept, then the speed.
 const FPS = 24;
@@ -197,7 +201,8 @@ export type Voice = { id: string; name: string; category: string | null; gender:
 export type AudioKind = "voiceover" | "sfx" | "music";
 export type AudioJob = { id: string; shot_id: string | null; kind: AudioKind; status: "queued" | "running" | "done" | "failed"; in_cut: boolean;
   duration_s: string | null; error: string | null; created_at: string; url: string | null;
-  input: { text: string; voice_id?: string; voice_name?: string; duration_s?: number | null; length_s?: number; instrumental?: boolean } };
+  input: { text: string; voice_id?: string; voice_name?: string; duration_s?: number | null; length_s?: number; instrumental?: boolean;
+           at_s?: number } };   // at_s: where the scene's narration (a voiceover with no shot) starts in the cut
 
 export const END_FRAME_CREDITS = 20;   // studio.request_end_frame: Nano Banana 2 edit, $0.08 at the house margin
 export const FRAME_CREDITS = 20;       // start still (reposition / new setup) and plate: one Nano Banana 2 edit; "continue" is free
@@ -272,6 +277,9 @@ export const api = {
   decide: (id: string, decision: "approve" | "reject", reasons: string[], note: string, atS: number | null = null) =>
     call<{ ok: boolean }>({ op: "decide", generation_id: id, decision, reasons, note, at_s: atS }),
   shots: () => call<{ items: ShotRow[] }>({ op: "shots" }).then((r) => r.items),
+  // how a kept shot plays in the scene cut: only the fields given change (2026-11-23)
+  shotCutEdit: (id: string, patch: { speed?: number; trim_start_s?: number; trim_end_s?: number; words?: ShotWord[] }) =>
+    call<{ ok: boolean }>({ op: "shot_cut_edit", shot_id: id, ...patch }),
   shot: (id: string) => call<Shot>({ op: "shot", shot_id: id }),
   requestEndFrame: (id: string, instruction: string) => call<{ job_id: string }>({ op: "end_frame", shot_id: id, instruction }),
   decideEndFrame: (job: string, decision: "approve" | "discard") => call<{ ok: boolean }>({ op: "end_frame_decide", job_id: job, decision }),
@@ -330,8 +338,10 @@ export const api = {
   disconnect: () => call<{ ok: true }>({ op: "connection_remove" }),
   voices: (search?: string) => call<{ items: Voice[] }>({ op: "voices", search: search ?? null }).then((r) => r.items),
   makeAudio: (a: { scene_id: string; shot_id?: string | null; kind: AudioKind; text: string; voice_id?: string; voice_name?: string;
-                   duration_s?: number | null; length_s?: number; instrumental?: boolean; styles?: string; sections?: ScoreSection[] }) =>
+                   duration_s?: number | null; length_s?: number; instrumental?: boolean; styles?: string; sections?: ScoreSection[];
+                   at_s?: number }) =>
     call<{ id: string }>({ op: "audio_create", ...a }),
+  narrationStart: (id: string, atS: number) => call<{ ok: true }>({ op: "narration_start", id, at_s: atS }),
   audio: (sceneId: string) => call<{ items: AudioJob[] }>({ op: "audio_list", scene_id: sceneId }).then((r) => r.items),
   useAudio: (id: string, on: boolean) => call<{ ok: true }>({ op: "audio_use", id, on }),
   makeCut: (sceneId: string, format: CutFormat, opts: { fade: boolean; end_card: boolean; music_path: string | null; voice?: boolean; sfx?: boolean }) =>

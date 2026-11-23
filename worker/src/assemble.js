@@ -211,12 +211,20 @@ async function stem(src, dest, target, maxS) {
   await ff([...SAFE_AUDIO_IN, "-i", src, "-af", af.join(","), "-c:a", "pcm_s16le", dest]);
 }
 
-// The cut's sound: the music bed plus each shot's voiceover and sound effect, placed where the shot starts.
+// The cut's sound: the music bed plus each shot's voiceover and sound effect, placed where the shot starts, and the
+// scene's narration from its start time.
 async function mix(dir, a, opts, starts, lens, total, notes) {
   const vo = opts.voice !== false ? a.items.map((it, i) => it.vo ? { i, path: it.vo } : null).filter(Boolean) : [];
   const fx = opts.sfx !== false ? a.items.map((it, i) => it.sfx ? { i, path: it.sfx } : null).filter(Boolean) : [];
-  if (!vo.length && !fx.length) return { ...(await soundtrack(dir, opts.music_path, total, notes)), voiceovers: 0, effects: 0 };
-  const bedTarget = vo.length ? -27 : -20;                       // under speech, or under effects only
+  // 2026-11-23: the scene's narration, one take over the whole cut from its start time (options.narration, set by
+  // studio.request_assembly from the voiceover with no shot); off with the other voiceovers when "voice" is off
+  let nar = opts.voice !== false && opts.narration?.path ? { path: opts.narration.path, at: Math.max(0, Number(opts.narration.at_s) || 0) } : null;
+  if (nar && nar.at >= total - 0.05) {
+    notes.push(`The narration starts at ${nar.at.toFixed(1)} s, after the end of the video (${total.toFixed(1)} s): it is not heard.`);
+    nar = null;
+  }
+  if (!vo.length && !fx.length && !nar) return { ...(await soundtrack(dir, opts.music_path, total, notes)), voiceovers: 0, effects: 0 };
+  const bedTarget = vo.length || nar ? -27 : -20;                // under speech, or under effects only
   const bed = await soundtrack(dir, opts.music_path, total, notes, bedTarget, "bed_level.wav");
   const inputs = [bed.out], filters = [];
   const LEAD = 0.15;                                             // speech starts just after the cut, not on it
@@ -235,7 +243,18 @@ async function mix(dir, a, opts, starts, lens, total, notes) {
                  (overlap ? `, and runs into shot ${a.items[next.i].ord}'s voiceover. Shorten one of them.` : "."));
     }
     if (at + len > total + 0.05) notes.push(`Shot ${ord}'s voiceover is cut off at the end of the video.`);
+    v.span = [at, at + len];
     inputs.push(dest); filters.push(`[${inputs.length - 1}:a]adelay=${Math.round(at * 1000)}:all=1[s${inputs.length - 1}]`);
+  }
+  if (nar) {
+    const src = path.join(dir, `narration${path.extname(nar.path) || ".mp3"}`), dest = path.join(dir, "narration.wav");
+    await storage.download(nar.path, src);
+    await stem(src, dest, -16, null);
+    const len = await audioDur(dest), end = nar.at + len;
+    if (end > total + 0.05) notes.push(`The narration (${len.toFixed(1)} s from ${nar.at.toFixed(1)} s) runs ${(end - total).toFixed(1)} s past the end of the video and is cut off. Start it earlier, slow shots down, or shorten it.`);
+    const clash = vo.filter((v) => v.span && v.span[0] < end && v.span[1] > nar.at).map((v) => a.items[v.i].ord);
+    if (clash.length) notes.push(`The narration plays over shot ${clash.join(", ")}'s own voiceover: both are heard at once. Leave one out.`);
+    inputs.push(dest); filters.push(`[${inputs.length - 1}:a]adelay=${Math.round(nar.at * 1000)}:all=1[s${inputs.length - 1}]`);
   }
   for (const [k, v] of fx.entries()) {
     const src = path.join(dir, `fx_${k}${path.extname(v.path) || ".mp3"}`), dest = path.join(dir, `fx_${k}.wav`);
@@ -252,7 +271,7 @@ async function mix(dir, a, opts, starts, lens, total, notes) {
   const { I, tp } = await measure(summed);
   const out = path.join(dir, "audio.wav");
   const lv = await levelTo(summed, out, I, tp, LUFS, [`atrim=0:${total.toFixed(3)}`]);
-  return { out, lufs: I, ...lv, voiceovers: vo.length, effects: fx.length, music_lufs_before: bed.lufs };
+  return { out, lufs: I, ...lv, voiceovers: vo.length, narration: !!nar, effects: fx.length, music_lufs_before: bed.lufs };
 }
 
 async function checks(file, format, expectFrames, quiet, hasMusic) {
@@ -336,10 +355,10 @@ async function build(a) {
   const final = path.join(dir, "cut.mp4");
   await ff(["-i", picture, "-i", audio, "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
             "-t", total.toFixed(3), "-movflags", "+faststart", final]);
-  const hasSound = !!opts.music_path || sound.voiceovers > 0 || sound.effects > 0;
+  const hasSound = !!opts.music_path || sound.voiceovers > 0 || !!sound.narration || sound.effects > 0;
   const report = { checks: await checks(final, a.format, frames, quiet, hasSound), notes,
                    shots: a.items.length, music_lufs_before: sound.music_lufs_before ?? sound.lufs, music_gain_db: sound.gain_db ?? null,
-                   music_limiter: sound.limiter ?? false, voiceovers: sound.voiceovers, effects: sound.effects,
+                   music_limiter: sound.limiter ?? false, voiceovers: sound.voiceovers, narration: !!sound.narration, effects: sound.effects,
                    music: !opts.music_path ? null : /\/audio\/music\//.test(opts.music_path) ? "score" : "track", fps: FPS, size: SIZES[a.format] };
   return { final, total, report, dir };
 }

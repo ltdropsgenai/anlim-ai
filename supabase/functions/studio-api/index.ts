@@ -181,7 +181,7 @@ async function handle(req: Request): Promise<Response> {
                  sc.id as scene_id, sc.title as scene_title, sc.ord as scene_ord, se.id as series_id, se.name as series_name,
                  g.status as gen_status, g.id as gen_id, f.status as frame_status, f.kind as frame_kind,
                  sh.start_frame_path, sh.approved_generation_id is not null as has_approved_clip,
-                 sh.trim_start_s, sh.trim_end_s, sh.speed,
+                 sh.trim_start_s, sh.trim_end_s, sh.speed, sh.words,
                  (select a.clip_s from studio.generations a where a.id = sh.approved_generation_id) as clip_s,
                  coalesce((select a.model_id from studio.generations a where a.id = sh.approved_generation_id), g.model_id) as gen_model
             from studio.shots sh join studio.scenes sc on sc.id = sh.scene_id join studio.series se on se.id = sc.series_id
@@ -387,6 +387,19 @@ async function handle(req: Request): Promise<Response> {
       case "shot_update": {
         await asUser(uid, (tx) => tx`select studio.update_shot(${String(body.shot_id || "")}, ${String(body.action || "")},
           ${body.camera == null ? null : String(body.camera)}, ${Number(body.duration_s || 5)}::int)`);
+        return json({ ok: true });
+      }
+      case "shot_cut_edit": {
+        // How a kept shot plays in the scene cut (2026-11-23): speed, trims and the words drawn over it. Only the fields
+        // sent change; each goes through its studio function, which checks the owner and the limits.
+        const id = String(body.shot_id || "");
+        await asUser(uid, async (tx) => {
+          if (body.speed !== undefined) await tx`select studio.set_shot_speed(${id}, ${Number(body.speed)})`;
+          if (body.trim_start_s !== undefined || body.trim_end_s !== undefined)
+            await tx`select studio.set_shot_trim(${id}, ${Number(body.trim_start_s || 0)}, ${Number(body.trim_end_s || 0)})`;
+          if (body.words !== undefined)   // studio.set_shot_words refuses anything that is not a list, with a message for the creator
+            await tx`select studio.set_shot_words(${id}, ${JSON.stringify(body.words)}::jsonb)`;
+        });
         return json({ ok: true });
       }
       case "shot_start_frame": {
@@ -687,7 +700,8 @@ async function handle(req: Request): Promise<Response> {
         // 2026-11-22: a score may carry its style and sections (one per shot), checked by studio.request_audio
         const input = { text: body.text ?? null, voice_id: body.voice_id ?? null, voice_name: body.voice_name ?? null,
                         duration_s: body.duration_s ?? null, length_s: body.length_s ?? null, instrumental: body.instrumental ?? null,
-                        styles: body.styles ?? null, sections: Array.isArray(body.sections) ? body.sections.slice(0, 30) : null };
+                        styles: body.styles ?? null, sections: Array.isArray(body.sections) ? body.sections.slice(0, 30) : null,
+                        at_s: body.at_s ?? null };   // 2026-11-23: a voiceover with no shot is the scene's narration, from at_s
         const [r] = await asUser(uid, (tx) => tx`select studio.request_audio(${String(body.scene_id || "")}, ${body.shot_id ? String(body.shot_id) : null},
           ${String(body.kind || "")}, ${tx.json(input)}) as id`);
         return json({ ok: true, id: r.id });
@@ -697,6 +711,10 @@ async function handle(req: Request): Promise<Response> {
           select id, shot_id, kind, input, status, in_cut, duration_s, error, output_path, created_at from studio.audio_jobs
            where scene_id = ${String(body.scene_id || "")} order by created_at desc limit 200`);
         return json({ items: await Promise.all(rows.map(async ({ output_path, ...a }) => ({ ...a, url: await sign(output_path) }))) });
+      }
+      case "narration_start": {
+        await asUser(uid, (tx) => tx`select studio.set_narration_start(${String(body.id || "")}, ${Number(body.at_s)})`);
+        return json({ ok: true });
       }
       case "audio_use": {
         await asUser(uid, (tx) => tx`select studio.use_audio(${String(body.id || "")}, ${!!body.on})`);

@@ -8,6 +8,7 @@ import { c, font, pageBg } from "../../lib/theme";
 import { Music, SoundPanel } from "../../components/SoundPanel";
 import { downloadFile } from "../../lib/download";
 import { ClipPlayer } from "../../components/ClipPlayer";
+import { CutShots } from "../../components/CutShots";
 
 const FORMATS: { id: CutFormat; title: string; sub: string }[] = [
   { id: "16x9", title: "Landscape 16:9", sub: "1920 × 1080 · YouTube, websites" },
@@ -35,6 +36,8 @@ export default function SceneCut() {
   const [sfxOn, setSfxOn] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aspect, setAspect] = useState("16:9");
+  const [shotsVersion, setShotsVersion] = useState(0);   // bumps when a shot's speed, trims or words change
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const picked = useRef(false);    // the project's shape is the starting format, once; then the creator's choice stands
 
@@ -45,7 +48,7 @@ export default function SceneCut() {
       for (const se of series) {
         const sc = se.scenes.find((x) => x.id === scene);
         if (sc) {
-          setTitle(`${se.name} · ${sc.title}`);
+          setTitle(`${se.name} · ${sc.title}`); setAspect(se.aspect ?? "16:9");
           if (!picked.current) { picked.current = true; setFormat(((se.aspect ?? "16:9").replace(":", "x")) as CutFormat); }
         }
       }
@@ -95,7 +98,11 @@ export default function SceneCut() {
           </Pressable>
         </View>
 
-        {owner && <SoundPanel sceneId={scene} owner={owner} endCard={card} music={music} setMusic={setMusic}
+        <Text style={[s.h, font.display]}>Shots in the cut</Text>
+        <Text style={s.sub}>Speed, trims and words drawn over each kept shot. Save a shot, then make the cut.</Text>
+        <CutShots sceneId={scene} aspect={aspect} onChanged={() => setShotsVersion((v) => v + 1)} />
+
+        {owner && <SoundPanel refresh={shotsVersion} sceneId={scene} owner={owner} endCard={card} music={music} setMusic={setMusic}
           voiceOn={voiceOn} setVoiceOn={setVoiceOn} sfxOn={sfxOn} setSfxOn={setSfxOn} />}
         <Text style={s.sub}>
           The sound is set to −14 LUFS, the loudness YouTube, Instagram and TikTok play at, at one steady level (no pumping).

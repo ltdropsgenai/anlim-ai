@@ -63,6 +63,64 @@ function Takes({ jobs, shotS, onUse, label }: { jobs: AudioJob[]; shotS?: number
   );
 }
 
+// The scene's narration (2026-11-23): one take over the whole cut from a start time, instead of a line on one shot that
+// spills into the next (the 2027 promo needed this). Same voice and credits as the shot lines; the cut places it at its
+// start time and says so when it runs past the end or over a shot's own line.
+function Narration({ sceneId, voice, jobs, connected, cutLen, onMade, onUse, setError }: {
+  sceneId: string; voice: Voice | null; jobs: AudioJob[]; connected: boolean; cutLen: number;
+  onMade: () => void; onUse: (j: AudioJob, on: boolean) => void; setError: (e: string | null) => void }) {
+  const used = jobs.find((j) => j.in_cut && j.status === "done");
+  const [line, setLine] = useState(jobs[0]?.input.text ?? "");
+  const [at, setAt] = useState(String(used?.input.at_s ?? jobs[0]?.input.at_s ?? 0));
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (used) setAt(String(used.input.at_s ?? 0)); }, [used?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const atN = Number(at), atOk = at.trim() !== "" && isFinite(atN) && atN >= 0 && atN <= 600;
+  const making = jobs.some((j) => BUSY.includes(j.status));
+  async function make() {
+    setBusy(true); setError(null);
+    try { await api.makeAudio({ scene_id: sceneId, shot_id: null, kind: "voiceover", text: line, voice_id: voice!.id, voice_name: voice!.name, at_s: atN }); onMade(); }
+    catch (e) { setError((e as Error).message); }
+    setBusy(false);
+  }
+  async function move() {
+    setBusy(true); setError(null);
+    try { await api.narrationStart(used!.id, atN); onMade(); } catch (e) { setError((e as Error).message); }
+    setBusy(false);
+  }
+  const len = Number(used?.duration_s) || 0, start = Number(used?.input.at_s ?? 0);
+  return (
+    <View style={s.shot}>
+      <Text style={[s.small, font.mono, { color: c.sub }]}>WHOLE SCENE · NARRATION</Text>
+      <Text style={s.small}>One take over the whole cut, starting where you set it. Use it when one voice tells the story across shots;
+        a line on a single shot (below) belongs to that shot.</Text>
+      <TextInput value={line} onChangeText={setLine} multiline editable={connected} placeholderTextColor={c.muted} style={s.input}
+        placeholder="The narration, start to finish. Tags like [softly], [pause] or [sighs] set the delivery." />
+      <View style={s.row}>
+        <Text style={s.small}>Starts at</Text>
+        <TextInput value={at} onChangeText={setAt} editable={connected} keyboardType="decimal-pad" style={[s.input, { width: 64, minHeight: 0 }]}
+          accessibilityLabel="Narration start, seconds into the cut" />
+        <Text style={s.small}>s into the cut</Text>
+        <Pressable style={[s.btnSm, (!connected || !voice || !line.trim() || !atOk || busy || making) && { opacity: 0.5 }]}
+          disabled={!connected || !voice || !line.trim() || !atOk || busy || making} onPress={make} accessibilityRole="button">
+          <Text style={s.btnText}>{busy ? "Sending…" : jobs.length ? "Make it again" : "Make the narration"}</Text>
+        </Pressable>
+        {used && atOk && atN !== start && (
+          <Pressable style={[s.btnSm, busy && { opacity: 0.5 }]} disabled={busy} onPress={move} accessibilityRole="button">
+            <Text style={s.btnText}>Move it to {atN} s</Text>
+          </Pressable>
+        )}
+        {connected && !voice && <Text style={s.small}>Pick a voice above first.</Text>}
+      </View>
+      {!atOk && <Text style={{ color: c.fail, fontSize: 13 }}>The start is 0 to 600 seconds.</Text>}
+      <Takes jobs={jobs} onUse={onUse} label="narration" />
+      {used && cutLen > 1 && start + len > cutLen - 1 + 0.1 && (
+        <Text style={[s.small, { color: c.flag }]}>
+          From {start} s it runs to {(start + len).toFixed(1)} s, past the cut's {(cutLen - 1).toFixed(1)} s: the end is cut off. Start it earlier or slow shots down.
+        </Text>)}
+    </View>
+  );
+}
+
 function ShotSound({ r, sceneId, voice, jobs, connected, onMade, onUse, setError }: {
   r: ShotRow; sceneId: string; voice: Voice | null; jobs: AudioJob[]; connected: boolean;
   onMade: () => void; onUse: (j: AudioJob, on: boolean) => void; setError: (e: string | null) => void }) {
@@ -115,8 +173,8 @@ function ShotSound({ r, sceneId, voice, jobs, connected, onMade, onUse, setError
   );
 }
 
-export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, setVoiceOn, sfxOn, setSfxOn }: {
-  sceneId: string; owner: string; endCard: boolean; music: Music; setMusic: (m: Music) => void;
+export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, setVoiceOn, sfxOn, setSfxOn, refresh = 0 }: {
+  sceneId: string; owner: string; endCard: boolean; music: Music; setMusic: (m: Music) => void; refresh?: number;
   voiceOn: boolean; setVoiceOn: (v: boolean) => void; sfxOn: boolean; setSfxOn: (v: boolean) => void }) {
   const [conn, setConn] = useState<Connection | null | undefined>(undefined);
   const [jobs, setJobs] = useState<AudioJob[]>([]);
@@ -139,7 +197,7 @@ export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, 
       setConn(cs.find((x) => x.provider === "elevenlabs") ?? null); setJobs(js);
       setShots(sh.filter((x) => x.scene_id === sceneId && x.has_approved_clip));
     } catch (e) { setError((e as Error).message); }
-  }, [sceneId]);
+  }, [sceneId, refresh]);   // refresh: a shot's speed or trims changed on the cut screen, so the score's sections change
   useEffect(() => { load(); }, [load]);
   const working = jobs.some((j) => BUSY.includes(j.status));
   useEffect(() => { if (!working) return; const t = setInterval(load, 4000); return () => clearInterval(t); }, [working, load]);
@@ -261,7 +319,7 @@ export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, 
 
       <Text style={[s.h, font.display]}>Voiceover and sound effects</Text>
       {!connected ? <ConnectNote conn={conn} /> : (<>
-        <Text style={s.sub}>Each shot's line and effect start with the shot. Speech sits above the music at one steady level; the music does not dip.</Text>
+        <Text style={s.sub}>A narration runs over the whole scene from its start time; each shot's line and effect start with the shot. Speech sits above the music at one steady level; the music does not dip.</Text>
         <Text style={s.label}>Voice</Text>
         <TextInput value={vq} onChangeText={setVq} placeholder="Search your ElevenLabs voices" placeholderTextColor={c.muted} style={[s.input, { minHeight: 0 }]} />
         {!voices && <ActivityIndicator style={{ alignSelf: "flex-start" }} />}
@@ -274,6 +332,8 @@ export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, 
         </View>
         {voice?.preview_url && <View style={{ marginTop: 6 }}><Text style={s.small}>Preview of {voice.name}</Text><AudioPlayer src={voice.preview_url} /></View>}
         {shots.length === 0 && <Text style={s.sub}>Keep at least one clip in this scene first.</Text>}
+        {shots.length > 0 && <Narration sceneId={sceneId} voice={voice} connected={connected} setError={setError} cutLen={cutSeconds}
+          jobs={jobs.filter((j) => j.kind === "voiceover" && !j.shot_id)} onMade={load} onUse={use} />}
         {shots.map((r) => (
           <ShotSound key={r.id} r={r} sceneId={sceneId} voice={voice} connected={connected} setError={setError}
             jobs={jobs.filter((j) => j.shot_id === r.id)} onMade={load} onUse={use} />
