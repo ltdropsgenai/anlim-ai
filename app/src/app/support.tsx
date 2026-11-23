@@ -15,7 +15,7 @@ export default function Support() {
         <H>How do I cancel my plan?</H>
         <P>Credits & plan › Manage plan. Cancelling stops the next renewal; you keep your credits until then.</P>
         <H>How do I delete my account?</H>
-        <P>Account › Delete account. It removes everything and cannot be undone, so download what you want to keep first.</P>
+        <P>Account › Delete my account…. It removes everything and cannot be undone, so download what you want to keep first.</P>
         <H>Use anlim from Claude, ChatGPT or another AI tool</H>
         <P>anlim works as a connector (an MCP server), so you can ask your AI assistant to make an image or a clip, check on it, list your projects or see your credits. Making images and clips from chat needs a paid account and uses your credits, as in the app (at most 5 every 10 minutes). The address is https://mcp.anlim.ai/mcp.</P>
         <Li>Claude: Customize › Connectors › + Add › Add custom connector. Name it anlim, paste the address, Add, then Connect and sign in to anlim.</Li>
