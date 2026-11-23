@@ -4,7 +4,7 @@
 // Transport: MCP Streamable HTTP, stateless, JSON responses (no SSE stream). Served at https://mcp.anlim.ai/mcp
 // (a Vercel rewrite on anlim-web to this function).
 // Auth: OAuth 2.1 through Supabase Auth's OAuth server (dynamic client registration). Every call needs the creator's
-// access token; without one the answer is 401 with a pointer to the protected-resource metadata, which names
+// access token issued to an OAuth client (an app session token is refused, 2026-11-23); without one the answer is 401 with a pointer to the protected-resource metadata, which names
 // Supabase Auth as the authorization server (claude.com/docs/connectors/building/authentication).
 // What a call can do is what the creator can do in the app: every query runs as the creator (RLS), and "create"
 // goes through studio.quick_create with its own balance checks. Decisions (Londi, 2026-11-21): only paid accounts may
@@ -1012,6 +1012,23 @@ async function rpc(uid: string, m: Rpc) {
   }
 }
 
+function claims(token: string): Record<string, unknown> {
+  try {
+    const p = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(atob(p + "=".repeat((4 - p.length % 4) % 4)));
+  } catch { return {}; }
+}
+async function isOAuthToken(token: string, uid: string) {
+  const c = claims(token);
+  if (c.sub !== uid) return false;
+  if (typeof c.client_id === "string" && c.client_id) return true;
+  if (typeof c.session_id !== "string" || !/^[0-9a-f-]{36}$/i.test(c.session_id)) return false;
+  try {
+    const [s] = await sql`select oauth_client_id from auth.sessions where id = ${c.session_id}::uuid and user_id = ${uid}::uuid`;
+    return !!s?.oauth_client_id;
+  } catch (e) { console.error("oauth session check:", (e as Error).message); return false; }
+}
+
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
@@ -1027,6 +1044,14 @@ Deno.serve(async (req) => {
   if (!token) return json({ error: "sign in to anlim first" }, 401, { "WWW-Authenticate": challenge() });
   const { data: who, error } = await admin.auth.getUser(token);
   if (error || !who?.user) return json({ error: "invalid or expired token" }, 401, { "WWW-Authenticate": challenge("invalid_token") });
+  // Audience (2026-11-23 backlog, from the 2026-11-23 review): only a token issued to an AI tool through the OAuth
+  // flow, which the creator approved on anlim.ai/oauth/consent, may use this server. An ordinary anlim app session
+  // token (copied from a browser, or leaked) is refused. Supabase puts the OAuth client in the token's client_id claim
+  // (supabase.com/docs/guides/auth/oauth-server/token-security); the session row's oauth_client_id is the fallback
+  // check. getUser above has already verified the token's signature and expiry, so reading its claims is safe.
+  if (!await isOAuthToken(token, who.user.id))
+    return json({ error: "this token is for the anlim app, not for AI tools: add anlim as a connector in your AI tool and sign in there" },
+                401, { "WWW-Authenticate": challenge("invalid_token") });
 
   let m: Rpc;
   try { m = await req.json(); } catch { return json(err(null, -32700, "Parse error"), 400); }

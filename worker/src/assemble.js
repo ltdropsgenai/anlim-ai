@@ -135,6 +135,33 @@ async function endCard(dest, format) {
   return frames;
 }
 
+// One fixed gain to the target, a brickwall limiter only for peaks that would pass -1.5 dBTP, then measured again: when
+// the limiter has taken loudness away (a peaky mix of speech and a building score came out at -15.2 LUFS on the
+// 2026-11-23 promo), the same single gain is raised by the shortfall and the pass redone. When a dB of gain buys less
+// than 0.3 LU the limiter is doing nearly all the work, and more gain would only crush the peaks: it stops there and
+// the mix stays a little quiet. Extra gain is capped at 3 dB, at most 4 passes. Still one gain for the whole file and
+// no level-riding (the pulsing in Drive Safe came from that).
+async function levelTo(src, out, I, tp, target, tail) {
+  const limit = Math.pow(10, TP / 20), base = target - I, MAX_EXTRA = 3;
+  let gain = base, applied = base, used = false, got = null, prev = null;
+  for (let pass = 0; pass < 4; pass++) {
+    const lim = tp + gain > TP;
+    const chain = [`volume=${gain.toFixed(2)}dB`];
+    if (lim) chain.push(`alimiter=limit=${limit.toFixed(4)}:attack=5:release=50:level=disabled`);
+    chain.push("aresample=48000", "aformat=sample_fmts=s16:channel_layouts=stereo", ...tail);
+    await ff(["-i", src, "-af", chain.join(","), "-c:a", "pcm_s16le", out]);
+    used = used || lim; applied = gain;
+    got = (await measure(out)).I;
+    if (pass === 3 || !lim || !isFinite(got) || Math.abs(target - got) <= 0.3 || gain >= base + MAX_EXTRA) break;
+    // LU gained per dB, from the last two passes (assumed 1 before there are two)
+    const slope = prev ? Math.min(1, (got - prev.got) / Math.max(0.01, gain - prev.gain)) : 1;
+    if (slope < 0.3) break;
+    prev = { gain, got };
+    gain = Math.min(base + MAX_EXTRA, gain + (target - got) / slope);
+  }
+  return { gain_db: Number(applied.toFixed(2)), limiter: used, lufs_out: isFinite(got) ? Number(got.toFixed(1)) : null };
+}
+
 // The soundtrack: the creator's music at one constant level, normalised to -14 LUFS; silence when there is none
 // (platforms expect a sound track).
 async function soundtrack(dir, musicPath, total, notes, target = LUFS, name = "audio.wav") {
@@ -165,12 +192,8 @@ async function soundtrack(dir, musicPath, total, notes, target = LUFS, name = "a
     await ff(["-i", bed, "-c:a", "pcm_s16le", out]);
     return { out, lufs: null };
   }
-  const gain = target - I, limit = Math.pow(10, TP / 20);
-  const chain = [`volume=${gain.toFixed(2)}dB`];
-  if (peak + gain > TP) chain.push(`alimiter=limit=${limit.toFixed(4)}:attack=5:release=50:level=disabled`);
-  chain.push("aresample=48000", "aformat=sample_fmts=s16:channel_layouts=stereo", `atrim=0:${total.toFixed(3)}`);
-  await ff(["-i", bed, "-af", chain.join(","), "-c:a", "pcm_s16le", out]);
-  return { out, lufs: I, gain_db: Number(gain.toFixed(2)), limiter: peak + gain > TP };
+  const lv = await levelTo(bed, out, I, peak, target, [`atrim=0:${total.toFixed(3)}`]);
+  return { out, lufs: I, ...lv };
 }
 
 // Integrated loudness of a file (LUFS) and its true peak (dBTP).
@@ -227,13 +250,9 @@ async function mix(dir, a, opts, starts, lens, total, notes) {
             "-map", "[m]", "-c:a", "pcm_s16le", summed]);
   // the whole mix: one fixed gain to -14 LUFS, a brickwall only for the peaks that would pass -1.5 dBTP
   const { I, tp } = await measure(summed);
-  const gain = LUFS - I, limit = Math.pow(10, TP / 20), out = path.join(dir, "audio.wav");
-  const chain = [`volume=${gain.toFixed(2)}dB`];
-  if (tp + gain > TP) chain.push(`alimiter=limit=${limit.toFixed(4)}:attack=5:release=50:level=disabled`);
-  chain.push("aresample=48000", "aformat=sample_fmts=s16:channel_layouts=stereo", `atrim=0:${total.toFixed(3)}`);
-  await ff(["-i", summed, "-af", chain.join(","), "-c:a", "pcm_s16le", out]);
-  return { out, lufs: I, gain_db: Number(gain.toFixed(2)), limiter: tp + gain > TP, voiceovers: vo.length, effects: fx.length,
-           music_lufs_before: bed.lufs };
+  const out = path.join(dir, "audio.wav");
+  const lv = await levelTo(summed, out, I, tp, LUFS, [`atrim=0:${total.toFixed(3)}`]);
+  return { out, lufs: I, ...lv, voiceovers: vo.length, effects: fx.length, music_lufs_before: bed.lufs };
 }
 
 async function checks(file, format, expectFrames, quiet, hasMusic) {
