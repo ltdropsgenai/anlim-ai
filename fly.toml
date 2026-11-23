@@ -19,4 +19,4 @@ primary_region = "ord"
 
 [[vm]]
   size = "shared-cpu-2x"
-  memory = "2gb"
+  memory = "4gb"   # 2026-11-23: the checker ran out of memory on 2 GB (oom_killed during an end-frame check)
