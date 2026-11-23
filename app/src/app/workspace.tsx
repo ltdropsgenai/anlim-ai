@@ -64,6 +64,7 @@ function NewSeries({ onDone }: { onDone: (id?: string, err?: string) => void }) 
           <Text style={s.btnText}>Create series</Text>
         </Pressable>
         <Pressable onPress={() => setOpen(false)} accessibilityRole="button"><Text style={s.link}>Cancel</Text></Pressable>
+        {!look && name.trim() ? <Text style={{ color: c.muted, fontSize: 12 }}>Choose Cartoon or Photoreal first.</Text> : null}
       </View>
     </View>
   );
