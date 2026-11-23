@@ -42,6 +42,8 @@ Verdict:
 - PASS: the described events match the action, in order and direction. Small details the description could not
   see (a nod, a look) are not failures - say they are unconfirmed.
 Ignore camera moves (checked elsewhere) unless the action itself is a camera move.
+"matches" and "differs" are shown to the creator, who never sees the description: write them about the clip ("the
+clip shows...", "the hedgehog never..."), never "the description" (2026-11-23 tutorial test).
 Answer with ONE JSON object: {"verdict": "PASS|FLAG|FAIL", "matches": "...", "differs": "...", "confidence": "high|medium|low"}"""
 
 def _json_call(A, model, key, system, content, max_tokens):
