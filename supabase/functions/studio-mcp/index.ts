@@ -440,10 +440,15 @@ async function callTool(uid: string, name: string, a: Args) {
         : ej && ["queued", "running", "composing"].includes(ej.status) ? "The end image is being made."
         : ej?.status === "failed" ? `The end image could not be made: ${ej.error ?? "unknown error"}. Nothing was charged for it.` : null;
       const trimLine = Number(x.trim_start_s) || Number(x.trim_end_s) ? `Trim in the cut: ${Number(x.trim_start_s)} s off the start, ${Number(x.trim_end_s)} s off the end.` : null;
+      // 2026-11-23 (Londi: the sofa turned round): the start image's own check (layout against the location, staging,
+      // heights) was never shown from chat, so a flagged image was approved and animated unseen
+      const fc = x.check_result as { verdict?: string; why?: string } | null;
+      const frameLine = fc?.verdict === "FLAG" && (x.frame_status === "ready" || x.frame_status === "approved") && !x.gen_id
+        ? `The start image check flagged it: ${String(fc.why ?? "see the image in the app").slice(0, 400)}. Look at it with the creator before animating.` : null;
       return text([state, findings ? `The check (${x.verdict ?? "flag"}): ${findings}` : x.verdict === "PASS" ? "The check passed it." : null,
-                   image ? `Image: ${image}` : null, endLine, trimLine, video ? `Video${paid ? "" : " (watermarked: free account)"}: ${video}` : null,
+                   frameLine, image ? `Image: ${image}` : null, endLine, trimLine, video ? `Video${paid ? "" : " (watermarked: free account)"}: ${video}` : null,
                    `Project: ${x.series_name} (${x.aspect}). Open it at ${APP}`].filter(Boolean).join("\n"),
-        { status: x.gen_status ?? x.frame_status ?? "starting", start_image_waits: waits, image_url: image, video_url: video,
+        { status: x.gen_status ?? x.frame_status ?? "starting", start_image_waits: waits, start_image_check: frameLine ? "flag" : null, image_url: image, video_url: video,
           check: x.verdict ?? null, project: x.series_name, aspect: x.aspect });
     }
     case "create": {
@@ -853,14 +858,18 @@ async function callTool(uid: string, name: string, a: Args) {
       if (gate) return gate;
       const model = a.model ? String(a.model) : null;
       const r = await asUser(uid, async (tx) => {
-        const [j] = await tx`select f.id from studio.frame_jobs f join studio.shots sh on sh.id = f.shot_id
+        const [j] = await tx`select f.id, f.check_result ->> 'verdict' as verdict from studio.frame_jobs f join studio.shots sh on sh.id = f.shot_id
                                where f.shot_id = ${sid} and f.kind = 'start' and f.status = 'ready' and not sh.start_frame_approved
                                order by f.created_at desc limit 1`;
+        // a flagged start image is approved only by the creator's explicit decision (approve_start_image), never in passing
+        if (j?.verdict === "FLAG") return null;
         if (j) await tx`select studio.decide_frame(${j.id}, 'approve')`;
         const [g] = await tx`select studio.enqueue_generation(${sid}, ${model}) as id`;
         const [m] = await tx`select m.label, g.credits_reserved from studio.generations g join studio.models m on m.id = g.model_id where g.id = ${g.id}`;
         return { id: g.id as string, label: m?.label as string, credits: m?.credits_reserved as number };
       });
+      if (!r) return text("The start image waiting for this shot was flagged by its check (get_creation says why). Show it to the creator; " +
+        "if they want it anyway, approve it with approve_start_image, then animate. Otherwise make another with make_start_image.", undefined, true);
       return text(`Animating with ${r.label ?? "the chosen model"} (about ${r.credits} credits, charged when the clip is delivered). ` +
         `Follow it with get_creation (shot_id ${sid}).`, { generation_id: r.id, credits: r.credits });
     }

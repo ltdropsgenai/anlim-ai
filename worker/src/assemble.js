@@ -25,6 +25,9 @@ import * as storage from "./storage.js";
 import { watermark, VAULT, MARK } from "./watermark.js";
 import * as captions from "./captions.js";
 
+// A shot's voiceover starts this long after the shot does in a cut (worker.js lip-syncs to the same offset)
+export const SPEECH_LEAD = 0.15;
+
 const exec = promisify(execFile);
 const FPS = 24;
 // 2026-11-21: projects can be any of six shapes, so a cut can be too (1x1, 4x3, 3x4, 21x9 added)
@@ -239,7 +242,7 @@ async function mix(dir, a, opts, starts, lens, total, notes) {
   const bedTarget = vo.length || nar ? -27 : -20;                // under speech, or under effects only
   const bed = await soundtrack(dir, opts.music_path, total, notes, bedTarget, "bed_level.wav");
   const inputs = [bed.out], filters = [];
-  const LEAD = 0.15;                                             // speech starts just after the cut, not on it
+  const LEAD = SPEECH_LEAD;                                      // speech starts just after the cut, not on it
   for (const [k, v] of vo.entries()) {
     const src = path.join(dir, `vo_${k}${path.extname(v.path) || ".mp3"}`), dest = path.join(dir, `vo_${k}.wav`);
     await storage.download(v.path, src);

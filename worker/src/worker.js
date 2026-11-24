@@ -153,7 +153,9 @@ async function submitLipsync(g, shot) {
   await run("ffmpeg", ["-y", "-v", "error", "-i", clipIn, "-map", "0:v:0", "-an",
     ...(W !== w || H !== h ? ["-vf", `scale=${W}:${H}:flags=lanczos`, "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-pix_fmt", "yuv420p"]
                            : ["-c", "copy"]), "-movflags", "+faststart", video]);
-  const lead = Math.max(0, Number(shot.trim_start_s) || 0);
+  // The voice starts where the cut plays it: after any trim at the start, plus the cut's speech lead (assemble.js LEAD,
+  // 0.15 s). 2026-11-23: without the lead the mouths moved 0.15 s before the voice in the cut.
+  const lead = Math.max(0, Number(shot.trim_start_s) || 0) + assemble.SPEECH_LEAD;
   await run("ffmpeg", ["-y", "-v", "error", "-i", voIn, "-af", `adelay=${Math.round(lead * 1000)}:all=1,apad`, "-t", secs.toFixed(3),
                        "-ac", "1", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "128k", voice]);
   const vPath = `${g.owner}/lipsync/${g.id}-in.mp4`, aPath = `${g.owner}/lipsync/${g.id}-voice.mp3`;
@@ -289,6 +291,15 @@ async function stepRunning(g) {
   await fetchTo(p.videoUrl, raw);
   if (isMotion(g)) {      // motion transfer keeps the source clip's own sound (the creator's audio)
     await run("ffmpeg", ["-y", "-v", "error", "-i", raw, "-map", "0:v:0", "-map", "0:a?", "-c", "copy", clip]);
+  } else if (isLipsync(g)) {
+    // 2026-11-23 (Londi: "There was no sound on the lip-sync?"): a lip-synced take carries the voice it was synced to
+    // (the exact file sent to the provider), so it can be judged in Review. Cuts take only the picture of each clip and
+    // mix the voiceover themselves, so the voice is never doubled.
+    const req = typeof g.request === "string" ? JSON.parse(g.request) : g.request;
+    const voice = path.join(dir, "voice.mp3");
+    await storage.download(req.audio_url, voice);
+    await run("ffmpeg", ["-y", "-v", "error", "-i", raw, "-i", voice, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
+                         "-c:a", "aac", "-b:a", "160k", "-shortest", clip]);
   } else {
     await run("ffmpeg", ["-y", "-v", "error", "-i", raw, "-map", "0:v:0", "-c", "copy", "-an", clip]);  // models add speech; strip it
   }
