@@ -1,5 +1,6 @@
 // Database access. The worker connects as role studio_worker, so it calls the studio.* functions
 // that creators cannot. @anlim
+import { englishContext } from "./translate.js";
 import pg from "pg";
 import { config } from "./config.js";
 
@@ -46,6 +47,8 @@ export async function shotContext(gen) {
       where sh.id = $1 and (cardinality(sh.cast_ids) = 0 or c.id = any(sh.cast_ids))
       order by c.height_units desc nulls last, c.name`,
     [gen.shot_id]);
+  // 2026-11-24: a Spanish or French creator's words go to the compiler and the models in English (translate.js)
+  if (row) await englishContext(gen.owner, row, chars);
   return { shot: row, characters: chars };
 }
 
@@ -80,6 +83,11 @@ export async function frameContext(job) {
   const platePaths = loc ? [loc.layout_path, ...[...(loc.other_plates || [])].reverse()].filter(Boolean) : [];
   // 2026-11-23 (Londi): no default look; a job whose project cannot be found fails instead of being drawn as a cartoon
   if (!se?.look) throw new Error("the project of this job was not found (no look)");
+  // 2026-11-24: the creator's words in English for the image model (translate.js); the job's instruction too, once
+  const extra = { style_prompt: se?.style_prompt || null, instruction: job.instruction || null };
+  await englishContext(job.owner, shot, chars, extra);
+  if (!job._en) { job.instruction = extra.instruction ?? job.instruction; job._en = true; }
+  se.style_prompt = extra.style_prompt;
   return { shot, characters: chars, platePath: loc?.layout_path || null, platePaths, look: se.look,
            stylePrompt: se?.style_prompt || null, aspect: se?.aspect || "16:9" };
 }

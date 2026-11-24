@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import { c } from "../lib/theme";
+import { tr, tMsg } from "../lib/i18n";
 
 const SIZES = { youtube: [1280, 720], cover: [1080, 1920] } as const;
 type Size = keyof typeof SIZES;
@@ -70,7 +71,7 @@ export function ThumbnailMaker({ src, name, vertical }: { src: string; name: str
     v.crossOrigin = "anonymous"; v.muted = true; v.preload = "auto"; v.playsInline = true; v.src = src;
     v.onloadedmetadata = () => { setDur(v.duration || 0); const mid = (v.duration || 0) * 0.4; v.currentTime = mid; setT(mid); };
     v.onseeked = () => { if (canvas.current) draw(canvas.current, v, look.current.title, look.current.place); };
-    v.onerror = () => setErr("The cut could not be loaded for a thumbnail.");
+    v.onerror = () => setErr(tr("The cut could not be loaded for a thumbnail."));
     video.current = v;
     return () => { v.src = ""; video.current = null; };
   }, [open, src]);   // eslint-disable-line react-hooks/exhaustive-deps
@@ -82,45 +83,45 @@ export function ThumbnailMaker({ src, name, vertical }: { src: string; name: str
     if (!cv) return;
     try {
       cv.toBlob((b) => {
-        if (!b) return setErr("The thumbnail could not be made.");
+        if (!b) return setErr(tr("The thumbnail could not be made."));
         const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = `${name}-thumbnail.jpg`; a.click();
         setTimeout(() => URL.revokeObjectURL(a.href), 2000);
       }, "image/jpeg", 0.92);
-    } catch { setErr("The browser blocked reading the video for a thumbnail. Download the cut and try again."); }
+    } catch { setErr(tr("The browser blocked reading the video for a thumbnail. Download the cut and try again.")); }
   }
 
   if (!open) return (
-    <Pressable onPress={() => setOpen(true)} accessibilityRole="button"><Text style={{ color: c.link, textDecorationLine: "underline" }}>Make a thumbnail</Text></Pressable>
+    <Pressable onPress={() => setOpen(true)} accessibilityRole="button"><Text style={{ color: c.link, textDecorationLine: "underline" }}>{tr("Make a thumbnail")}</Text></Pressable>
   );
   const [W, H] = SIZES[size];
   const chip = (on: boolean) => ({ borderWidth: 1, borderColor: on ? c.accent : c.line, backgroundColor: on ? c.accent : "transparent",
                                    borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 });
   return (
     <View style={{ gap: 8, marginTop: 8, padding: 12, borderWidth: 1, borderColor: c.line, borderRadius: 12 }}>
-      <Text style={{ color: c.ink, fontWeight: "600" }}>Thumbnail</Text>
+      <Text style={{ color: c.ink, fontWeight: "600" }}>{tr("Thumbnail")}</Text>
       <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
         {(Object.keys(SIZES) as Size[]).map((k) => (
           <Pressable key={k} onPress={() => setSize(k)} style={chip(size === k)} accessibilityRole="radio" accessibilityState={{ checked: size === k }}>
-            <Text style={{ color: size === k ? c.onAccent : c.ink }}>{k === "youtube" ? "YouTube 1280×720" : "Vertical 1080×1920"}</Text>
+            <Text style={{ color: size === k ? c.onAccent : c.ink }}>{k === "youtube" ? tr("YouTube 1280×720") : tr("Vertical 1080×1920")}</Text>
           </Pressable>
         ))}
         {(["top", "bottom"] as const).map((p) => (
           <Pressable key={p} onPress={() => setPlace(p)} style={chip(place === p)} accessibilityRole="radio" accessibilityState={{ checked: place === p }}>
-            <Text style={{ color: place === p ? c.onAccent : c.ink }}>Title {p}</Text>
+            <Text style={{ color: place === p ? c.onAccent : c.ink }}>{tr("Title {p}", { p })}</Text>
           </Pressable>
         ))}
       </View>
-      <TextInput value={title} onChangeText={setTitle} placeholder="Title on the thumbnail (optional)" placeholderTextColor={c.muted} maxLength={60}
+      <TextInput value={title} onChangeText={setTitle} placeholder={tr("Title on the thumbnail (optional)")} placeholderTextColor={c.muted} maxLength={60}
         style={{ color: c.ink, borderWidth: 1, borderColor: c.line, borderRadius: 8, padding: 10, backgroundColor: c.field }} />
-      <Text style={{ color: c.sub, fontSize: 13 }}>Moment: {t.toFixed(1)} s of {dur.toFixed(1)} s</Text>
+      <Text style={{ color: c.sub, fontSize: 13 }}>{tr("Moment: {v0} s of {v1} s", { v0: t.toFixed(1), v1: dur.toFixed(1) })}</Text>
       <input type="range" min={0} max={Math.max(0.1, dur - 0.05)} step={0.04} value={t} onChange={(e) => setT(Number(e.target.value))}
-        aria-label="Moment of the cut" style={{ width: "100%", maxWidth: 560 }} />
+        aria-label={tr("Moment of the cut")} style={{ width: "100%", maxWidth: 560 }} />
       <canvas ref={canvas} width={W} height={H} style={{ width: size === "youtube" ? 480 : 220, maxWidth: "100%", borderRadius: 8, border: `1px solid ${c.line}` }} />
       <View style={{ flexDirection: "row", gap: 14 }}>
-        <Pressable onPress={download} accessibilityRole="button"><Text style={{ color: c.link, textDecorationLine: "underline" }}>Download the JPEG</Text></Pressable>
-        <Pressable onPress={() => setOpen(false)} accessibilityRole="button"><Text style={{ color: c.muted }}>Close</Text></Pressable>
+        <Pressable onPress={download} accessibilityRole="button"><Text style={{ color: c.link, textDecorationLine: "underline" }}>{tr("Download the JPEG")}</Text></Pressable>
+        <Pressable onPress={() => setOpen(false)} accessibilityRole="button"><Text style={{ color: c.muted }}>{tr("Close")}</Text></Pressable>
       </View>
-      {err && <Text style={{ color: c.fail, fontSize: 13 }}>{err}</Text>}
+      {err && <Text style={{ color: c.fail, fontSize: 13 }}>{tMsg(err)}</Text>}
     </View>
   );
 }

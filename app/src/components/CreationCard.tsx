@@ -10,31 +10,32 @@ import { api, Creation, Output, ratioOf } from "../lib/api";
 import { c, font } from "../lib/theme";
 import { downloadFile } from "../lib/download";
 import { MediaView } from "./MediaView";
+import { tr, tMsg } from "../lib/i18n";
 
 const slug = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "anlim";
 
 function stage(x: Creation | null, output: Output) {
-  if (!x) return { done: false, label: "Starting…" };
-  if (x.frame_status === "failed") return { done: true, label: "The image could not be made." };
-  if (!x.image_url && !x.from_text && !x.motion) return { done: false, label: "Drawing the image… (usually under a minute)" };
-  if (output === "image" && !x.gen_id) return { done: true, label: "Your image is ready." };
-  if (x.render_error && !x.gen_id) return { done: true, label: "The image is ready; the clip did not start." };
-  if (!x.gen_id || x.gen_status === "queued") return { done: false, label: "Starting the clip…" };
+  if (!x) return { done: false, label: tr("Starting…") };
+  if (x.frame_status === "failed") return { done: true, label: tr("The image could not be made.") };
+  if (!x.image_url && !x.from_text && !x.motion) return { done: false, label: tr("Drawing the image… (usually under a minute)") };
+  if (output === "image" && !x.gen_id) return { done: true, label: tr("Your image is ready.") };
+  if (x.render_error && !x.gen_id) return { done: true, label: tr("The image is ready; the clip did not start.") };
+  if (!x.gen_id || x.gen_status === "queued") return { done: false, label: tr("Starting the clip…") };
   if (x.gen_status === "running") return { done: false, label: x.motion
-    ? `Recasting your clip with ${x.model_label ?? "the model"}… (usually 8 to 15 minutes; you can leave this page)`
-    : `Animating with ${x.model_label ?? "the video model"}… (usually 3 to 5 minutes)` };
-  if (x.gen_status === "checking") return { done: false, label: "Checking the clip… you can watch it below." };
+    ? tr("Recasting your clip with {v0}… (usually 8 to 15 minutes; you can leave this page)", { v0: x.model_label ?? tr("the model") })
+    : tr("Animating with {v0}… (usually 3 to 5 minutes)", { v0: x.model_label ?? tr("the video model") }) };
+  if (x.gen_status === "checking") return { done: false, label: tr("Checking the clip… you can watch it below.") };
   // 2026-11-21 review: a clip the creator rejected was delivered and charged (review_generation policy v2); only a clip that
   // never finished is free
-  if (x.gen_status === "failed") return { done: true, label: x.gen_error === "refund requested" ? "Refund requested for this clip."
-    : x.gen_error === "rejected by creator" ? "You rejected this clip. We'll look at it and refund the credits if we can see the problem."
-    : "The clip didn't finish. Nothing was charged for it." };
+  if (x.gen_status === "failed") return { done: true, label: x.gen_error === "refund requested" ? tr("Refund requested for this clip.")
+    : x.gen_error === "rejected by creator" ? tr("You rejected this clip. We'll look at it and refund the credits if we can see the problem.")
+    : tr("The clip didn't finish. Nothing was charged for it.") };
   // 2026-11-20: motion clips get the who-is-who check (worker checkMotion); it only flags, so "not checked" still asks for a look.
   // Keeping a flagged clip makes it "succeeded" but keeps the flag, so the flag decides first (2026-11-21 review).
-  if (x.motion) return { done: true, label: x.gen_error?.startsWith("checker found: ") ? "Your clip is ready. Our check thinks two people swapped in a shot: have a look."
-    : x.gen_status === "succeeded" && !x.gen_error ? "Your clip is ready (who is who checked ✓)."
-    : "Your clip is ready. Watch the close-ups for swapped faces or clothes." };
-  return { done: true, label: x.gen_status === "succeeded" ? "Your clip is ready (checked ✓)." : "Your clip is ready. Our check flagged something: have a look." };
+  if (x.motion) return { done: true, label: x.gen_error?.startsWith("checker found: ") ? tr("Your clip is ready. Our check thinks two people swapped in a shot: have a look.")
+    : x.gen_status === "succeeded" && !x.gen_error ? tr("Your clip is ready (who is who checked ✓).")
+    : tr("Your clip is ready. Watch the close-ups for swapped faces or clothes.") };
+  return { done: true, label: x.gen_status === "succeeded" ? tr("Your clip is ready (checked ✓).") : tr("Your clip is ready. Our check flagged something: have a look.") };
 }
 
 export function CreationCard({ shotId, output, onAgain }: { shotId: string; output: Output; onAgain: () => void }) {
@@ -74,7 +75,7 @@ export function CreationCard({ shotId, output, onAgain }: { shotId: string; outp
   return (
     <View style={s.card}>
       <View style={s.head}>
-        <Text style={[s.small, font.mono]}>{(x?.series_name ?? "Untitled project").toUpperCase()} · SAVED IN YOUR WORKSPACE</Text>
+        <Text style={[s.small, font.mono]}>{tr("{v0} · SAVED IN YOUR WORKSPACE", { v0: (x?.series_name ?? tr("Untitled project")).toUpperCase() })}</Text>
         {!st.done && <ActivityIndicator size="small" color={c.accent} />}
       </View>
       <Text style={{ color: st.done && (x?.gen_status === "failed" || x?.frame_status === "failed") ? c.fail : c.ink, fontSize: 15, marginBottom: 10 }}>
@@ -85,29 +86,29 @@ export function CreationCard({ shotId, output, onAgain }: { shotId: string; outp
         : x?.image_url ? <MediaView kind="still" url={x.image_url} ratio={ratioOf(x.aspect)} /> : <View style={[s.placeholder, { aspectRatio: ratioOf(x?.aspect) }, ratioOf(x?.aspect) < 1 && { width: "50%", alignSelf: "center" }]} />}
 
       {x?.gen_status === "review" && x.gen_error?.startsWith("checker found: ") ? (
-        <Text style={[s.note, { color: c.flag }]}>Our check found: {x.gen_error.slice(15, 300)}</Text>) : null}
+        <Text style={[s.note, { color: c.flag }]}>{tr("Our check found: {v0}", { v0: tMsg(x.gen_error.slice(15, 300)) })}</Text>) : null}
       {x?.gen_status === "failed" && x.gen_error && x.gen_error !== "refund requested" ? (
         <Text style={[s.note, { color: c.fail }]}>{x.gen_error.slice(0, 300)}</Text>) : null}
       {x?.render_error && !x.gen_id ? <Text style={[s.note, { color: c.fail }]}>{x.render_error}</Text> : null}
       {x?.frame_error ? <Text style={[s.note, { color: c.fail }]}>{x.frame_error}</Text> : null}
-      {x?.watermarked ? <Text style={s.note}>Free accounts see and download clips with a watermark. It goes away once you buy credits or a plan.</Text> : null}
-      {err ? <Text style={[s.note, { color: c.fail }]}>{err}</Text> : null}
+      {x?.watermarked ? <Text style={s.note}>{tr("Free accounts see and download clips with a watermark. It goes away once you buy credits or a plan.")}</Text> : null}
+      {err ? <Text style={[s.note, { color: c.fail }]}>{tMsg(err)}</Text> : null}
 
       <View style={s.row}>
-        {x?.image_url ? <Btn label="Download image" busy={work === "img"} onPress={() => run("img", () => downloadFile(x.image_url!, `${name}.png`))} /> : null}
-        {x?.video_url ? <Btn label={checking ? "Download clip (after the check)" : "Download clip"} primary disabled={!clipDone} busy={work === "vid"}
+        {x?.image_url ? <Btn label={tr("Download image")} busy={work === "img"} onPress={() => run("img", () => downloadFile(x.image_url!, `${name}.png`))} /> : null}
+        {x?.video_url ? <Btn label={checking ? tr("Download clip (after the check)") : tr("Download clip")} primary disabled={!clipDone} busy={work === "vid"}
           onPress={() => run("vid", async () => { if (x.gen_id) await api.keepCreation(x.gen_id); await downloadFile(x.video_url!, `${name}.mp4`); })} /> : null}
         {st.done && !x?.motion && (x?.image_url || x?.from_text) && (!x.gen_id || x.gen_status === "failed") ?
-          <Btn label={x.gen_id ? "Try the clip again" : "Animate this image"} primary={!x.gen_id} busy={work === "animate"} onPress={animate} /> : null}
-        {clipDone && x?.gen_id ? <Btn label="Something wrong? Request a refund" onPress={() => router.navigate({ pathname: "/clip/[id]", params: { id: x.gen_id! } })} /> : null}
-        {x ? <Btn label="Start a project from this" onPress={openWorkspace} /> : null}
-        {st.done ? <Btn label="Make another" onPress={onAgain} /> : null}
+          <Btn label={x.gen_id ? tr("Try the clip again") : tr("Animate this image")} primary={!x.gen_id} busy={work === "animate"} onPress={animate} /> : null}
+        {clipDone && x?.gen_id ? <Btn label={tr("Something wrong? Request a refund")} onPress={() => router.navigate({ pathname: "/clip/[id]", params: { id: x.gen_id! } })} /> : null}
+        {x ? <Btn label={tr("Start a project from this")} onPress={openWorkspace} /> : null}
+        {st.done ? <Btn label={tr("Make another")} onPress={onAgain} /> : null}
       </View>
       <Text style={s.small}>
-        {x?.motion ? "Charged per second of your source clip, rounded up, when the clip is made. If it is unusable, request a refund and tell us why."
-          : x?.from_text ? "The clip is charged when it is made. If it is unusable, request a refund and tell us why."
-          : x?.gen_id ? "The image used 20 credits; the clip is charged when it is made. If it is unusable, request a refund and tell us why."
-          : "The image used 20 credits. Animating it costs credits per second, charged when the clip is made."}
+        {x?.motion ? tr("Charged per second of your source clip, rounded up, when the clip is made. If it is unusable, request a refund and tell us why.")
+          : x?.from_text ? tr("The clip is charged when it is made. If it is unusable, request a refund and tell us why.")
+          : x?.gen_id ? tr("The image used 20 credits; the clip is charged when it is made. If it is unusable, request a refund and tell us why.")
+          : tr("The image used 20 credits. Animating it costs credits per second, charged when the clip is made.")}
       </Text>
     </View>
   );

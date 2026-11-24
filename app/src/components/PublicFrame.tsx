@@ -5,6 +5,8 @@ import { router } from "expo-router";
 import { c, font, pageBg } from "../lib/theme";
 import { Logo } from "./Logo";
 import { OPERATOR } from "../lib/legal";
+import { tr } from "../lib/i18n";
+import { LanguagePicker } from "./LanguagePicker";
 
 export function PublicFrame({ children, signedIn }: { children: ReactNode; signedIn?: boolean }) {
   const { width } = useWindowDimensions();
@@ -14,26 +16,27 @@ export function PublicFrame({ children, signedIn }: { children: ReactNode; signe
       <View style={[s.bar, narrow && { paddingHorizontal: 16 }]}>
         <Pressable onPress={() => router.navigate("/welcome")} accessibilityRole="link" accessibilityLabel="anlim.ai" style={s.row}>
           <Logo size={32} />
-          {!narrow && <Text style={[{ color: c.ink, fontSize: 20 }, font.display]}>anlim<Text style={{ color: c.accent }}>.</Text><Text style={{ color: c.sub }}>ai</Text></Text>}
+          {!narrow && <Text style={[{ color: c.ink, fontSize: 20 }, font.display]}>{tr("anlim")}<Text style={{ color: c.accent }}>.</Text><Text style={{ color: c.sub }}>{tr("ai")}</Text></Text>}
         </Pressable>
         <View style={{ flex: 1 }} />
-        {!narrow && <Pressable onPress={() => router.navigate({ pathname: "/welcome", params: { at: "pricing" } })} accessibilityRole="link"><Text style={s.nav}>Pricing</Text></Pressable>}
+        {!narrow && <Pressable onPress={() => router.navigate({ pathname: "/welcome", params: { at: "pricing" } })} accessibilityRole="link"><Text style={s.nav}>{tr("Pricing")}</Text></Pressable>}
         {signedIn ? (
-          <Pressable style={({ pressed }) => [s.cta, pressed && s.pressed]} onPress={() => router.navigate("/")} accessibilityRole="link"><Text style={s.ctaText}>Open the studio</Text></Pressable>
+          <Pressable style={({ pressed }) => [s.cta, pressed && s.pressed]} onPress={() => router.navigate("/")} accessibilityRole="link"><Text style={s.ctaText}>{tr("Open the studio")}</Text></Pressable>
         ) : (<>
-          <Pressable onPress={() => router.navigate("/login")} accessibilityRole="link"><Text style={s.nav}>Sign in</Text></Pressable>
+          <Pressable onPress={() => router.navigate("/login")} accessibilityRole="link"><Text style={s.nav}>{tr("Sign in")}</Text></Pressable>
           <Pressable style={({ pressed }) => [s.cta, pressed && s.pressed]} onPress={() => router.navigate("/start")} accessibilityRole="link">
-            <Text style={s.ctaText}>Start free</Text>
+            <Text style={s.ctaText}>{tr("Start free")}</Text>
           </Pressable>
         </>)}
       </View>
       <View style={{ flex: 1 }}>{children}</View>
       <View style={s.foot}>
-        <Text style={{ color: c.muted, fontSize: 12 }}>© 2026 {OPERATOR} · anlim.ai</Text>
+        <Text style={{ color: c.muted, fontSize: 12 }}>{tr("© 2026 {OPERATOR} · anlim.ai", { OPERATOR })}</Text>
         <View style={[s.row, { gap: 18 }]}>
-          <Pressable onPress={() => router.navigate("/terms")} accessibilityRole="link"><Text style={s.footLink}>Terms</Text></Pressable>
-          <Pressable onPress={() => router.navigate("/privacy")} accessibilityRole="link"><Text style={s.footLink}>Privacy</Text></Pressable>
-          <Pressable onPress={() => router.navigate("/support")} accessibilityRole="link"><Text style={s.footLink}>Help & contact</Text></Pressable>
+          <Pressable onPress={() => router.navigate("/terms")} accessibilityRole="link"><Text style={s.footLink}>{tr("Terms")}</Text></Pressable>
+          <Pressable onPress={() => router.navigate("/privacy")} accessibilityRole="link"><Text style={s.footLink}>{tr("Privacy")}</Text></Pressable>
+          <Pressable onPress={() => router.navigate("/support")} accessibilityRole="link"><Text style={s.footLink}>{tr("Help & contact")}</Text></Pressable>
+          <LanguagePicker signedIn={false} compact />
         </View>
       </View>
     </ScrollView>

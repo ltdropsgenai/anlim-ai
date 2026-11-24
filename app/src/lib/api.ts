@@ -1,5 +1,6 @@
 // Calls the studio-api Edge Function as the signed-in creator.
 import { supabase } from "./supabase";
+import { tr, tMsg, trMap, trDeep, setTranslator } from "./i18n";
 
 export type Flag = { t_s: number | null; frame: string; verdict: string; rules: string[]; note: string };
 export type QueueItem = {
@@ -128,25 +129,25 @@ export type Library = { characters: LibCharacter[]; locations: LibLocation[]; ow
 export type Look = "cartoon" | "photoreal";
 // A project's shape (2026-11-21): every text-to-video model in use takes these six (fal pages read 2026-11-21).
 export type Aspect = "16:9" | "9:16" | "1:1" | "4:3" | "3:4" | "21:9";
-export const ASPECTS: { id: Aspect; label: string; hint: string }[] = [
+export const ASPECTS: { id: Aspect; label: string; hint: string }[] = trDeep([
   { id: "16:9", label: "16:9", hint: "Landscape: YouTube, websites" },
   { id: "9:16", label: "9:16", hint: "Vertical: Shorts, Reels, TikTok" },
   { id: "1:1", label: "1:1", hint: "Square: feeds" },
   { id: "4:3", label: "4:3", hint: "Classic TV" },
   { id: "3:4", label: "3:4", hint: "Portrait" },
   { id: "21:9", label: "21:9", hint: "Cinema widescreen" },
-];
+], ["hint"]);
 export const ratioOf = (a?: string | null) => { const [w, h] = String(a || "16:9").split(":").map(Number); return w > 0 && h > 0 ? w / h : 16 / 9; };
 // a cast member: a person, an animal or an object, in either look (2026-11-16)
 export type Kind = "person" | "animal" | "object";
 // which tested route table Auto uses for a series (2026-11-19); balanced = the tested picks
 export type Quality = "best" | "balanced" | "economy";
-export const QUALITY_NAMES: Record<string, string> = { best: "Best quality", balanced: "Balanced", economy: "Lowest cost" };
-export const QUALITY_HELP: Record<string, string> = {
+export const QUALITY_NAMES: Record<string, string> = trMap({ best: "Best quality", balanced: "Balanced", economy: "Lowest cost" });
+export const QUALITY_HELP: Record<string, string> = trMap({
   best: "Picks the model that tested best for each kind of shot, even when it costs more.",
   balanced: "Picks the tested model that gives good results for the price. Recommended.",
   economy: "Picks the cheapest model that still passed our tests for that kind of shot.",
-};
+});
 // a scene cut (studio.assemblies, 2026-11-19)
 export type CutFormat = "16x9" | "9x16" | "4x5" | "1x1" | "4x3" | "3x4" | "21x9";
 // 2026-11-23: a cut's edit style (worker editstyle.js); null or absent is the plain cut
@@ -168,15 +169,15 @@ export type Series = {
 };
 // Genre: optional, files and filters work in Assets; it changes nothing about how frames or clips are made (2026-11-19).
 export type Genre = "drama" | "comedy" | "action" | "kids" | "horror" | "romance" | "documentary" | "music_video" | "ad" | "explainer" | "other";
-export const GENRE_NAMES: Record<Genre, string> = {
+export const GENRE_NAMES: Record<Genre, string> = trMap({
   drama: "Drama", comedy: "Comedy", action: "Action", kids: "Kids", horror: "Horror", romance: "Romance",
   documentary: "Documentary", music_video: "Music video", ad: "Ad / promo", explainer: "Explainer", other: "Other",
-};
+});
 // Assets library (studio.my_assets + music, 2026-11-19)
 export type AssetKind = "clip" | "cut" | "still" | "character" | "place" | "voice" | "sfx" | "music";
-export const ASSET_KIND_NAMES: Record<AssetKind, string> = {
+export const ASSET_KIND_NAMES: Record<AssetKind, string> = trMap({
   clip: "Clips", cut: "Scene cuts", still: "Frames", character: "Characters", place: "Places", voice: "Voiceover", sfx: "Sound effects", music: "Music",
-};
+});
 export type AssetStatus = "kept" | "to_review" | "rejected";
 export type Asset = {
   kind: AssetKind; id: string; created_at: string; series_id: string | null; series_name: string | null; look: Look | null;
@@ -222,9 +223,9 @@ export const startFrameCredits = (mode: string, look?: string | null, people = 2
 export const MODEL_NAMES: Record<string, string> = {
   "kling-v4-i2v-720p": "Kling 4.0", "minimax-h3-i2v-768p": "MiniMax H3", "mock-i2v": "Test model", "kling-lipsync": "Kling LipSync", "veed-lipsync": "VEED Lipsync", "seedance-2-0-i2v-720p": "Seedance 2.0",
 };
-export const KIND_NAMES: Record<string, string> = {
+export const KIND_NAMES: Record<string, string> = trMap({
   walking: "walking shots", sit_stand: "sitting and standing", handling: "handling props", talking: "talking shots", other: "this kind of shot",
-};
+});
 
 // The public price list for the landing page (no sign-in needed).
 export async function publicPlans(): Promise<PricePlan[]> {
@@ -232,23 +233,26 @@ export async function publicPlans(): Promise<PricePlan[]> {
     method: "POST", headers: { apikey: process.env.EXPO_PUBLIC_SUPABASE_KEY!, "Content-Type": "application/json" }, body: "{}",
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || `Request failed (${r.status})`);
+  if (!r.ok) throw new Error(tMsg(j.error) || tr("Request failed ({status})", { status: r.status }));
   return j.plans as PricePlan[];
 }
 
 async function call<T>(body: Record<string, unknown>, fn = "studio-api"): Promise<T> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
-  if (!token) throw new Error("Please sign in again.");
+  if (!token) throw new Error(tr("Please sign in again."));
   const r = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/${fn}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, apikey: process.env.EXPO_PUBLIC_SUPABASE_KEY!, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || `Request failed (${r.status})`);
+  if (!r.ok) throw new Error(tMsg(j.error) || tr("Request failed ({status})", { status: r.status }));
   return j as T;
 }
+
+// Run-time messages in Spanish or French (2026-11-24): tMsg asks for the ones not in the catalog (i18n.ts)
+setTranslator(async (texts, lang) => (await call<{ out: Record<string, string> }>({ op: "translate", texts, lang })).out || {});
 
 // A whole project as zip files (2026-11-23)
 export type ProjectExport = { id: string; status: "queued" | "running" | "done" | "failed"; files: number | null; bytes: number | null;
@@ -285,7 +289,7 @@ export type AdminRefund = { id: string; generation_id: string; owner: string; em
   owner_requests: number; owner_reversed: number; clip_url: string | null; start_url: string | null };
 
 export const api = {
-  me: () => call<{ user_id: string; email: string; balance: number; reserved: number; plan_credits: number; is_admin?: boolean; debt?: number; paid?: boolean; email_ready?: boolean;
+  me: () => call<{ user_id: string; email: string; balance: number; reserved: number; plan_credits: number; is_admin?: boolean; debt?: number; paid?: boolean; email_ready?: boolean; language?: "en" | "es" | "fr" | null;
                    plan_id: string | null; plan_status: string | null;
                    welcome_status: WelcomeStatus }>({ op: "me" }),
   // billing (studio-billing Edge Function: Stripe Checkout and billing portal)
@@ -340,6 +344,8 @@ export const api = {
   exportCreate: (seriesId: string) => call<{ ok: boolean; id: string }>({ op: "export_create", series_id: seriesId }),
   exportLatest: (seriesId: string) => call<{ export: ProjectExport | null }>({ op: "export_latest", series_id: seriesId }).then((r) => r.export),
   setEmailReady: (on: boolean) => call<{ ok: boolean }>({ op: "email_ready", on }),
+  // the account's language (2026-11-24): the app, emails, end cards and replies from anlim use it
+  setLanguage: (language: "en" | "es" | "fr") => call<{ ok: boolean }>({ op: "language", language }),
   lipsyncQuote: (shotId: string) => call<LipsyncQuote>({ op: "lipsync_quote", shot_id: shotId }),
   lipsyncCreate: (shotId: string) => call<{ generation_id: string; credits: number; seconds: number }>({ op: "lipsync_create", shot_id: shotId }),
   adminInsights: (days: number) => call<Insights>({ op: "admin_insights", days }),

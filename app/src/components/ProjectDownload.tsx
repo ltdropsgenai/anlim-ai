@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { api, ProjectExport } from "../lib/api";
 import { c } from "../lib/theme";
 import { downloadFile } from "../lib/download";
+import { tr, locale, tMsg } from "../lib/i18n";
 
 const mb = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(2)} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`);
 
@@ -22,23 +23,22 @@ export function ProjectDownload({ seriesId }: { seriesId: string }) {
   if (x === undefined) return null;
   return (
     <View style={{ gap: 6, marginTop: 10 }}>
-      <Text style={{ color: c.sub, fontSize: 13 }}>Download the whole project: kept clips, the 3 newest cuts of each scene (and their captions), start and end
-        frames, cast and place pictures, and the audio in the cuts, as zip files of up to 100 MB.</Text>
+      <Text style={{ color: c.sub, fontSize: 13 }}>{tr("Download the whole project: kept clips, the 3 newest cuts of each scene (and their captions), start and end frames, cast and place pictures, and the audio in the cuts, as zip files of up to 100 MB.")}</Text>
       <View style={{ flexDirection: "row", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <Pressable onPress={start} disabled={working} accessibilityRole="button"
           style={{ borderWidth: 1, borderColor: c.line, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8, opacity: working ? 0.5 : 1 }}>
-          <Text style={{ color: c.ink }}>{working ? "Preparing the download…" : x?.status === "done" ? "Prepare it again" : "Prepare the download"}</Text>
+          <Text style={{ color: c.ink }}>{working ? tr("Preparing the download…") : x?.status === "done" ? tr("Prepare it again") : tr("Prepare the download")}</Text>
         </Pressable>
         {working && <ActivityIndicator />}
       </View>
       {x?.status === "done" && x.parts.map((p) => (
         <Pressable key={p.name} onPress={() => p.url && downloadFile(p.url, p.name).catch((e) => setErr((e as Error).message))} accessibilityRole="button">
-          <Text style={{ color: c.link, textDecorationLine: "underline" }}>{p.name} · {p.files} files · {mb(p.bytes)}</Text>
+          <Text style={{ color: c.link, textDecorationLine: "underline" }}>{tr("{name} · {files} files · {v2}", { name: p.name, files: p.files, v2: mb(p.bytes) })}</Text>
         </Pressable>
       ))}
-      {x?.status === "done" && <Text style={{ color: c.muted, fontSize: 12 }}>Prepared {new Date(x.created_at).toLocaleString()}.{x.error ? ` ${x.error}.` : ""}</Text>}
-      {x?.status === "failed" && <Text style={{ color: c.fail, fontSize: 13 }}>{x.error}</Text>}
-      {err && <Text style={{ color: c.fail, fontSize: 13 }}>{err}</Text>}
+      {x?.status === "done" && <Text style={{ color: c.muted, fontSize: 12 }}>{tr("Prepared {when}.", { when: new Date(x.created_at).toLocaleString(locale()) }) + (x.error ? ` ${tMsg(x.error)}.` : "")}</Text>}
+      {x?.status === "failed" && <Text style={{ color: c.fail, fontSize: 13 }}>{tMsg(x.error)}</Text>}
+      {err && <Text style={{ color: c.fail, fontSize: 13 }}>{tMsg(err)}</Text>}
     </View>
   );
 }

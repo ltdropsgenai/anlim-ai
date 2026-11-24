@@ -24,6 +24,7 @@ import * as higgsfield from "./providers/higgsfield.js";
 import * as frames from "./frames.js";
 import { watermark, VAULT } from "./watermark.js";
 import * as assemble from "./assemble.js";
+import * as translate from "./translate.js";
 import * as audio from "./audio.js";
 import * as moderate from "./moderate.js";
 import * as exporter from "./export.js";
@@ -579,7 +580,8 @@ export async function tick() {
   const [, nFrames, nCuts, nAudio, nExports] = await Promise.all([Promise.all(now.map(handle)), frames.tick(),   // end-frame jobs (frames.js)
     assemble.tick().catch((e) => { console.error("assemble:", e.message); return 0; }),           // scene cuts (assemble.js)
     audio.tick().catch((e) => { console.error("audio:", e.message); return 0; }),                 // ElevenLabs audio (audio.js)
-    exporter.tick().catch((e) => { console.error("export:", e.message); return 0; })]);          // project downloads (export.js)
+    exporter.tick().catch((e) => { console.error("export:", e.message); return 0; }),            // project downloads (export.js)
+    translate.tick().catch((e) => { console.error("translate:", e.message); return 0; })]);      // messages in es/fr (translate.js)
   return now.length + nFrames + nCuts + nAudio + nExports;
 }
 

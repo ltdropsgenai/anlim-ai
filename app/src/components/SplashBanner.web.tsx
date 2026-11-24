@@ -7,6 +7,7 @@
 // the banner fades into the page at its edges. @anlim
 import { useEffect, useRef, useState } from "react";
 import { c } from "../lib/theme";
+import { tr } from "../lib/i18n";
 
 // order and timing of the reel: each clip holds 4.08 s and cross-fades 0.8 s into the next (ffmpeg build, 2026-11-20)
 const SEG = 3.28;
@@ -29,7 +30,7 @@ export function SplashBanner({ height = 300 }: { height?: number }) {
                   boxShadow: "0 30px 80px rgba(0,0,0,0.55)" }}
       onMouseEnter={() => v.current?.pause()} onMouseLeave={() => { if (!still) v.current?.play().catch(() => {}); }}>
       <video ref={v} src="/banner/anlim-reel.mp4" poster="/banner/anlim-reel-poster.jpg" muted loop playsInline preload="auto"
-        aria-label="Moments from @anlim music videos and Name That Fight" onTimeUpdate={(e) => setIdx(Math.min(CAPTIONS.length - 1, Math.floor(e.currentTarget.currentTime / SEG)))}
+        aria-label={tr("Moments from @anlim music videos and Name That Fight")} onTimeUpdate={(e) => setIdx(Math.min(CAPTIONS.length - 1, Math.floor(e.currentTarget.currentTime / SEG)))}
         style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
       {/* edges melt into the page: a vignette and a deeper fall-off at the bottom where the headline sits */}
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none",
@@ -38,7 +39,7 @@ export function SplashBanner({ height = 300 }: { height?: number }) {
       <div style={{ position: "absolute", left: 18, top: 14, display: "flex", alignItems: "center", gap: 8, pointerEvents: "none" }}>
         <span style={{ width: 7, height: 7, borderRadius: 4, background: c.accent, boxShadow: "0 0 8px rgba(255,122,26,0.9)" }} />
         <span style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 11, letterSpacing: 1.1, color: "#D4D4D8",
-                       textTransform: "uppercase", textShadow: "0 1px 6px rgba(0,0,0,0.8)" }}>@anlim · {CAPTIONS[idx]}</span>
+                       textTransform: "uppercase", textShadow: "0 1px 6px rgba(0,0,0,0.8)" }}>{tr("@anlim · {v0}", { v0: CAPTIONS[idx] })}</span>
       </div>
     </div>
   );

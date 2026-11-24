@@ -13,6 +13,7 @@ import { Ambient, FloatCard, StepMark } from "../components/FloatCard";
 import { Mark } from "../components/Mark";
 import { PublicFrame } from "../components/PublicFrame";
 import { SplashBanner } from "../components/SplashBanner";
+import { tr, locale } from "../lib/i18n";
 
 const STEPS = [
   ["Set up your cast", "Add each character and place once, with a reference picture."],
@@ -43,36 +44,36 @@ export default function Welcome() {
       <View style={[s.page, narrow && { padding: 16 }]}>
         <SplashBanner height={narrow ? 180 : 340} />
         <View style={[s.hero, narrow && { paddingVertical: 32 }, { marginTop: narrow ? -24 : -44, paddingTop: 0 }]}>
-          <Text style={[s.kicker, font.mono, { color: c.accent }]}>AI VIDEO STUDIO FOR CREATORS</Text>
-          <Text style={[s.h1, font.display, narrow && { fontSize: 36, lineHeight: 40 }]}>Make AI video where your cast stays the same.</Text>
-          <Text style={s.lead}>Cartoon or photoreal. Write each shot, and anlim makes the frames, picks the model, renders the clip and checks it before you keep it.</Text>
+          <Text style={[s.kicker, font.mono, { color: c.accent }]}>{tr("AI VIDEO STUDIO FOR CREATORS")}</Text>
+          <Text style={[s.h1, font.display, narrow && { fontSize: 36, lineHeight: 40 }]}>{tr("Make AI video where your cast stays the same.")}</Text>
+          <Text style={s.lead}>{tr("Cartoon or photoreal. Write each shot, and anlim makes the frames, picks the model, renders the clip and checks it before you keep it.")}</Text>
           <View style={[s.row, { marginTop: 24, justifyContent: "center" }]}>
             <Pressable style={({ pressed }) => [s.cta, pressed && s.pressed]} onPress={() => router.navigate(signedIn ? "/" : "/start")} accessibilityRole="link">
-              <Text style={s.ctaText}>{signedIn ? "Open the studio" : "Start free"}</Text><Icon name="arrow" size={18} color={c.onAccent} />
+              <Text style={s.ctaText}>{signedIn ? tr("Open the studio") : tr("Start free")}</Text><Icon name="arrow" size={18} color={c.onAccent} />
             </Pressable>
             {!signedIn && <Pressable style={({ pressed }) => [s.ghost, pressed && s.pressed]} onPress={() => router.navigate("/login")} accessibilityRole="link">
-              <Text style={{ color: c.ink, fontWeight: "600", fontSize: 16 }}>Sign in</Text><Icon name="arrow" size={16} color={c.sub} />
+              <Text style={{ color: c.ink, fontWeight: "600", fontSize: 16 }}>{tr("Sign in")}</Text><Icon name="arrow" size={16} color={c.sub} />
             </Pressable>}
           </View>
-          <Text style={[s.small, { marginTop: 12, textAlign: "center" }]}>Free starter credits when you confirm your email. No card needed.</Text>
+          <Text style={[s.small, { marginTop: 12, textAlign: "center" }]}>{tr("Free starter credits when you confirm your email. No card needed.")}</Text>
         </View>
 
         {/* 2026-11-20 (Londi: no square boxes with logos): glass cards over a soft light; the steps share one lit rail on
             wide screens (a phone keeps just the numbered light), the features carry bespoke marks */}
-        <Text style={[s.kicker, font.mono, s.center]}>HOW IT WORKS</Text>
+        <Text style={[s.kicker, font.mono, s.center]}>{tr("HOW IT WORKS")}</Text>
         <Ambient>
           <Grid min={220} gap={16}>
             {STEPS.map(([t, b], i) => (
               <FloatCard key={t} style={{ padding: 24, paddingTop: 28, minHeight: narrow ? 0 : 170 }}>
                 <StepMark n={i + 1} rail={oneRow} first={i === 0} last={i === STEPS.length - 1} gap={16} />
-                <Text style={[s.h3, font.display, { marginTop: 26 }]}>{t}</Text>
-                <Text style={s.body}>{b}</Text>
+                <Text style={[s.h3, font.display, { marginTop: 26 }]}>{tr(t)}</Text>
+                <Text style={s.body}>{tr(b)}</Text>
               </FloatCard>
             ))}
           </Grid>
         </Ambient>
 
-        <Text style={[s.kicker, font.mono, s.center, { marginTop: 40 }]}>WHAT YOU GET</Text>
+        <Text style={[s.kicker, font.mono, s.center, { marginTop: 40 }]}>{tr("WHAT YOU GET")}</Text>
         <Ambient>
           <Grid min={300} gap={16}>
             {FEATURES.map((f) => (
@@ -86,34 +87,33 @@ export default function Welcome() {
         </Ambient>
 
         <View nativeID="pricing">
-          <Text style={[s.kicker, font.mono, s.center, { marginTop: 40 }]}>PRICING</Text>
-          <Text style={[s.h2, font.display, s.center]}>Pay for what you make</Text>
+          <Text style={[s.kicker, font.mono, s.center, { marginTop: 40 }]}>{tr("PRICING")}</Text>
+          <Text style={[s.h2, font.display, s.center]}>{tr("Pay for what you make")}</Text>
           <Text style={[s.body, s.center, { maxWidth: 640, alignSelf: "center" }]}>
-            Everything runs on credits. A clip costs credits per second of video; a made frame costs a few credits; scene cuts are free.
-            If a clip is unusable, request a refund and tell us why; we look at every request.
+            {tr("Everything runs on credits. A clip costs credits per second of video; a made frame costs a few credits; scene cuts are free. If a clip is unusable, request a refund and tell us why; we look at every request.")}
           </Text>
           {!plans && !planError && <ActivityIndicator style={{ marginVertical: 24 }} />}
-          {planError && <Text style={[s.body, s.center]}>The price list could not load. Sign in to see it under Credits & plan.</Text>}
+          {planError && <Text style={[s.body, s.center]}>{tr("The price list could not load. Sign in to see it under Credits & plan.")}</Text>}
           {monthly.length > 0 && (<>
-            <Text style={[s.h3, font.display, { marginTop: 22 }]}>Monthly plans</Text>
+            <Text style={[s.h3, font.display, { marginTop: 22 }]}>{tr("Monthly plans")}</Text>
             <Grid min={240} gap={14}>
               {monthly.map((p) => (
                 <FloatCard key={p.id} style={{ padding: 22 }}>
                   <Text style={[{ color: c.ink, fontSize: 18 }, font.display]}>{p.name}</Text>
-                  <Text style={[{ color: c.ink, fontSize: 32, marginTop: 6 }, font.display]}>{money(p.price_cents)}<Text style={{ color: c.sub, fontSize: 14 }}> / month</Text></Text>
-                  <Text style={[s.body, font.mono]}>{p.credits.toLocaleString()} CREDITS A MONTH</Text>
+                  <Text style={[{ color: c.ink, fontSize: 32, marginTop: 6 }, font.display]}>{money(p.price_cents)}<Text style={{ color: c.sub, fontSize: 14 }}>{tr(" / month")}</Text></Text>
+                  <Text style={[s.body, font.mono]}>{tr("{v0} CREDITS A MONTH", { v0: p.credits.toLocaleString(locale()) })}</Text>
                 </FloatCard>
               ))}
             </Grid>
           </>)}
           {packs.length > 0 && (<>
-            <Text style={[s.h3, font.display, { marginTop: 22 }]}>Credit packs</Text>
+            <Text style={[s.h3, font.display, { marginTop: 22 }]}>{tr("Credit packs")}</Text>
             <Grid min={200} gap={14}>
               {packs.map((p) => (
                 <FloatCard key={p.id} compact style={{ padding: 18 }}>
                   <Text style={[{ color: c.ink, fontSize: 16 }, font.display]}>{p.name}</Text>
                   <Text style={[{ color: c.ink, fontSize: 26, marginTop: 4 }, font.display]}>{money(p.price_cents)}</Text>
-                  <Text style={[s.body, font.mono]}>{p.credits.toLocaleString()} CREDITS · ONE TIME</Text>
+                  <Text style={[s.body, font.mono]}>{tr("{v0} CREDITS · ONE TIME", { v0: p.credits.toLocaleString(locale()) })}</Text>
                 </FloatCard>
               ))}
             </Grid>
@@ -123,10 +123,10 @@ export default function Welcome() {
         <View style={{ marginTop: 40 }}>
           <Ambient>
             <FloatCard style={{ padding: 28, alignItems: "center", gap: 10 }}>
-              <Text style={[s.h2, font.display, s.center, { marginTop: 0 }]}>Your first scene is on us</Text>
-              <Text style={[s.body, s.center]}>Confirm your email and your starter credits are waiting.</Text>
+              <Text style={[s.h2, font.display, s.center, { marginTop: 0 }]}>{tr("Your first scene is on us")}</Text>
+              <Text style={[s.body, s.center]}>{tr("Confirm your email and your starter credits are waiting.")}</Text>
               <Pressable style={({ pressed }) => [s.cta, pressed && s.pressed]} onPress={() => router.navigate(signedIn ? "/" : "/start")} accessibilityRole="link">
-                <Text style={s.ctaText}>{signedIn ? "Open the studio" : "Create your account"}</Text>
+                <Text style={s.ctaText}>{signedIn ? tr("Open the studio") : tr("Create your account")}</Text>
               </Pressable>
             </FloatCard>
           </Ambient>

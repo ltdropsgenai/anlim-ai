@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { api, cutSeconds, ShotRow, ShotWord } from "../lib/api";
 import { c } from "../lib/theme";
+import { tr, tMsg } from "../lib/i18n";
 
 const SPEEDS = [0.5, 0.75, 1, 1.5, 2];
 const MAX_WORDS = 12;
@@ -28,8 +29,8 @@ export function CutShots({ sceneId, aspect, onChanged }: { sceneId: string; aspe
   }, [sceneId]);
   useEffect(() => { load(); }, [load]);
 
-  if (!shots) return error ? <Text style={s.err}>{error}</Text> : <ActivityIndicator style={{ alignSelf: "flex-start", marginVertical: 8 }} />;
-  if (shots.length === 0) return <Text style={s.sub}>Keep a clip on a shot first; kept shots show up here.</Text>;
+  if (!shots) return error ? <Text style={s.err}>{tMsg(error)}</Text> : <ActivityIndicator style={{ alignSelf: "flex-start", marginVertical: 8 }} />;
+  if (shots.length === 0) return <Text style={s.sub}>{tr("Keep a clip on a shot first; kept shots show up here.")}</Text>;
   const [aw, ah] = (aspect || "16:9").split(":").map(Number);
   return (
     <View style={{ gap: 12 }}>
@@ -58,13 +59,13 @@ function ShotCard({ row, ratio, onSaved }: { row: ShotRow; ratio: number; onSave
   // the same checks the database makes (studio.set_shot_trim / set_shot_words), shown before saving
   const problems: string[] = [];
   const ts = num(d.trimStart), te = num(d.trimEnd);
-  if (!isFinite(ts) || !isFinite(te) || ts < 0 || te < 0) problems.push("Trims are seconds to cut off, 0 or more.");
-  else if (ts + te > Math.max(clipLen - 1, 0)) problems.push(`The trims leave less than 1 second of this ${clipLen.toFixed(1)} s clip.`);
+  if (!isFinite(ts) || !isFinite(te) || ts < 0 || te < 0) problems.push(tr("Trims are seconds to cut off, 0 or more."));
+  else if (ts + te > Math.max(clipLen - 1, 0)) problems.push(tr("The trims leave less than 1 second of this {v0} s clip.", { v0: clipLen.toFixed(1) }));
   d.words.forEach((w, i) => {
     const t = w.text.trim();
     if (!t || t.length > 40) problems.push(`Word ${i + 1}: 1 to 40 characters.`);
     const at = num(w.at), dur = num(w.dur);
-    if (!(at >= 0) || at >= len) problems.push(`Word ${i + 1}: it must appear between 0 and ${len.toFixed(1)} s (the shot's length in the cut).`);
+    if (!(at >= 0) || at >= len) problems.push(tr("Word {v0}: it must appear between 0 and {v1} s (the shot's length in the cut).", { v0: i + 1, v1: len.toFixed(1) }));
     if (!(dur >= 1 && dur <= 6)) problems.push(`Word ${i + 1}: it stays 1 to 6 seconds.`);
   });
 
@@ -73,7 +74,7 @@ function ShotCard({ row, ratio, onSaved }: { row: ShotRow; ratio: number; onSave
     try {
       await api.shotCutEdit(row.id, { speed: d.speed, trim_start_s: ts, trim_end_s: te,
         words: d.words.map(({ at, dur, ...w }) => ({ ...w, text: w.text.trim(), at_s: num(at), dur_s: num(dur) })) });
-      setMsg({ ok: true, text: "Saved. The next cut uses it." }); onSaved();
+      setMsg({ ok: true, text: tr("Saved. The next cut uses it.") }); onSaved();
     } catch (e) { setMsg({ ok: false, text: (e as Error).message }); }
     setBusy(false);
   }
@@ -85,7 +86,7 @@ function ShotCard({ row, ratio, onSaved }: { row: ShotRow; ratio: number; onSave
   const W = ratio >= 1 ? 280 : 170;
   return (
     <View style={s.card}>
-      <Text style={s.title}>Shot {String(row.ord).padStart(2, "0")} · {len.toFixed(1)} s in the cut</Text>
+      <Text style={s.title}>{tr("Shot {v0} · {v1} s in the cut", { v0: String(row.ord).padStart(2, "0"), v1: len.toFixed(1) })}</Text>
       <View style={s.cols}>
         {/* the picture: tap to place the selected word; words show at their size and place */}
         <View style={{ width: W }}>
@@ -93,7 +94,7 @@ function ShotCard({ row, ratio, onSaved }: { row: ShotRow; ratio: number; onSave
               2026-11-23 test): there offsetX/Y of the picture box are used */}
           <Pressable onPress={(e) => { const n = e.nativeEvent as unknown as { locationX?: number; locationY?: number; offsetX?: number; offsetY?: number };
               place(n.locationX ?? n.offsetX ?? NaN, n.locationY ?? n.offsetY ?? NaN); }} disabled={sel === null}
-            accessibilityRole="button" accessibilityLabel={sel === null ? "Shot picture" : `Place word ${sel + 1} here`}
+            accessibilityRole="button" accessibilityLabel={sel === null ? tr("Shot picture") : tr("Place word {v0} here", { v0: sel + 1 })}
             onLayout={(e) => setBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
             style={[s.pic, { aspectRatio: ratio }, sel !== null && { borderColor: c.accent }]}>
             {row.thumb_url ? <Image source={{ uri: row.thumb_url }} style={StyleSheet.absoluteFill} resizeMode="cover" /> : null}
@@ -109,46 +110,46 @@ function ShotCard({ row, ratio, onSaved }: { row: ShotRow; ratio: number; onSave
               );
             })}
           </Pressable>
-          <Text style={s.hint}>{sel === null ? "Select a word below, then tap the picture to place it." : `Tap the picture to place word ${sel + 1}.`}</Text>
+          <Text style={s.hint}>{sel === null ? tr("Select a word below, then tap the picture to place it.") : tr("Tap the picture to place word {v0}.", { v0: sel + 1 })}</Text>
         </View>
 
         <View style={{ flex: 1, minWidth: 260, gap: 8 }}>
-          <Text style={s.label}>Speed</Text>
+          <Text style={s.label}>{tr("Speed")}</Text>
           <View style={s.row}>
             {SPEEDS.map((v) => (
               <Pressable key={v} onPress={() => setD((x) => ({ ...x, speed: v }))} style={[s.chip, d.speed === v && s.chipOn]}
                 accessibilityRole="radio" accessibilityState={{ checked: d.speed === v }}>
-                <Text style={{ color: d.speed === v ? c.onAccent : c.ink }}>{v === 1 ? "Normal" : `${v}×`}</Text>
+                <Text style={{ color: d.speed === v ? c.onAccent : c.ink }}>{v === 1 ? tr("Normal") : `${v}×`}</Text>
               </Pressable>
             ))}
           </View>
-          {d.speed < 1 && <Text style={s.hint}>Slowed shots are rebuilt frame by frame, so the cut takes a few minutes longer.</Text>}
+          {d.speed < 1 && <Text style={s.hint}>{tr("Slowed shots are rebuilt frame by frame, so the cut takes a few minutes longer.")}</Text>}
 
-          <Text style={s.label}>Trim (seconds cut off; the clip is {clipLen.toFixed(1)} s)</Text>
+          <Text style={s.label}>{tr("Trim (seconds cut off; the clip is {v0} s)", { v0: clipLen.toFixed(1) })}</Text>
           <View style={s.row}>
-            <Text style={s.sub}>From the start</Text>
+            <Text style={s.sub}>{tr("From the start")}</Text>
             <TextInput style={s.num} value={d.trimStart} onChangeText={(v) => setD((x) => ({ ...x, trimStart: v }))} keyboardType="decimal-pad" />
-            <Text style={s.sub}>From the end</Text>
+            <Text style={s.sub}>{tr("From the end")}</Text>
             <TextInput style={s.num} value={d.trimEnd} onChangeText={(v) => setD((x) => ({ ...x, trimEnd: v }))} keyboardType="decimal-pad" />
           </View>
 
-          <Text style={s.label}>Words over the shot ({d.words.length}/{MAX_WORDS})</Text>
+          <Text style={s.label}>{tr("Words over the shot ({length}/{MAX_WORDS})", { length: d.words.length, MAX_WORDS })}</Text>
           {d.words.map((w, i) => (
             <Pressable key={i} onPress={() => setSel(i)} style={[s.wordRow, sel === i && { borderColor: c.accent }]}
               accessibilityRole="button" accessibilityState={{ selected: sel === i }}>
-              <TextInput style={[s.text, { flex: 1 }]} value={w.text} maxLength={40} placeholder="WORD"
+              <TextInput style={[s.text, { flex: 1 }]} value={w.text} maxLength={40} placeholder={tr("WORD")}
                 placeholderTextColor={c.muted} onFocus={() => setSel(i)}
                 onChangeText={(v) => setWord(i, { text: v.replace(/[\r\n\t]/g, " ") })} />
-              <Text style={s.sub}>at</Text>
+              <Text style={s.sub}>{tr("at")}</Text>
               <TextInput style={s.num} value={w.at} keyboardType="decimal-pad" onFocus={() => setSel(i)}
                 onChangeText={(v) => setWord(i, { at: v })} />
-              <Text style={s.sub}>s, for</Text>
+              <Text style={s.sub}>{tr("s, for")}</Text>
               <TextInput style={s.num} value={w.dur} keyboardType="decimal-pad" onFocus={() => setSel(i)}
                 onChangeText={(v) => setWord(i, { dur: v })} />
               <Text style={s.sub}>s</Text>
               <Pressable onPress={() => { setD((x) => ({ ...x, words: x.words.filter((_, k) => k !== i) })); setSel(null); }}
-                accessibilityRole="button" accessibilityLabel={`Remove word ${i + 1}`}>
-                <Text style={s.remove}>Remove</Text>
+                accessibilityRole="button" accessibilityLabel={tr("Remove word {v0}", { v0: i + 1 })}>
+                <Text style={s.remove}>{tr("Remove")}</Text>
               </Pressable>
             </Pressable>
           ))}
@@ -158,19 +159,19 @@ function ShotCard({ row, ratio, onSaved }: { row: ShotRow; ratio: number; onSave
               setD((x) => ({ ...x, words: [...x.words, { text: "", at: String(Math.max(0, Number(at.toFixed(2)))), x: 0.5, y: 0.4, dur: "2.6" }] }));
               setSel(d.words.length);
             }}>
-              <Text style={{ color: c.ink }}>Add a word</Text>
+              <Text style={{ color: c.ink }}>{tr("Add a word")}</Text>
             </Pressable>
           )}
-          <Text style={s.hint}>A word appears at its time in the shot as it plays in the cut (after trims and speed), then falls and fades.</Text>
+          <Text style={s.hint}>{tr("A word appears at its time in the shot as it plays in the cut (after trims and speed), then falls and fades.")}</Text>
 
           {problems.map((p) => <Text key={p} style={s.err}>{p}</Text>)}
           <View style={s.row}>
             <Pressable style={[s.btn, (!dirty || busy || problems.length > 0) && { opacity: 0.5 }]} disabled={!dirty || busy || problems.length > 0}
               onPress={save} accessibilityRole="button">
-              <Text style={s.btnText}>{busy ? "Saving…" : "Save this shot"}</Text>
+              <Text style={s.btnText}>{busy ? tr("Saving…") : tr("Save this shot")}</Text>
             </Pressable>
             {dirty && !busy && <Pressable onPress={() => { setD(draftOf(row)); setSel(null); setMsg(null); }} accessibilityRole="button">
-              <Text style={s.remove}>Undo changes</Text>
+              <Text style={s.remove}>{tr("Undo changes")}</Text>
             </Pressable>}
           </View>
           {msg && <Text style={msg.ok ? s.ok : s.err}>{msg.text}</Text>}

@@ -5,6 +5,7 @@ import { router } from "expo-router";
 import { api } from "../lib/api";
 import { c, font } from "../lib/theme";
 import { suggestedSeconds, WALKING } from "../lib/shotStatus";
+import { tr } from "../lib/i18n";
 
 export function AddShot({ sceneId, onDone, onCreated }: { sceneId: string; onDone: (err?: string) => void; onCreated?: (id: string) => void }) {
   const [open, setOpen] = useState(false);
@@ -14,21 +15,21 @@ export function AddShot({ sceneId, onDone, onCreated }: { sceneId: string; onDon
   const [busy, setBusy] = useState(false);
   if (!open) return (
     <Pressable onPress={() => setOpen(true)} accessibilityRole="button" style={s.newShot}>
-      <Text style={[{ color: c.sub, fontSize: 12, letterSpacing: 0.8 }, font.mono]}>NEXT SHOT · WHAT HAPPENS?</Text>
-      <Text style={{ color: c.muted, fontSize: 15, marginTop: 6 }}>Describe the movement, naming each character as on their card…</Text>
+      <Text style={[{ color: c.sub, fontSize: 12, letterSpacing: 0.8 }, font.mono]}>{tr("NEXT SHOT · WHAT HAPPENS?")}</Text>
+      <Text style={{ color: c.muted, fontSize: 15, marginTop: 6 }}>{tr("Describe the movement, naming each character as on their card…")}</Text>
     </Pressable>
   );
   const n = Number(dur);
   const ok = action.trim() && Number.isInteger(n) && n >= 3 && n <= 30;
   return (
     <View style={s.form}>
-      <Text style={[{ color: c.sub, fontSize: 12, letterSpacing: 0.8 }, font.mono]}>NEXT SHOT · WHAT HAPPENS?</Text>
-      <Text style={s.label}>The movement, from the first moment to the last. Name each character as on their card.</Text>
+      <Text style={[{ color: c.sub, fontSize: 12, letterSpacing: 0.8 }, font.mono]}>{tr("NEXT SHOT · WHAT HAPPENS?")}</Text>
+      <Text style={s.label}>{tr("The movement, from the first moment to the last. Name each character as on their card.")}</Text>
       <TextInput style={s.input} multiline value={action}
         onChangeText={(v) => { setAction(v); if (!durTouched) setDur(String(suggestedSeconds(v))); }}
-        placeholderTextColor={c.muted} placeholder="e.g. Sam walks across the room to the window; Ana watches him from the table. Add camera words if you want them (slow push-in, handheld, locked)." />
+        placeholderTextColor={c.muted} placeholder={tr("e.g. Sam walks across the room to the window; Ana watches him from the table. Add camera words if you want them (slow push-in, handheld, locked).")} />
       <View style={s.row}>
-        <Text style={s.label}>Seconds</Text>
+        <Text style={s.label}>{tr("Seconds")}</Text>
         <TextInput style={[s.input, { width: 70, minHeight: 0 }]} value={dur} onChangeText={(v) => { setDur(v); setDurTouched(true); }} keyboardType="number-pad" />
         <Pressable style={[s.btn, !ok && { opacity: 0.5 }]} disabled={!ok || busy} accessibilityRole="button"
           onPress={async () => {
@@ -37,12 +38,12 @@ export function AddShot({ sceneId, onDone, onCreated }: { sceneId: string; onDon
             catch (e) { onDone((e as Error).message); }
             setBusy(false);
           }}>
-          <Text style={s.btnText}>Create shot</Text>
+          <Text style={s.btnText}>{tr("Create shot")}</Text>
         </Pressable>
-        <Pressable onPress={() => setOpen(false)} accessibilityRole="button"><Text style={s.link}>Cancel</Text></Pressable>
+        <Pressable onPress={() => setOpen(false)} accessibilityRole="button"><Text style={s.link}>{tr("Cancel")}</Text></Pressable>
       </View>
       {WALKING.test(action) && n < 7 ? (
-        <Text style={s.meta}>Walks need about 7 seconds: shorter clips tend to end with the character frozen mid-step.</Text>
+        <Text style={s.meta}>{tr("Walks need about 7 seconds: shorter clips tend to end with the character frozen mid-step.")}</Text>
       ) : null}
     </View>
   );

@@ -8,24 +8,25 @@ import { c, font, pageBg } from "../lib/theme";
 import { Grid } from "../components/Grid";
 import { AddShot } from "../components/AddShot";
 import { chip, pad2, TONE } from "../lib/shotStatus";
+import { tr, trp, tMsg } from "../lib/i18n";
 
 function ShotCard({ r }: { r: ShotRow }) {
   const st = chip(r), t = TONE[st.tone];
   return (
     <Link href={{ pathname: "/shot/[id]", params: { id: r.id } }} asChild>
-      <Pressable style={s.card} accessibilityRole="link" accessibilityLabel={`Shot ${r.ord}: ${r.action}. ${st.text}`}>
+      <Pressable style={s.card} accessibilityRole="link" accessibilityLabel={tr("Shot {ord}: {action}. {text}", { ord: r.ord, action: r.action, text: st.text })}>
         <View style={s.thumbBox}>
           {r.thumb_url
             ? <Image source={{ uri: r.thumb_url }} style={[s.thumb, !r.start_frame_approved && { opacity: 0.55 }]} resizeMode="cover" />
-            : <View style={[s.thumb, { alignItems: "center", justifyContent: "center" }]}><Text style={{ color: c.muted, fontSize: 12 }}>No start frame yet</Text></View>}
-          <Text style={[s.slate, font.mono]}>SH {pad2(r.ord)}</Text>
+            : <View style={[s.thumb, { alignItems: "center", justifyContent: "center" }]}><Text style={{ color: c.muted, fontSize: 12 }}>{tr("No start frame yet")}</Text></View>}
+          <Text style={[s.slate, font.mono]}>{tr("SH {v0}", { v0: pad2(r.ord) })}</Text>
           <Text style={[s.status, { backgroundColor: t.bg, color: t.fg, borderColor: t.line }]}>{st.text}</Text>
         </View>
         <View style={{ padding: 12 }}>
           <Text style={s.action} numberOfLines={2}>{r.action}</Text>
           <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 10 }}>
             <Text style={[s.meta, font.mono]}>{r.duration_s} S{r.gen_model ? ` · ${(MODEL_NAMES[r.gen_model] ?? r.gen_model).toUpperCase()}` : ""}</Text>
-            {r.has_end_frame && <Text style={[s.meta, font.mono]}>END FRAME</Text>}
+            {r.has_end_frame && <Text style={[s.meta, font.mono]}>{tr("END FRAME")}</Text>}
           </View>
         </View>
       </Pressable>
@@ -36,17 +37,17 @@ function ShotCard({ r }: { r: ShotRow }) {
 function AddScene({ seriesId, onDone }: { seriesId: string; onDone: (err?: string) => void }) {
   const [title, setTitle] = useState("");
   const [open, setOpen] = useState(false);
-  if (!open) return <Pressable onPress={() => setOpen(true)} accessibilityRole="button"><Text style={s.link}>+ New scene</Text></Pressable>;
+  if (!open) return <Pressable onPress={() => setOpen(true)} accessibilityRole="button"><Text style={s.link}>{tr("+ New scene")}</Text></Pressable>;
   return (
     <View style={[s.row, { marginBottom: 12 }]}>
-      <TextInput style={[s.input, { flex: 1, minHeight: 0 }]} value={title} onChangeText={setTitle} placeholderTextColor={c.muted} placeholder="Scene title, e.g. Kitchen breakfast" />
+      <TextInput style={[s.input, { flex: 1, minHeight: 0 }]} value={title} onChangeText={setTitle} placeholderTextColor={c.muted} placeholder={tr("Scene title, e.g. Kitchen breakfast")} />
       <Pressable style={[s.btn, !title.trim() && { opacity: 0.5 }]} disabled={!title.trim()} accessibilityRole="button"
         onPress={async () => {
           try { await api.createScene(seriesId, title); setTitle(""); setOpen(false); onDone(); } catch (e) { onDone((e as Error).message); }
         }}>
-        <Text style={s.btnText}>Create</Text>
+        <Text style={s.btnText}>{tr("Create")}</Text>
       </Pressable>
-      <Pressable onPress={() => setOpen(false)} accessibilityRole="button"><Text style={s.link}>Cancel</Text></Pressable>
+      <Pressable onPress={() => setOpen(false)} accessibilityRole="button"><Text style={s.link}>{tr("Cancel")}</Text></Pressable>
     </View>
   );
 }
@@ -66,22 +67,22 @@ export default function Shots() {
   return (
     <ScrollView style={{ backgroundColor: pageBg }} contentContainerStyle={s.page}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}>
-      {error && <Text style={s.error}>{error}</Text>}
+      {error && <Text style={s.error}>{tMsg(error)}</Text>}
       {!series && !error && <ActivityIndicator style={{ marginTop: 40 }} />}
       {series && series.length === 0 && (
-        <Link href="/library" asChild><Pressable accessibilityRole="link"><Text style={s.link}>No series yet: create one</Text></Pressable></Link>
+        <Link href="/library" asChild><Pressable accessibilityRole="link"><Text style={s.link}>{tr("No series yet: create one")}</Text></Pressable></Link>
       )}
       {series?.map((se) => (
         <View key={se.id} style={{ marginBottom: 40 }}>
           <View style={[s.row, { justifyContent: "space-between", alignItems: "flex-end", marginBottom: 14 }]}>
             <View style={{ flexShrink: 1 }}>
-              <Text style={[s.kicker, font.mono]}>SERIES · {se.scenes.length} SCENE{se.scenes.length === 1 ? "" : "S"}</Text>
+              <Text style={[s.kicker, font.mono]}>{trp(se.scenes.length, "SERIES · {n} SCENE", "SERIES · {n} SCENES")}</Text>
               <Text style={[s.series, font.display]}>{se.name}</Text>
             </View>
             <View style={s.row}>
-              <Text style={[s.lookTag, font.mono]}>{se.look === "photoreal" ? "PHOTOREAL" : "CARTOON"}</Text>
+              <Text style={[s.lookTag, font.mono]}>{se.look === "photoreal" ? tr("PHOTOREAL") : tr("CARTOON")}</Text>
               <Link href={{ pathname: "/library", params: { series: se.id } }} asChild>
-                <Pressable accessibilityRole="link" style={s.ghostBtn}><Text style={{ color: c.ink, fontWeight: "600", fontSize: 13 }}>Cast & places</Text></Pressable>
+                <Pressable accessibilityRole="link" style={s.ghostBtn}><Text style={{ color: c.ink, fontWeight: "600", fontSize: 13 }}>{tr("Cast & places")}</Text></Pressable>
               </Link>
             </View>
           </View>
@@ -92,19 +93,18 @@ export default function Shots() {
                 <View style={[s.row, { justifyContent: "space-between" }]}>
                   <View style={{ flexShrink: 1 }}>
                     <Text style={[s.kicker, font.mono]}>
-                      SCENE {pad2(sc.ord)} · {shots.length} SHOT{shots.length === 1 ? "" : "S"} · {shots.reduce((t, r) => t + r.duration_s, 0)} S
-                    </Text>
+                      {trp(shots.length, "SCENE {ord} · {n} SHOT · {s} S", "SCENE {ord} · {n} SHOTS · {s} S", { ord: pad2(sc.ord), s: shots.reduce((t, r) => t + r.duration_s, 0) })}</Text>
                     <Text style={[s.h, font.display]}>{sc.title}</Text>
                   </View>
                   <Link href={{ pathname: "/cut/[scene]", params: { scene: sc.id } }} asChild>
-                    <Pressable accessibilityRole="link" style={s.ghostBtn}><Text style={{ color: c.ink, fontWeight: "600", fontSize: 13 }}>Make the scene cut</Text></Pressable>
+                    <Pressable accessibilityRole="link" style={s.ghostBtn}><Text style={{ color: c.ink, fontWeight: "600", fontSize: 13 }}>{tr("Make the scene cut")}</Text></Pressable>
                   </Link>
                 </View>
                 <View style={[s.row, { marginBottom: 8 }]}>
-                  <Text style={s.label}>Location:</Text>
+                  <Text style={s.label}>{tr("Location:")}</Text>
                   {se.locations.length === 0 && (
                     <Link href={{ pathname: "/library", params: { series: se.id } }} asChild>
-                      <Pressable accessibilityRole="link"><Text style={s.link}>add a location first</Text></Pressable>
+                      <Pressable accessibilityRole="link"><Text style={s.link}>{tr("add a location first")}</Text></Pressable>
                     </Link>
                   )}
                   {se.locations.map((l) => {
@@ -112,12 +112,12 @@ export default function Shots() {
                     return (
                       <Pressable key={l.id} style={[s.chip, on && s.chipOn]} accessibilityRole="radio" accessibilityState={{ checked: on }}
                         onPress={async () => { try { await api.setSceneLocation(sc.id, on ? null : l.id); load(); } catch (e) { setError((e as Error).message); } }}>
-                        <Text style={on ? { color: c.onAccent } : { color: c.ink }}>{l.name}{l.has_plate ? "" : " (no plate yet)"}</Text>
+                        <Text style={on ? { color: c.onAccent } : { color: c.ink }}>{l.name}{l.has_plate ? "" : tr(" (no plate yet)")}</Text>
                       </Pressable>
                     );
                   })}
                 </View>
-                {shots.length === 0 && <Text style={s.sub}>No shots yet.</Text>}
+                {shots.length === 0 && <Text style={s.sub}>{tr("No shots yet.")}</Text>}
                 <Grid>{shots.map((r) => <ShotCard key={r.id} r={r} />)}</Grid>
                 <AddShot sceneId={sc.id} onDone={done} />
               </View>

@@ -9,6 +9,7 @@ import { api } from "../lib/api";
 import { supabase } from "../lib/supabase";
 import { c, font, pageBg } from "../lib/theme";
 import { LikenessConsent } from "../components/LikenessConsent";
+import { tr, trp } from "../lib/i18n";
 
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
@@ -29,7 +30,7 @@ function videoSeconds(file: File): Promise<number> {
       v.currentTime = 1e7;
       setTimeout(() => done(NaN), 8000);
     };
-    v.onerror = () => { if (settled) return; settled = true; URL.revokeObjectURL(url); reject(new Error("This video could not be read. Try an MP4 file.")); };
+    v.onerror = () => { if (settled) return; settled = true; URL.revokeObjectURL(url); reject(new Error(tr("This video could not be read. Try an MP4 file."))); };
     v.src = url;
   });
 }
@@ -45,7 +46,7 @@ export default function Upload() {
   // likeness consent (2026-11-24): ticked, it is kept for each file uploaded while it is on; unticked, the AI tool must
   // ask the creator in the chat before a person's photo or video can be used
   const [consent, setConsent] = useState(false);
-  useEffect(() => { api.me().then((m) => setOwner(m.user_id)).catch((e) => setSignInError((e as Error).message || "Could not sign you in.")); }, []);
+  useEffect(() => { api.me().then((m) => setOwner(m.user_id)).catch((e) => setSignInError((e as Error).message || tr("Could not sign you in."))); }, []);
 
   const set = (i: number, r: Partial<Row>) => setRows((xs) => xs.map((x, k) => (k === i ? { ...x, ...r } : x)));
 
@@ -56,13 +57,13 @@ export default function Upload() {
     await Promise.all(files.map(async (f, k) => {
       const i = start + k, video = VIDEO_TYPES.includes(f.type);
       try {
-        if (!video && !IMAGE_TYPES.includes(f.type)) throw new Error("Use a PNG, JPEG or WebP image, or an MP4, MOV or WebM video.");
+        if (!video && !IMAGE_TYPES.includes(f.type)) throw new Error(tr("Use a PNG, JPEG or WebP image, or an MP4, MOV or WebM video."));
         if (f.size > (video ? MAX_VIDEO_MB : MAX_IMAGE_MB) * 1024 * 1024) throw new Error(`Over ${video ? MAX_VIDEO_MB : MAX_IMAGE_MB} MB.`);
         const secs = video ? await videoSeconds(f) : null;
         const id = `up-${Date.now().toString(36)}-${randomPart()}`;
         const ext = f.type === "image/jpeg" ? "jpg" : f.type === "image/webp" ? "webp" : f.type === "image/png" ? "png"
           : f.type === "video/quicktime" ? "mov" : f.type === "video/webm" ? "webm" : "mp4";
-        if (video && !(secs && isFinite(secs))) throw new Error("This video's length could not be read, so it cannot be used for motion transfer. Try an MP4 file.");
+        if (video && !(secs && isFinite(secs))) throw new Error(tr("This video's length could not be read, so it cannot be used for motion transfer. Try an MP4 file."));
         const path = `${owner}/motion/${id}${secs && isFinite(secs) ? `_d${Math.round(secs * 100)}` : ""}.${ext}`;
         const { error } = await supabase.storage.from("studio").upload(path, f, { contentType: f.type, upsert: false });
         if (error) throw new Error(error.message);
@@ -78,16 +79,14 @@ export default function Upload() {
   const done = rows.filter((r) => r.state === "done");
 
   if (Platform.OS !== "web") return (
-    <View style={[s.page, { backgroundColor: pageBg, padding: 24 }]}><Text style={s.lead}>Open anlim.ai/upload in a web browser.</Text></View>
+    <View style={[s.page, { backgroundColor: pageBg, padding: 24 }]}><Text style={s.lead}>{tr("Open anlim.ai/upload in a web browser.")}</Text></View>
   );
   return (
     <ScrollView style={[s.page, { backgroundColor: pageBg }]} contentContainerStyle={{ padding: 24, paddingBottom: 80 }}>
       <View style={{ maxWidth: 760, width: "100%", alignSelf: "center", gap: 16 }}>
-        <Text style={[s.kicker, font.mono]}>UPLOAD FOR YOUR AI TOOL</Text>
-        <Text style={[s.h1, font.display]}>Drop your photos and videos</Text>
-        <Text style={s.lead}>For Claude, ChatGPT or any AI tool connected to anlim: upload here, then tell it you're done. It sees
-          each file by its upload id and can use it for a character's reference photo, a background, a start image or a motion
-          transfer video. Images: PNG, JPEG or WebP up to {MAX_IMAGE_MB} MB. Videos: MP4, MOV or WebM up to {MAX_VIDEO_MB} MB.</Text>
+        <Text style={[s.kicker, font.mono]}>{tr("UPLOAD FOR YOUR AI TOOL")}</Text>
+        <Text style={[s.h1, font.display]}>{tr("Drop your photos and videos")}</Text>
+        <Text style={s.lead}>{tr("For Claude, ChatGPT or any AI tool connected to anlim: upload here, then tell it you're done. It sees each file by its upload id and can use it for a character's reference photo, a background, a start image or a motion transfer video. Images: PNG, JPEG or WebP up to {MAX_IMAGE_MB} MB. Videos: MP4, MOV or WebM up to {MAX_VIDEO_MB} MB.", { MAX_IMAGE_MB, MAX_VIDEO_MB })}</Text>
         <LikenessConsent on={consent} onChange={setConsent} plural />
         {/* a plain drop zone: the browser's own file input, so it also works with a click */}
         <label onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
@@ -96,22 +95,22 @@ export default function Upload() {
                    padding: 36, textAlign: "center", background: drag ? "rgba(255,138,61,0.06)" : c.card, color: c.sub, fontSize: 15 }}>
           <input type="file" multiple accept={[...IMAGE_TYPES, ...VIDEO_TYPES].join(",")} style={{ display: "none" }} disabled={!owner}
             onChange={(e) => { const fs = Array.from(e.target.files ?? []); e.target.value = ""; if (fs.length) send(fs); }} />
-          {owner ? "Drop files here, or click to choose" : signInError ? `Not signed in: ${signInError} Sign in at anlim.ai, then open this page again.` : "Signing you in…"}
+          {owner ? tr("Drop files here, or click to choose") : signInError ? tr("Not signed in: {signInError} Sign in at anlim.ai, then open this page again.", { signInError }) : tr("Signing you in…")}
         </label>
         {rows.map((r, i) => (
           <View key={i} style={s.row}>
             <Text style={[s.name, { flex: 1 }]} numberOfLines={1}>{r.name}{r.seconds ? ` · ${r.seconds.toFixed(1)} s` : ""}</Text>
-            {r.state === "uploading" ? <Text style={s.small}>Uploading…</Text>
+            {r.state === "uploading" ? <Text style={s.small}>{tr("Uploading…")}</Text>
               : r.state === "failed" ? <Text style={[s.small, { color: c.fail }]}>{r.note}</Text>
               : <Pressable onPress={() => copy(r.id!)} accessibilityRole="button" style={s.idChip}>
-                  <Text style={[{ color: c.ink, fontSize: 13 }, font.mono]}>{copied === r.id ? "Copied" : r.id}</Text>
+                  <Text style={[{ color: c.ink, fontSize: 13 }, font.mono]}>{copied === r.id ? tr("Copied") : r.id}</Text>
                 </Pressable>}
           </View>
         ))}
         {done.length ? (
           <View style={s.tell}>
-            <Text style={s.small}>Tell your AI tool:</Text>
-            <Text style={[s.name, font.mono]} selectable>{`I uploaded ${done.length} file${done.length > 1 ? "s" : ""} to anlim: ${done.map((r) => r.id).join(", ")}`}</Text>
+            <Text style={s.small}>{tr("Tell your AI tool:")}</Text>
+            <Text style={[s.name, font.mono]} selectable>{trp(done.length, "I uploaded {n} file to anlim: {ids}", "I uploaded {n} files to anlim: {ids}", { ids: done.map((r) => r.id).join(", ") })}</Text>
           </View>
         ) : null}
       </View>

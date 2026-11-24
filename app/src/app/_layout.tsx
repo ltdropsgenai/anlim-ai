@@ -10,6 +10,7 @@ import { SunStage } from "../components/SunLight";
 import { Shell } from "../components/Shell";
 import { installErrorHandlers, reportError, trackView } from "../lib/telemetry";
 import { api } from "../lib/api";
+import { tr, getLang, setLang, onLang, Lang } from "../lib/i18n";
 
 // Web: the studio fonts and page-level styles (dark scrollbars, base text font). Native keeps the system font.
 // 2026-11-20: plus the glass card and ambient light CSS used by components/FloatCard.web.tsx.
@@ -64,14 +65,14 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => Pro
   useEffect(() => { reportError("screen", error); }, [error]);   // monitoring (2026-11-23)
   return (
     <View style={{ flex: 1, backgroundColor: c.bg, alignItems: "center", justifyContent: "center", padding: 24, gap: 12 }}>
-      <Text style={{ color: c.ink, fontSize: 20, fontWeight: "700" }}>Something went wrong on this screen</Text>
+      <Text style={{ color: c.ink, fontSize: 20, fontWeight: "700" }}>{tr("Something went wrong on this screen")}</Text>
       <Text style={{ color: c.sub, fontSize: 14, textAlign: "center", maxWidth: 520 }}>{error.message}</Text>
       <View style={{ flexDirection: "row", gap: 10 }}>
         <Pressable onPress={retry} accessibilityRole="button" style={{ backgroundColor: c.accent, borderRadius: 999, paddingHorizontal: 18, paddingVertical: 10 }}>
-          <Text style={{ color: c.onAccent, fontWeight: "700" }}>Try again</Text>
+          <Text style={{ color: c.onAccent, fontWeight: "700" }}>{tr("Try again")}</Text>
         </Pressable>
         <Pressable onPress={() => router.replace("/")} accessibilityRole="link" style={{ borderWidth: 1, borderColor: c.line, borderRadius: 999, paddingHorizontal: 18, paddingVertical: 10 }}>
-          <Text style={{ color: c.ink, fontWeight: "600" }}>Go home</Text>
+          <Text style={{ color: c.ink, fontWeight: "600" }}>{tr("Go home")}</Text>
         </Pressable>
       </View>
     </View>
@@ -99,6 +100,18 @@ export default function RootLayout() {
     if (!ref) return;
     api.claimReferral(ref).catch(() => null).finally(() => { try { localStorage.removeItem("anlim_ref"); } catch { /* ignore */ } });
   }, [session]);
+  // Language (2026-11-24): the account's choice wins; a new account gets this device's language saved to it, so emails
+  // and what anlim makes follow it. Changing the language remounts the app below (key), so every tr() re-reads it.
+  const [lang, setLangState] = useState<Lang>(getLang());
+  useEffect(() => onLang(setLangState), []);
+  useEffect(() => { if (Platform.OS === "web" && typeof document !== "undefined") document.documentElement.lang = lang; }, [lang]);
+  useEffect(() => {
+    if (!session) return;
+    api.me().then((m) => {
+      if (m.language) setLang(m.language);
+      else api.setLanguage(getLang()).catch(() => null);
+    }).catch(() => null);
+  }, [session?.user?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
   // page views of signed-in creators (2026-11-23): the path only (ids become :id), to see where people stop
   useEffect(() => { if (session) trackView(pathname); }, [session, pathname]);
 
@@ -128,31 +141,31 @@ export default function RootLayout() {
   const stack = (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: pageBg } }}>
       <Stack.Screen name="index" options={{ title: "anlim.ai" }} />
-      <Stack.Screen name="workspace" options={{ title: "Workspace · anlim.ai" }} />
-      <Stack.Screen name="storage" options={{ title: "Assets · anlim.ai" }} />
-      <Stack.Screen name="review" options={{ title: "Review · anlim.ai" }} />
-      <Stack.Screen name="login" options={{ title: "Sign in" }} />
-      <Stack.Screen name="clip/[id]" options={{ title: "Review a clip" }} />
-      <Stack.Screen name="shots" options={{ title: "Scene board" }} />
-      <Stack.Screen name="shot/[id]" options={{ title: "Shot" }} />
-      <Stack.Screen name="cut/[scene]" options={{ title: "Scene cut" }} />
-      <Stack.Screen name="library" options={{ title: "Cast & places" }} />
-      <Stack.Screen name="billing" options={{ title: "Credits & plan" }} />
-      <Stack.Screen name="account" options={{ title: "Account" }} />
-      <Stack.Screen name="reset-password" options={{ title: "New password" }} />
+      <Stack.Screen name="workspace" options={{ title: tr("Workspace · anlim.ai") }} />
+      <Stack.Screen name="storage" options={{ title: tr("Assets · anlim.ai") }} />
+      <Stack.Screen name="review" options={{ title: tr("Review · anlim.ai") }} />
+      <Stack.Screen name="login" options={{ title: tr("Sign in") }} />
+      <Stack.Screen name="clip/[id]" options={{ title: tr("Review a clip") }} />
+      <Stack.Screen name="shots" options={{ title: tr("Scene board") }} />
+      <Stack.Screen name="shot/[id]" options={{ title: tr("Shot") }} />
+      <Stack.Screen name="cut/[scene]" options={{ title: tr("Scene cut") }} />
+      <Stack.Screen name="library" options={{ title: tr("Cast & places") }} />
+      <Stack.Screen name="billing" options={{ title: tr("Credits & plan") }} />
+      <Stack.Screen name="account" options={{ title: tr("Account") }} />
+      <Stack.Screen name="reset-password" options={{ title: tr("New password") }} />
       <Stack.Screen name="welcome" options={{ title: "anlim.ai" }} />
-      <Stack.Screen name="start" options={{ title: "Start · anlim.ai" }} />
-      <Stack.Screen name="terms" options={{ title: "Terms" }} />
-      <Stack.Screen name="privacy" options={{ title: "Privacy" }} />
-      <Stack.Screen name="support" options={{ title: "Help & contact" }} />
-      <Stack.Screen name="upload" options={{ title: "Upload · anlim.ai" }} />
-      <Stack.Screen name="oauth/consent" options={{ title: "Connect an AI tool · anlim.ai" }} />
-      <Stack.Screen name="refunds" options={{ title: "Refund requests" }} />
-      <Stack.Screen name="insights" options={{ title: "Insights" }} />
+      <Stack.Screen name="start" options={{ title: tr("Start · anlim.ai") }} />
+      <Stack.Screen name="terms" options={{ title: tr("Terms") }} />
+      <Stack.Screen name="privacy" options={{ title: tr("Privacy") }} />
+      <Stack.Screen name="support" options={{ title: tr("Help & contact") }} />
+      <Stack.Screen name="upload" options={{ title: tr("Upload · anlim.ai") }} />
+      <Stack.Screen name="oauth/consent" options={{ title: tr("Connect an AI tool · anlim.ai") }} />
+      <Stack.Screen name="refunds" options={{ title: tr("Refund requests") }} />
+      <Stack.Screen name="insights" options={{ title: tr("Insights") }} />
     </Stack>
   );
   // 2026-11-20 (Londi): the sun light sits behind every page. Studio pages get it from the Shell (behind the page,
   // not the sidebar); public pages get it here. The navigator's own background is transparent on the web so it shows.
   const theme = { ...DarkTheme, colors: { ...DarkTheme.colors, background: pageBg, card: c.bg } };
-  return <ThemeProvider value={theme}>{bare ? <SunStage>{stack}</SunStage> : <Shell>{stack}</Shell>}</ThemeProvider>;
+  return <ThemeProvider key={lang} value={theme}>{bare ? <SunStage>{stack}</SunStage> : <Shell>{stack}</Shell>}</ThemeProvider>;
 }

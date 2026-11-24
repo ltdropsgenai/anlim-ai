@@ -12,6 +12,7 @@ import { c, font } from "../lib/theme";
 import { pad2 } from "../lib/shotStatus";
 import { StillPicker } from "./StillPicker";
 import { AudioPlayer } from "./AudioPlayer";
+import { tr, trp, tMsg } from "../lib/i18n";
 
 const AUDIO = ["audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/wave", "audio/mp4", "audio/x-m4a", "audio/aac"];
 export type Music = { path: string; name: string; source: "upload" | "score" } | null;
@@ -37,25 +38,25 @@ function Takes({ jobs, shotS, onUse, label }: { jobs: AudioJob[]; shotS?: number
   const others = jobs.filter((j) => j.status === "done" && j !== used).slice(0, 3);
   return (
     <View style={{ gap: 6, marginTop: 6 }}>
-      {making && <View style={s.row}><ActivityIndicator size="small" /><Text style={s.small}>Making the {label}… usually under a minute.</Text></View>}
-      {lastFail && !making && <Text style={{ color: c.fail, fontSize: 13 }}>{lastFail.error ?? "It could not be made."}</Text>}
+      {making && <View style={s.row}><ActivityIndicator size="small" /><Text style={s.small}>{tr("Making the {label}… usually under a minute.", { label })}</Text></View>}
+      {lastFail && !making && <Text style={{ color: c.fail, fontSize: 13 }}>{lastFail.error ?? tr("It could not be made.")}</Text>}
       {used && (
         <View style={s.take}>
           <View style={[s.row, { justifyContent: "space-between" }]}>
-            <Text style={[s.small, { color: c.pass }]}>✓ In the cut · {Number(used.duration_s).toFixed(1)} s</Text>
-            <Pressable onPress={() => onUse(used, false)} accessibilityRole="button"><Text style={s.link}>Leave out</Text></Pressable>
+            <Text style={[s.small, { color: c.pass }]}>{tr("✓ In the cut · {v0} s", { v0: Number(used.duration_s).toFixed(1) })}</Text>
+            <Pressable onPress={() => onUse(used, false)} accessibilityRole="button"><Text style={s.link}>{tr("Leave out")}</Text></Pressable>
           </View>
           {used.url && <AudioPlayer src={used.url} />}
           {shotS && Number(used.duration_s) > shotS + 0.1 && (
-            <Text style={[s.small, { color: c.flag }]}>Longer than the shot ({shotS} s): it carries into the next shot.</Text>)}
+            <Text style={[s.small, { color: c.flag }]}>{tr("Longer than the shot ({shotS} s): it carries into the next shot.", { shotS })}</Text>)}
         </View>
       )}
       {others.map((j) => (
         <View key={j.id} style={[s.row, { justifyContent: "space-between" }]}>
-          <Text style={s.small} numberOfLines={1}>Earlier take · {Number(j.duration_s).toFixed(1)} s</Text>
+          <Text style={s.small} numberOfLines={1}>{tr("Earlier take · {v0} s", { v0: Number(j.duration_s).toFixed(1) })}</Text>
           <View style={s.row}>
             {j.url && <AudioPlayer src={j.url} />}
-            <Pressable onPress={() => onUse(j, true)} accessibilityRole="button"><Text style={s.link}>Use this</Text></Pressable>
+            <Pressable onPress={() => onUse(j, true)} accessibilityRole="button"><Text style={s.link}>{tr("Use this")}</Text></Pressable>
           </View>
         </View>
       ))}
@@ -90,33 +91,31 @@ function Narration({ sceneId, voice, jobs, connected, cutLen, onMade, onUse, set
   const len = Number(used?.duration_s) || 0, start = Number(used?.input.at_s ?? 0);
   return (
     <View style={s.shot}>
-      <Text style={[s.small, font.mono, { color: c.sub }]}>WHOLE SCENE · NARRATION</Text>
-      <Text style={s.small}>One take over the whole cut, starting where you set it. Use it when one voice tells the story across shots;
-        a line on a single shot (below) belongs to that shot.</Text>
+      <Text style={[s.small, font.mono, { color: c.sub }]}>{tr("WHOLE SCENE · NARRATION")}</Text>
+      <Text style={s.small}>{tr("One take over the whole cut, starting where you set it. Use it when one voice tells the story across shots; a line on a single shot (below) belongs to that shot.")}</Text>
       <TextInput value={line} onChangeText={setLine} multiline editable={connected} placeholderTextColor={c.muted} style={s.input}
-        placeholder="The narration, start to finish. Tags like [softly], [pause] or [sighs] set the delivery." />
+        placeholder={tr("The narration, start to finish. Tags like [softly], [pause] or [sighs] set the delivery.")} />
       <View style={s.row}>
-        <Text style={s.small}>Starts at</Text>
+        <Text style={s.small}>{tr("Starts at")}</Text>
         <TextInput value={at} onChangeText={setAt} editable={connected} keyboardType="decimal-pad" style={[s.input, { width: 64, minHeight: 0 }]}
-          accessibilityLabel="Narration start, seconds into the cut" />
-        <Text style={s.small}>s into the cut</Text>
+          accessibilityLabel={tr("Narration start, seconds into the cut")} />
+        <Text style={s.small}>{tr("s into the cut")}</Text>
         <Pressable style={[s.btnSm, (!connected || !voice || !line.trim() || !atOk || busy || making) && { opacity: 0.5 }]}
           disabled={!connected || !voice || !line.trim() || !atOk || busy || making} onPress={make} accessibilityRole="button">
-          <Text style={s.btnText}>{busy ? "Sending…" : jobs.length ? "Make it again" : "Make the narration"}</Text>
+          <Text style={s.btnText}>{busy ? tr("Sending…") : jobs.length ? tr("Make it again") : tr("Make the narration")}</Text>
         </Pressable>
         {used && atOk && atN !== start && (
           <Pressable style={[s.btnSm, busy && { opacity: 0.5 }]} disabled={busy} onPress={move} accessibilityRole="button">
-            <Text style={s.btnText}>Move it to {atN} s</Text>
+            <Text style={s.btnText}>{tr("Move it to {atN} s", { atN })}</Text>
           </Pressable>
         )}
-        {connected && !voice && <Text style={s.small}>Pick a voice above first.</Text>}
+        {connected && !voice && <Text style={s.small}>{tr("Pick a voice above first.")}</Text>}
       </View>
-      {!atOk && <Text style={{ color: c.fail, fontSize: 13 }}>The start is 0 to 600 seconds.</Text>}
+      {!atOk && <Text style={{ color: c.fail, fontSize: 13 }}>{tr("The start is 0 to 600 seconds.")}</Text>}
       <Takes jobs={jobs} onUse={onUse} label="narration" />
       {used && cutLen > 1 && start + len > cutLen - 1 + 0.1 && (
         <Text style={[s.small, { color: c.flag }]}>
-          From {start} s it runs to {(start + len).toFixed(1)} s, past the cut's {(cutLen - 1).toFixed(1)} s: the end is cut off. Start it earlier or slow shots down.
-        </Text>)}
+          {tr("From {start} s it runs to {v1} s, past the cut's {v2} s: the end is cut off. Start it earlier or slow shots down.", { start, v1: (start + len).toFixed(1), v2: (cutLen - 1).toFixed(1) })}</Text>)}
     </View>
   );
 }
@@ -140,21 +139,21 @@ function LipSync({ shotId, voKey, setError }: { shotId: string; voKey: string; s
   const last = q.last;
   return (
     <View style={{ marginTop: 8, gap: 4 }}>
-      <Text style={s.label}>Lip sync</Text>
-      {making ? <Text style={s.small}>Making the lip-synced clip… usually 2 to 5 minutes.</Text>
-        : last?.kept ? <Text style={[s.small, { color: c.pass }]}>✓ The cut uses the lip-synced clip.</Text>
+      <Text style={s.label}>{tr("Lip sync")}</Text>
+      {making ? <Text style={s.small}>{tr("Making the lip-synced clip… usually 2 to 5 minutes.")}</Text>
+        : last?.kept ? <Text style={[s.small, { color: c.pass }]}>{tr("✓ The cut uses the lip-synced clip.")}</Text>
         : last?.status === "review" || last?.status === "succeeded" ? (
           <Pressable onPress={() => router.navigate(`/clip/${last.generation_id}` as never)} accessibilityRole="link">
-            <Text style={[s.small, { color: c.link, textDecorationLine: "underline" }]}>The lip-synced clip is ready: open it in Review and keep it to use it in the cut.</Text>
+            <Text style={[s.small, { color: c.link, textDecorationLine: "underline" }]}>{tr("The lip-synced clip is ready: open it in Review and keep it to use it in the cut.")}</Text>
           </Pressable>)
-        : last?.status === "failed" && last.error && last.error !== "rejected by creator" ? <Text style={[s.small, { color: c.fail }]}>The last lip sync could not be made: {last.error}</Text>
+        : last?.status === "failed" && last.error && last.error !== "rejected by creator" ? <Text style={[s.small, { color: c.fail }]}>{tr("The last lip sync could not be made: {error}", { error: last.error })}</Text>
         : null}
       {!making && (q.ok ? (
         <View style={s.row}>
           <Pressable style={[s.btnSm, busy && { opacity: 0.5 }]} disabled={busy} onPress={go} accessibilityRole="button">
-            <Text style={s.btnText}>{busy ? "Starting…" : `Lip-sync to the voiceover · ${q.credits} credits`}</Text>
+            <Text style={s.btnText}>{busy ? tr("Starting…") : tr("Lip-sync to the voiceover · {credits} credits", { credits: q.credits })}</Text>
           </Pressable>
-          <Text style={s.small}>Moves the mouths in the kept clip to this voiceover. fal bills {q.seconds} s for this {Number(q.clip_s).toFixed(1)} s clip.</Text>
+          <Text style={s.small}>{tr("Moves the mouths in the kept clip to this voiceover. fal bills {seconds} s for this {v1} s clip.", { seconds: q.seconds, v1: Number(q.clip_s).toFixed(1) })}</Text>
         </View>
       ) : <Text style={s.small}>{q.why}</Text>)}
     </View>
@@ -181,36 +180,36 @@ function ShotSound({ r, sceneId, voice, jobs, connected, onMade, onUse, setError
   const voMaking = vo.some((j) => BUSY.includes(j.status)), fxMaking = fx.some((j) => BUSY.includes(j.status));
   return (
     <View style={s.shot}>
-      <Text style={[s.small, font.mono, { color: c.sub }]}>SH {pad2(r.ord)} · {r.duration_s} S</Text>
+      <Text style={[s.small, font.mono, { color: c.sub }]}>{tr("SH {v0} · {duration_s} S", { v0: pad2(r.ord), duration_s: r.duration_s })}</Text>
       <Text style={{ color: c.ink, fontSize: 14, marginBottom: 6 }} numberOfLines={2}>{r.action}</Text>
-      <Text style={s.label}>Voiceover</Text>
+      <Text style={s.label}>{tr("Voiceover")}</Text>
       <TextInput value={line} onChangeText={setLine} multiline editable={connected} placeholderTextColor={c.muted} style={s.input}
-        placeholder="What is said over this shot. Tags like [whispers], [sighs] or [laughs] set the delivery." />
+        placeholder={tr("What is said over this shot. Tags like [whispers], [sighs] or [laughs] set the delivery.")} />
       <View style={s.row}>
         <Pressable style={[s.btnSm, (!connected || !voice || !line.trim() || !!busy || voMaking) && { opacity: 0.5 }]}
           disabled={!connected || !voice || !line.trim() || !!busy || voMaking} onPress={() => make("voiceover")} accessibilityRole="button">
-          <Text style={s.btnText}>{busy === "voiceover" ? "Sending…" : vo.length ? "Make it again" : "Make the voiceover"}</Text>
+          <Text style={s.btnText}>{busy === "voiceover" ? tr("Sending…") : vo.length ? tr("Make it again") : tr("Make the voiceover")}</Text>
         </Pressable>
-        {connected && !voice && <Text style={s.small}>Pick a voice above first.</Text>}
-        {voice && <Text style={s.small}>Voice: {voice.name}</Text>}
+        {connected && !voice && <Text style={s.small}>{tr("Pick a voice above first.")}</Text>}
+        {voice && <Text style={s.small}>{tr("Voice: {name}", { name: voice.name })}</Text>}
       </View>
       <Takes jobs={vo} shotS={r.duration_s} onUse={onUse} label="voiceover" />
       {vo.some((j) => j.status === "done") && <LipSync shotId={r.id} setError={setError}
         voKey={vo.map((j) => `${j.id}:${j.status}:${j.in_cut}`).join(",")} />}
 
-      <Text style={[s.label, { marginTop: 12 }]}>Sound effect</Text>
+      <Text style={[s.label, { marginTop: 12 }]}>{tr("Sound effect")}</Text>
       <View style={s.row}>
         <TextInput value={sound} onChangeText={setSound} editable={connected} placeholderTextColor={c.muted} style={[s.input, { flex: 1, minWidth: 200, minHeight: 0 }]}
-          placeholder="e.g. rain on the window, a distant dog barking" />
+          placeholder={tr("e.g. rain on the window, a distant dog barking")} />
         <TextInput value={secs} onChangeText={setSecs} editable={connected} keyboardType="decimal-pad" style={[s.input, { width: 64, minHeight: 0 }]}
-          accessibilityLabel="Seconds" />
+          accessibilityLabel={tr("Seconds")} />
         <Text style={s.small}>s</Text>
         <Pressable style={[s.btnSm, (!connected || !sound.trim() || !!busy || fxMaking) && { opacity: 0.5 }]}
           disabled={!connected || !sound.trim() || !!busy || fxMaking} onPress={() => make("sfx")} accessibilityRole="button">
-          <Text style={s.btnText}>{busy === "sfx" ? "Sending…" : fx.length ? "Make it again" : "Make the sound"}</Text>
+          <Text style={s.btnText}>{busy === "sfx" ? tr("Sending…") : fx.length ? tr("Make it again") : tr("Make the sound")}</Text>
         </Pressable>
       </View>
-      <Takes jobs={fx} onUse={onUse} label="sound effect" />
+      <Takes jobs={fx} onUse={onUse} label={tr("sound effect")} />
     </View>
   );
 }
@@ -280,19 +279,19 @@ export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, 
 
   return (
     <View>
-      <Text style={[s.h, font.display]}>Music</Text>
+      <Text style={[s.h, font.display]}>{tr("Music")}</Text>
       <View style={s.row}>
-        <Chip on={mode === "none"} text="No music" onPress={() => { setMode("none"); setMusic(null); }} />
-        <Chip on={mode === "upload"} text="Your track" onPress={() => { setMode("upload"); if (music?.source !== "upload") setMusic(null); }} />
-        <Chip on={mode === "score"} text="Generate a score" onPress={() => setMode("score")} />
+        <Chip on={mode === "none"} text={tr("No music")} onPress={() => { setMode("none"); setMusic(null); }} />
+        <Chip on={mode === "upload"} text={tr("Your track")} onPress={() => { setMode("upload"); if (music?.source !== "upload") setMusic(null); }} />
+        <Chip on={mode === "score"} text={tr("Generate a score")} onPress={() => setMode("score")} />
       </View>
       {mode === "upload" && (music?.source === "upload" ? (
         <View style={s.row}>
           <Text style={{ color: c.ink }}>{music.name}</Text>
-          <Pressable onPress={() => setMusic(null)} accessibilityRole="button"><Text style={s.link}>Remove</Text></Pressable>
+          <Pressable onPress={() => setMusic(null)} accessibilityRole="button"><Text style={s.link}>{tr("Remove")}</Text></Pressable>
         </View>
       ) : (
-        <StillPicker label="Add a music track (MP3, WAV or M4A, up to 30 MB)" disabled={busy} style={s.ghost} textStyle={{ color: c.ink }}
+        <StillPicker label={tr("Add a music track (MP3, WAV or M4A, up to 30 MB)")} disabled={busy} style={s.ghost} textStyle={{ color: c.ink }}
           types={AUDIO} maxMb={30} typeError="Use an MP3, WAV or M4A file." onError={setError}
           onPick={async (f) => {
             setBusy(true); setError(null);
@@ -300,34 +299,34 @@ export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, 
             setBusy(false);
           }} />
       ))}
-      {mode === "upload" && <Text style={s.small}>Use a track you have the rights to.</Text>}
+      {mode === "upload" && <Text style={s.small}>{tr("Use a track you have the rights to.")}</Text>}
       {mode === "score" && (!connected ? <ConnectNote conn={conn} /> : (
         <View style={{ gap: 8 }}>
-          <Text style={s.label}>The whole score: genre, instruments, tempo</Text>
+          <Text style={s.label}>{tr("The whole score: genre, instruments, tempo")}</Text>
           <TextInput value={prompt} onChangeText={setPrompt} multiline placeholderTextColor={c.muted} style={s.input}
-            placeholder="e.g. cinematic film score, warm strings, soft piano, slow build, 70 bpm" />
+            placeholder={tr("e.g. cinematic film score, warm strings, soft piano, slow build, 70 bpm")} />
           <View style={s.row}>
             {STYLES.map((t) => <Chip key={t} on={prompt.toLowerCase().includes(t.toLowerCase())} text={t}
               onPress={() => setPrompt((p) => p.toLowerCase().includes(t.toLowerCase()) ? p : (p.trim() ? `${p.trim().replace(/,$/, "")}, ${t}` : t))} />)}
           </View>
           <View style={s.row}>
-            <Chip on={follow && shots.length > 0} disabled={!shots.length} text="Follow the shots" onPress={() => setFollow(true)} />
-            <Chip on={!follow || !shots.length} text="One piece" onPress={() => setFollow(false)} />
+            <Chip on={follow && shots.length > 0} disabled={!shots.length} text={tr("Follow the shots")} onPress={() => setFollow(true)} />
+            <Chip on={!follow || !shots.length} text={tr("One piece")} onPress={() => setFollow(false)} />
             {follow && shots.length > 0
-              ? <Text style={s.small}>Instrumental (no singing)</Text>
-              : <Chip on={instrumental} text="Instrumental" onPress={() => setInstrumental((v) => !v)} />}
+              ? <Text style={s.small}>{tr("Instrumental (no singing)")}</Text>
+              : <Chip on={instrumental} text={tr("Instrumental")} onPress={() => setInstrumental((v) => !v)} />}
           </View>
           {follow && shots.length > 0 ? (
             <View style={{ gap: 8 }}>
-              <Text style={s.sub}>Each shot gets its own section, exactly as long as the shot is in the cut, so the music changes where the picture does.</Text>
+              <Text style={s.sub}>{tr("Each shot gets its own section, exactly as long as the shot is in the cut, so the music changes where the picture does.")}</Text>
               {shots.map((r, i) => {
                 const sec = plan.lens[i], joins = plan.joins[i];
                 return (
                   <View key={r.id} style={s.shot}>
-                    <Text style={[s.small, font.mono, { color: c.sub }]}>SH {pad2(r.ord)} · {sec.toFixed(1)} S{joins === "before" ? " · JOINS THE SECTION BEFORE" : joins === "after" ? " · JOINS THE NEXT SECTION" : ""}</Text>
+                    <Text style={[s.small, font.mono, { color: c.sub }]}>{tr("SH {n} · {s} S", { n: pad2(r.ord), s: sec.toFixed(1) })}{joins === "before" ? tr(" · JOINS THE SECTION BEFORE") : joins === "after" ? tr(" · JOINS THE NEXT SECTION") : ""}</Text>
                     <Text style={{ color: c.ink, fontSize: 13, marginBottom: 4 }} numberOfLines={1}>{r.action}</Text>
                     <TextInput value={moods[r.id] ?? ""} onChangeText={(t) => setMoods((m) => ({ ...m, [r.id]: t }))} placeholderTextColor={c.muted}
-                      style={[s.input, { minHeight: 0 }]} placeholder="The mood here, e.g. somber, sparse, minor key" />
+                      style={[s.input, { minHeight: 0 }]} placeholder={tr("The mood here, e.g. somber, sparse, minor key")} />
                     <View style={[s.row, { marginTop: 4 }]}>
                       {MOODS.map((t) => <Chip key={t} on={(moods[r.id] ?? "").toLowerCase().includes(t)} text={t}
                         onPress={() => setMoods((m) => { const cur = (m[r.id] ?? "").trim(); return cur.toLowerCase().includes(t) ? m : { ...m, [r.id]: cur ? `${cur.replace(/,$/, "")}, ${t}` : t }; })} />)}
@@ -335,10 +334,10 @@ export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, 
                   </View>
                 );
               })}
-              <Text style={s.small}>Length: {plan.total} s in {sections.length} section{sections.length > 1 ? "s" : ""}. It fades out at the end of the cut.</Text>
+              <Text style={s.small}>{trp(sections.length, "Length: {total} s in {n} section. It fades out at the end of the cut.", "Length: {total} s in {n} sections. It fades out at the end of the cut.", { total: plan.total })}</Text>
             </View>
           ) : (
-            <Text style={s.small}>Length: {Math.ceil(cutSeconds)} s, the length of the cut. It fades out at the end.</Text>
+            <Text style={s.small}>{tr("Length: {v0} s, the length of the cut. It fades out at the end.", { v0: Math.ceil(cutSeconds) })}</Text>
           )}
           <Pressable style={[s.btnSm, (!prompt.trim() || busy || scores.some((j) => BUSY.includes(j.status)) || cutSeconds < 3) && { opacity: 0.5 }]}
             disabled={!prompt.trim() || busy || scores.some((j) => BUSY.includes(j.status)) || cutSeconds < 3} accessibilityRole="button"
@@ -352,28 +351,28 @@ export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, 
               catch (e) { setError((e as Error).message); }
               setBusy(false);
             }}>
-            <Text style={s.btnText}>{scores.length ? "Make another score" : "Make the score"}</Text>
+            <Text style={s.btnText}>{scores.length ? tr("Make another score") : tr("Make the score")}</Text>
           </Pressable>
-          <Text style={s.small}>Made with ElevenLabs Music on your ElevenLabs credits. Check ElevenLabs' terms for where you may publish it.</Text>
+          <Text style={s.small}>{tr("Made with ElevenLabs Music on your ElevenLabs credits. Check ElevenLabs' terms for where you may publish it.")}</Text>
           <Takes jobs={scores} onUse={use} label="score" />
         </View>
       ))}
 
-      <Text style={[s.h, font.display]}>Voiceover and sound effects</Text>
+      <Text style={[s.h, font.display]}>{tr("Voiceover and sound effects")}</Text>
       {!connected ? <ConnectNote conn={conn} /> : (<>
-        <Text style={s.sub}>A narration runs over the whole scene from its start time; each shot's line and effect start with the shot. Speech sits above the music at one steady level; the music does not dip.</Text>
-        <Text style={s.label}>Voice</Text>
-        <TextInput value={vq} onChangeText={setVq} placeholder="Search your ElevenLabs voices" placeholderTextColor={c.muted} style={[s.input, { minHeight: 0 }]} />
+        <Text style={s.sub}>{tr("A narration runs over the whole scene from its start time; each shot's line and effect start with the shot. Speech sits above the music at one steady level; the music does not dip.")}</Text>
+        <Text style={s.label}>{tr("Voice")}</Text>
+        <TextInput value={vq} onChangeText={setVq} placeholder={tr("Search your ElevenLabs voices")} placeholderTextColor={c.muted} style={[s.input, { minHeight: 0 }]} />
         {!voices && <ActivityIndicator style={{ alignSelf: "flex-start" }} />}
         <View style={[s.row, { marginTop: 6 }]}>
           {(voices ?? []).slice(0, 24).map((v) => (
             <Chip key={v.id} on={voice?.id === v.id} onPress={() => setVoice(v)}
               text={`${v.name}${[v.gender, v.accent].filter(Boolean).length ? ` · ${[v.gender, v.accent].filter(Boolean).join(", ")}` : ""}`} />
           ))}
-          {voices && voices.length === 0 && <Text style={s.small}>No voices match.</Text>}
+          {voices && voices.length === 0 && <Text style={s.small}>{tr("No voices match.")}</Text>}
         </View>
-        {voice?.preview_url && <View style={{ marginTop: 6 }}><Text style={s.small}>Preview of {voice.name}</Text><AudioPlayer src={voice.preview_url} /></View>}
-        {shots.length === 0 && <Text style={s.sub}>Keep at least one clip in this scene first.</Text>}
+        {voice?.preview_url && <View style={{ marginTop: 6 }}><Text style={s.small}>{tr("Preview of {name}", { name: voice.name })}</Text><AudioPlayer src={voice.preview_url} /></View>}
+        {shots.length === 0 && <Text style={s.sub}>{tr("Keep at least one clip in this scene first.")}</Text>}
         {shots.length > 0 && <Narration sceneId={sceneId} voice={voice} connected={connected} setError={setError} cutLen={cutSeconds}
           jobs={jobs.filter((j) => j.kind === "voiceover" && !j.shot_id)} onMade={load} onUse={use} />}
         {shots.map((r) => (
@@ -382,13 +381,13 @@ export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, 
         ))}
         {(anyVo || anyFx) && (
           <View style={[s.row, { marginTop: 8 }]}>
-            <Text style={s.label}>In this cut:</Text>
-            <Chip on={voiceOn} disabled={!anyVo} text="Voiceover" onPress={() => setVoiceOn(!voiceOn)} />
-            <Chip on={sfxOn} disabled={!anyFx} text="Sound effects" onPress={() => setSfxOn(!sfxOn)} />
+            <Text style={s.label}>{tr("In this cut:")}</Text>
+            <Chip on={voiceOn} disabled={!anyVo} text={tr("Voiceover")} onPress={() => setVoiceOn(!voiceOn)} />
+            <Chip on={sfxOn} disabled={!anyFx} text={tr("Sound effects")} onPress={() => setSfxOn(!sfxOn)} />
           </View>
         )}
       </>)}
-      {error && <Text style={{ color: c.fail, marginTop: 8 }}>{error}</Text>}
+      {error && <Text style={{ color: c.fail, marginTop: 8 }}>{tMsg(error)}</Text>}
     </View>
   );
 }
@@ -398,9 +397,9 @@ function ConnectNote({ conn }: { conn: Connection | null | undefined }) {
   return (
     <View style={s.note}>
       <Text style={{ color: c.ink, fontSize: 14 }}>
-        {conn?.status === "invalid" ? "ElevenLabs refused your key. Connect it again to make audio."
-          : "Connect your ElevenLabs account to make voiceover, sound effects and a score here. It uses your ElevenLabs credits; anlim charges nothing."}</Text>
-      <Pressable onPress={() => router.navigate("/account")} accessibilityRole="link"><Text style={s.link}>Connect in Account</Text></Pressable>
+        {conn?.status === "invalid" ? tr("ElevenLabs refused your key. Connect it again to make audio.")
+          : tr("Connect your ElevenLabs account to make voiceover, sound effects and a score here. It uses your ElevenLabs credits; anlim charges nothing.")}</Text>
+      <Pressable onPress={() => router.navigate("/account")} accessibilityRole="link"><Text style={s.link}>{tr("Connect in Account")}</Text></Pressable>
     </View>
   );
 }

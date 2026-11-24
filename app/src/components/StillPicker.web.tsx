@@ -1,6 +1,7 @@
 // Web: pick a start still from disk (PNG, JPEG or WebP, up to 15 MB). @anlim
 import { useRef } from "react";
 import { Pressable, Text } from "react-native";
+import { tr } from "../lib/i18n";
 
 const TYPES = ["image/png", "image/jpeg", "image/webp"];
 
@@ -17,8 +18,8 @@ export function StillPicker({ label, disabled, onPick, onError, style, textStyle
         onChange={(e) => {
           const f = e.target.files?.[0]; e.target.value = "";
           if (!f) return;
-          if (!(types ?? TYPES).includes(f.type)) return onError(typeError ?? "Use a PNG, JPEG or WebP image.");
-          if (f.size > (maxMb ?? 15) * 1024 * 1024) return onError(`That file is over ${maxMb ?? 15} MB.`);
+          if (!(types ?? TYPES).includes(f.type)) return onError(typeError ?? tr("Use a PNG, JPEG or WebP image."));
+          if (f.size > (maxMb ?? 15) * 1024 * 1024) return onError(tr("That file is over {v0} MB.", { v0: maxMb ?? 15 }));
           onPick(f);
         }} />
       <Pressable style={style} disabled={disabled} accessibilityRole="button" onPress={() => input.current?.click()}>

@@ -11,6 +11,7 @@ import { chip, GEN, pad2, TONE } from "../lib/shotStatus";
 import { AddShot } from "../components/AddShot";
 import { ShotPanel } from "../components/ShotPanel";
 import { Icon } from "../components/Icon";
+import { tr, locale, trp, tMsg } from "../lib/i18n";
 
 const BUSY_GEN = ["queued", "running", "checking"], BUSY_FRAME = ["queued", "running", "composing"];
 const isBusy = (r: ShotRow) => (!!r.gen_status && BUSY_GEN.includes(r.gen_status)) || (!!r.frame_status && BUSY_FRAME.includes(r.frame_status));
@@ -22,19 +23,19 @@ function NewSeries({ onDone }: { onDone: (id?: string, err?: string) => void }) 
   const [aspect, setAspect] = useState<Aspect>("16:9");
   const [genre, setGenre] = useState<Genre | null>(null);
   const [busy, setBusy] = useState(false);
-  if (!open) return <Pressable onPress={() => setOpen(true)} accessibilityRole="button"><Text style={s.link}>+ New series</Text></Pressable>;
+  if (!open) return <Pressable onPress={() => setOpen(true)} accessibilityRole="button"><Text style={s.link}>{tr("+ New series")}</Text></Pressable>;
   return (
     <View style={s.form}>
-      <TextInput style={s.input} value={name} onChangeText={setName} placeholder="Series name" placeholderTextColor={c.muted} />
-      <Text style={s.label}>Look</Text>
+      <TextInput style={s.input} value={name} onChangeText={setName} placeholder={tr("Series name")} placeholderTextColor={c.muted} />
+      <Text style={s.label}>{tr("Look")}</Text>
       <View style={s.row}>
         {(["cartoon", "photoreal"] as Look[]).map((l) => (
           <Pressable key={l} onPress={() => setLook(l)} style={[s.chip, look === l && s.chipOn]} accessibilityRole="radio" accessibilityState={{ checked: look === l }}>
-            <Text style={{ color: look === l ? c.onAccent : c.ink, fontSize: 13 }}>{l === "cartoon" ? "Cartoon" : "Photoreal"}</Text>
+            <Text style={{ color: look === l ? c.onAccent : c.ink, fontSize: 13 }}>{l === "cartoon" ? tr("Cartoon") : tr("Photoreal")}</Text>
           </Pressable>
         ))}
       </View>
-      <Text style={s.label}>Shape</Text>
+      <Text style={s.label}>{tr("Shape")}</Text>
       <View style={s.row}>
         {ASPECTS.map((a) => (
           <Pressable key={a.id} onPress={() => setAspect(a.id)} style={[s.chip, aspect === a.id && s.chipOn]} accessibilityRole="radio"
@@ -44,7 +45,7 @@ function NewSeries({ onDone }: { onDone: (id?: string, err?: string) => void }) 
         ))}
         <Text style={{ color: c.muted, fontSize: 12 }}>{ASPECTS.find((a) => a.id === aspect)?.hint}</Text>
       </View>
-      <Text style={s.label}>Genre (optional, for filing in Assets)</Text>
+      <Text style={s.label}>{tr("Genre (optional, for filing in Assets)")}</Text>
       <View style={s.row}>
         {(Object.keys(GENRE_NAMES) as Genre[]).map((g) => (
           <Pressable key={g} onPress={() => setGenre(genre === g ? null : g)} style={[s.chip, genre === g && s.chipOn]} accessibilityRole="radio" accessibilityState={{ checked: genre === g }}>
@@ -61,10 +62,10 @@ function NewSeries({ onDone }: { onDone: (id?: string, err?: string) => void }) 
             catch (e) { onDone(undefined, (e as Error).message); }
             setBusy(false);
           }}>
-          <Text style={s.btnText}>Create series</Text>
+          <Text style={s.btnText}>{tr("Create series")}</Text>
         </Pressable>
-        <Pressable onPress={() => setOpen(false)} accessibilityRole="button"><Text style={s.link}>Cancel</Text></Pressable>
-        {!look && name.trim() ? <Text style={{ color: c.muted, fontSize: 12 }}>Choose Cartoon or Photoreal first.</Text> : null}
+        <Pressable onPress={() => setOpen(false)} accessibilityRole="button"><Text style={s.link}>{tr("Cancel")}</Text></Pressable>
+        {!look && name.trim() ? <Text style={{ color: c.muted, fontSize: 12 }}>{tr("Choose Cartoon or Photoreal first.")}</Text> : null}
       </View>
     </View>
   );
@@ -73,13 +74,13 @@ function NewSeries({ onDone }: { onDone: (id?: string, err?: string) => void }) 
 function NewScene({ seriesId, onDone }: { seriesId: string; onDone: (err?: string) => void }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
-  if (!open) return <Pressable onPress={() => setOpen(true)} accessibilityRole="button" style={s.sceneChip}><Text style={{ color: c.link, fontSize: 13 }}>+ Scene</Text></Pressable>;
+  if (!open) return <Pressable onPress={() => setOpen(true)} accessibilityRole="button" style={s.sceneChip}><Text style={{ color: c.link, fontSize: 13 }}>{tr("+ Scene")}</Text></Pressable>;
   return (
     <View style={[s.row, { width: "100%" }]}>
-      <TextInput style={[s.input, { flex: 1 }]} value={title} onChangeText={setTitle} placeholder="Scene title" placeholderTextColor={c.muted} autoFocus />
+      <TextInput style={[s.input, { flex: 1 }]} value={title} onChangeText={setTitle} placeholder={tr("Scene title")} placeholderTextColor={c.muted} autoFocus />
       <Pressable style={[s.btn, !title.trim() && { opacity: 0.5 }]} disabled={!title.trim()} accessibilityRole="button"
         onPress={async () => { try { await api.createScene(seriesId, title); setTitle(""); setOpen(false); onDone(); } catch (e) { onDone((e as Error).message); } }}>
-        <Text style={s.btnText}>Add</Text>
+        <Text style={s.btnText}>{tr("Add")}</Text>
       </Pressable>
     </View>
   );
@@ -95,34 +96,34 @@ function Manage({ label, name, what, onRename, onDelete, onDuplicate, dupWhat }:
   const run = async (fn: () => Promise<unknown>) => { setBusy(true); setErr(null); try { await fn(); setMode("idle"); } catch (e) { setErr((e as Error).message); } setBusy(false); };
   if (mode === "idle") return (
     <View style={[s.row, { gap: 14 }]}>
-      <Pressable onPress={() => { setV(name); setMode("rename"); }} accessibilityRole="button"><Text style={s.small}>Rename {label}</Text></Pressable>
+      <Pressable onPress={() => { setV(name); setMode("rename"); }} accessibilityRole="button"><Text style={s.small}>{tr("Rename {label}", { label })}</Text></Pressable>
       {/* 2026-11-23: a copy with the same words, cast, places and approved start frames, without clips, cuts or sound */}
       {onDuplicate && <Pressable onPress={() => run(onDuplicate)} disabled={busy} accessibilityRole="button" accessibilityHint={dupWhat}>
-        <Text style={s.small}>{busy ? "Copying…" : `Duplicate ${label}`}</Text></Pressable>}
-      <Pressable onPress={() => setMode("delete")} accessibilityRole="button"><Text style={[s.small, { color: c.fail }]}>Delete {label}</Text></Pressable>
-      {err && <Text style={{ color: c.fail, fontSize: 12 }}>{err}</Text>}
+        <Text style={s.small}>{busy ? tr("Copying…") : tr("Duplicate {label}", { label })}</Text></Pressable>}
+      <Pressable onPress={() => setMode("delete")} accessibilityRole="button"><Text style={[s.small, { color: c.fail }]}>{tr("Delete {label}", { label })}</Text></Pressable>
+      {err && <Text style={{ color: c.fail, fontSize: 12 }}>{tMsg(err)}</Text>}
     </View>
   );
   if (mode === "rename") return (
     <View style={[s.row, { width: "100%" }]}>
-      <TextInput value={v} onChangeText={setV} style={[s.input, { flex: 1 }]} autoFocus accessibilityLabel={`New ${label} name`} />
+      <TextInput value={v} onChangeText={setV} style={[s.input, { flex: 1 }]} autoFocus accessibilityLabel={tr("New {label} name", { label })} />
       <Pressable style={[s.btn, (!v.trim() || busy) && { opacity: 0.5 }]} disabled={!v.trim() || busy} onPress={() => run(() => onRename(v))} accessibilityRole="button">
-        <Text style={s.btnText}>Save</Text>
+        <Text style={s.btnText}>{tr("Save")}</Text>
       </Pressable>
-      <Pressable onPress={() => setMode("idle")} accessibilityRole="button"><Text style={s.small}>Cancel</Text></Pressable>
-      {err && <Text style={{ color: c.fail, fontSize: 12 }}>{err}</Text>}
+      <Pressable onPress={() => setMode("idle")} accessibilityRole="button"><Text style={s.small}>{tr("Cancel")}</Text></Pressable>
+      {err && <Text style={{ color: c.fail, fontSize: 12 }}>{tMsg(err)}</Text>}
     </View>
   );
   return (
     <View style={s.danger}>
-      <Text style={{ color: c.ink, fontSize: 13 }}>Delete “{name}” and {what}? Its files are removed too. This cannot be undone.</Text>
+      <Text style={{ color: c.ink, fontSize: 13 }}>{tr("Delete “{name}” and {what}? Its files are removed too. This cannot be undone.", { name, what })}</Text>
       <View style={s.row}>
         <Pressable style={[s.btn, { backgroundColor: c.fail }, busy && { opacity: 0.5 }]} disabled={busy} onPress={() => run(onDelete)} accessibilityRole="button">
-          <Text style={s.btnText}>{busy ? "Deleting…" : `Delete ${label}`}</Text>
+          <Text style={s.btnText}>{busy ? tr("Deleting…") : tr("Delete {label}", { label })}</Text>
         </Pressable>
-        <Pressable onPress={() => setMode("idle")} accessibilityRole="button"><Text style={s.small}>Keep it</Text></Pressable>
+        <Pressable onPress={() => setMode("idle")} accessibilityRole="button"><Text style={s.small}>{tr("Keep it")}</Text></Pressable>
       </View>
-      {err && <Text style={{ color: c.fail, fontSize: 12 }}>{err}</Text>}
+      {err && <Text style={{ color: c.fail, fontSize: 12 }}>{tMsg(err)}</Text>}
     </View>
   );
 }
@@ -134,10 +135,10 @@ function ShotRowItem({ r, on, onPress, onMove, first, last }: { r: ShotRow; on: 
     // the row and its move buttons are siblings: a button inside a button is invalid HTML on the web (2026-11-19)
     <View style={[s.shot, on && s.shotOn]}>
     <Pressable onPress={onPress} style={{ flex: 1, minWidth: 0, flexDirection: "row", gap: 10 }} accessibilityRole="button"
-      accessibilityState={{ selected: on }} accessibilityLabel={`Shot ${r.ord}: ${r.action}. ${st.text}`}>
+      accessibilityState={{ selected: on }} accessibilityLabel={tr("Shot {ord}: {action}. {text}", { ord: r.ord, action: r.action, text: st.text })}>
       <View style={s.shotThumb}>
         {r.thumb_url ? <Image source={{ uri: r.thumb_url }} style={{ width: "100%", height: "100%" }} resizeMode="cover" /> : null}
-        <Text style={[s.slate, font.mono]}>SH {pad2(r.ord)}</Text>
+        <Text style={[s.slate, font.mono]}>{tr("SH {v0}", { v0: pad2(r.ord) })}</Text>
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={{ color: c.ink, fontSize: 13, lineHeight: 18 }} numberOfLines={2}>{r.action}</Text>
@@ -148,9 +149,9 @@ function ShotRowItem({ r, on, onPress, onMove, first, last }: { r: ShotRow; on: 
       </View>
     </Pressable>
       <View style={{ justifyContent: "center", gap: 2 }}>
-        <Pressable onPress={() => onMove(-1)} disabled={first} accessibilityRole="button" accessibilityLabel={`Move shot ${r.ord} earlier`}
+        <Pressable onPress={() => onMove(-1)} disabled={first} accessibilityRole="button" accessibilityLabel={tr("Move shot {ord} earlier", { ord: r.ord })}
           style={[s.move, first && { opacity: 0.25 }]}><Text style={{ color: c.sub, fontSize: 12 }}>▲</Text></Pressable>
-        <Pressable onPress={() => onMove(1)} disabled={last} accessibilityRole="button" accessibilityLabel={`Move shot ${r.ord} later`}
+        <Pressable onPress={() => onMove(1)} disabled={last} accessibilityRole="button" accessibilityLabel={tr("Move shot {ord} later", { ord: r.ord })}
           style={[s.move, last && { opacity: 0.25 }]}><Text style={{ color: c.sub, fontSize: 12 }}>▼</Text></Pressable>
       </View>
     </View>
@@ -161,10 +162,10 @@ function Outputs({ items, title }: { items: QueueItem[]; title: string }) {
   return (
     <View>
       <Text style={[s.kicker, font.mono]}>{title}</Text>
-      {items.length === 0 && <Text style={[s.sub, { marginTop: 8 }]}>Nothing rendered here yet. Renders appear here as they run.</Text>}
+      {items.length === 0 && <Text style={[s.sub, { marginTop: 8 }]}>{tr("Nothing rendered here yet. Renders appear here as they run.")}</Text>}
       {items.map((q) => {
         const busy = BUSY_GEN.includes(q.status);
-        const word = q.decision === "approve" ? "Approved" : q.decision === "reject" ? "Rejected" : busy ? GEN[q.status] : q.verdict ? verdictLabel(q.verdict) : GEN[q.status] ?? q.status;
+        const word = q.decision === "approve" ? tr("Approved") : q.decision === "reject" ? tr("Rejected") : busy ? GEN[q.status] : q.verdict ? verdictLabel(q.verdict) : GEN[q.status] ?? q.status;
         const col = q.decision === "approve" ? c.pass : q.decision === "reject" ? c.muted : busy ? c.ink : verdictColor(q.verdict);
         return (
           <Pressable key={q.id} style={s.out} accessibilityRole="link" disabled={busy}
@@ -174,9 +175,9 @@ function Outputs({ items, title }: { items: QueueItem[]; title: string }) {
               {busy ? <ActivityIndicator style={StyleSheet.absoluteFill} color={c.ink} /> : <View style={s.play}><Icon name="play" size={14} color={c.ink} /></View>}
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={[s.meta, font.mono]}>SH {pad2(q.shot_ord)} · {(MODEL_NAMES[q.model_id] ?? q.model_id).toUpperCase()}</Text>
+              <Text style={[s.meta, font.mono]}>{tr("SH {v0} · {v1}", { v0: pad2(q.shot_ord), v1: (MODEL_NAMES[q.model_id] ?? q.model_id).toUpperCase() })}</Text>
               <Text style={{ color: col, fontSize: 13, fontWeight: "600", marginTop: 3 }}>{word}</Text>
-              <Text style={[s.meta, { marginTop: 2 }]}>{new Date(q.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</Text>
+              <Text style={[s.meta, { marginTop: 2 }]}>{new Date(q.created_at).toLocaleString(locale(), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</Text>
             </View>
           </Pressable>
         );
@@ -223,8 +224,8 @@ export default function Workspace() {
   const project = (
     <ScrollView style={[s.pane, !narrow && { width: wide ? 360 : 330, flexGrow: 0, borderRightWidth: 1, borderRightColor: c.line }]}
       contentContainerStyle={{ padding: narrow ? 14 : 16, gap: 12, paddingBottom: 40 }}>
-      {error && <Text style={{ color: c.fail }}>{error}</Text>}
-      <Text style={[s.kicker, font.mono]}>SERIES</Text>
+      {error && <Text style={{ color: c.fail }}>{tMsg(error)}</Text>}
+      <Text style={[s.kicker, font.mono]}>{tr("SERIES")}</Text>
       <View style={s.row}>
         {series?.map((se) => (
           <Pressable key={se.id} onPress={() => pick({ series: se.id })} style={[s.chip, se.id === cur?.id && s.chipOn]}
@@ -236,19 +237,19 @@ export default function Workspace() {
       <NewSeries onDone={(id, err) => { if (err) setError(err); load().then(() => id && pick({ series: id })); }} />
       {cur && (<>
         <View style={[s.row, { marginTop: 4 }]}>
-          <Text style={[s.tag, font.mono]}>{cur.look === "photoreal" ? "PHOTOREAL" : "CARTOON"}</Text>
+          <Text style={[s.tag, font.mono]}>{cur.look === "photoreal" ? tr("PHOTOREAL") : tr("CARTOON")}</Text>
           {cur.genre && <Text style={[s.tagGhost, font.mono]}>{GENRE_NAMES[cur.genre].toUpperCase()}</Text>}
           <Pressable onPress={() => router.navigate({ pathname: "/library", params: { series: cur.id } })} accessibilityRole="link">
-            <Text style={[s.link, { marginVertical: 0, fontSize: 13 }]}>Cast & places</Text>
+            <Text style={[s.link, { marginVertical: 0, fontSize: 13 }]}>{tr("Cast & places")}</Text>
           </Pressable>
         </View>
         <Manage key={`se-${cur.id}`} label="series" name={cur.name}
-          what={`its ${cur.scenes.length} scene${cur.scenes.length === 1 ? "" : "s"}, every shot, clip, cut, character and place in it`}
+          what={trp(cur.scenes.length, "its {n} scene, every shot, clip, cut, character and place in it", "its {n} scenes, every shot, clip, cut, character and place in it")}
           onRename={async (v) => { await api.renameSeries(cur.id, v); await load(); }}
           onDelete={async () => { await api.deleteSeries(cur.id); router.setParams({ series: "", scene: "", shot: "" }); await load(); }}
           dupWhat="A new project with the same cast, places, scenes and shots (words and approved start frames), without clips, cuts or sound"
           onDuplicate={async () => { const id = await api.duplicateSeries(cur.id); await load(); pick({ series: id }); }} />
-        <Text style={[s.kicker, font.mono, { marginTop: 8 }]}>SCENE</Text>
+        <Text style={[s.kicker, font.mono, { marginTop: 8 }]}>{tr("SCENE")}</Text>
         <View style={s.row}>
           {cur.scenes.map((sc) => (
             <Pressable key={sc.id} onPress={() => pick({ scene: sc.id })} style={[s.sceneChip, sc.id === scene?.id && s.sceneOn]}
@@ -260,7 +261,7 @@ export default function Workspace() {
           <NewScene seriesId={cur.id} onDone={done} />
         </View>
         {scene && <Manage key={`sc-${scene.id}`} label="scene" name={scene.title}
-          what={`its ${shots.length} shot${shots.length === 1 ? "" : "s"}, their clips, frames, cuts and sound`}
+          what={trp(shots.length, "its {n} shot, their clips, frames, cuts and sound", "its {n} shots, their clips, frames, cuts and sound")}
           onRename={async (v) => { await api.renameScene(scene.id, v); await load(); }}
           onDelete={async () => { await api.deleteScene(scene.id); router.setParams({ scene: "", shot: "" }); await load(); }}
           dupWhat="A new scene in this project with the same shots (words and approved start frames), without clips, cuts or sound"
@@ -268,21 +269,21 @@ export default function Workspace() {
       </>)}
       {scene && (<>
         <View style={[s.row, { justifyContent: "space-between", marginTop: 8 }]}>
-          <Text style={[s.kicker, font.mono]}>SHOTS · {shots.length} · {shots.reduce((t, r) => t + r.duration_s, 0)} S</Text>
+          <Text style={[s.kicker, font.mono]}>{tr("SHOTS · {length} · {v1} S", { length: shots.length, v1: shots.reduce((t, r) => t + r.duration_s, 0) })}</Text>
           <Pressable onPress={() => router.navigate({ pathname: "/cut/[scene]", params: { scene: scene.id } })} accessibilityRole="link">
-            <Text style={[s.link, { marginVertical: 0, fontSize: 13 }]}>Make the scene cut</Text>
+            <Text style={[s.link, { marginVertical: 0, fontSize: 13 }]}>{tr("Make the scene cut")}</Text>
           </Pressable>
         </View>
-        {shots.length === 0 && <Text style={s.sub}>No shots yet. Describe the first one below.</Text>}
+        {shots.length === 0 && <Text style={s.sub}>{tr("No shots yet. Describe the first one below.")}</Text>}
         {shots.map((r, i) => <ShotRowItem key={r.id} r={r} on={r.id === shotId} onPress={() => openShot(r.id)} first={i === 0} last={i === shots.length - 1}
           onMove={async (dir) => { try { await api.moveShot(r.id, dir); await load(); } catch (e) { setError((e as Error).message); } }} />)}
-        {shots.length > 1 && <Text style={s.small}>Moving a shot changes which shot "continue from the previous clip" uses.</Text>}
+        {shots.length > 1 && <Text style={s.small}>{tr("Moving a shot changes which shot \"continue from the previous clip\" uses.")}</Text>}
         <AddShot sceneId={scene.id} onDone={done} onCreated={(id) => { load(); openShot(id); }} />
-        <Pressable onPress={() => router.navigate("/shots")} accessibilityRole="link"><Text style={[s.link, { fontSize: 13 }]}>See every scene on the scene board</Text></Pressable>
+        <Pressable onPress={() => router.navigate("/shots")} accessibilityRole="link"><Text style={[s.link, { fontSize: 13 }]}>{tr("See every scene on the scene board")}</Text></Pressable>
       </>)}
-      {cur && cur.scenes.length === 0 && <Text style={s.sub}>Add a scene to start writing shots.</Text>}
+      {cur && cur.scenes.length === 0 && <Text style={s.sub}>{tr("Add a scene to start writing shots.")}</Text>}
       {narrow && scene && (
-        <View style={{ marginTop: 16 }}><Outputs items={sceneOutputs.slice(0, 6)} title="MADE IN THIS SCENE" /></View>
+        <View style={{ marginTop: 16 }}><Outputs items={sceneOutputs.slice(0, 6)} title={tr("MADE IN THIS SCENE")} /></View>
       )}
     </ScrollView>
   );
@@ -298,19 +299,19 @@ export default function Workspace() {
             <View style={s.empty}>
               <Icon name="workspace" size={36} color={c.muted} />
               <Text style={[{ color: c.ink, fontSize: 22, marginTop: 14, textTransform: "uppercase" }, font.display]}>
-                {!cur ? "Start a series" : !scene ? "Add a scene" : "Write the first shot"}</Text>
+                {!cur ? tr("Start a series") : !scene ? tr("Add a scene") : tr("Write the first shot")}</Text>
               <Text style={[s.sub, { textAlign: "center", maxWidth: 420, marginTop: 6 }]}>
-                {!cur ? "A series holds your characters, places and look. Create one on the left."
-                  : !scene ? "Scenes hold the shots that play in one place. Add one on the left."
-                  : "Describe what happens in the shot on the left. It opens here to make its frames and render it."}</Text>
+                {!cur ? tr("A series holds your characters, places and look. Create one on the left.")
+                  : !scene ? tr("Scenes hold the shots that play in one place. Add one on the left.")
+                  : tr("Describe what happens in the shot on the left. It opens here to make its frames and render it.")}</Text>
             </View>
           )}
       </View>
       {wide && (
         <ScrollView style={[s.pane, { width: 300, flexGrow: 0, borderLeftWidth: 1, borderLeftColor: c.line }]} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
-          <Outputs items={sceneOutputs} title={`MADE IN ${(scene?.title ?? "THIS SCENE").toUpperCase()}`} />
+          <Outputs items={sceneOutputs} title={tr("MADE IN {v0}", { v0: (scene?.title ?? tr("THIS SCENE")).toUpperCase() })} />
           <Pressable onPress={() => router.navigate("/storage")} accessibilityRole="link" style={{ marginTop: 12 }}>
-            <Text style={[s.link, { fontSize: 13 }]}>All your assets</Text>
+            <Text style={[s.link, { fontSize: 13 }]}>{tr("All your assets")}</Text>
           </Pressable>
         </ScrollView>
       )}

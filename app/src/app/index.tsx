@@ -12,17 +12,18 @@ import { Composer } from "../components/Composer";
 import { Ambient, FloatCard } from "../components/FloatCard";
 import { Mark } from "../components/Mark";
 import { SplashBanner } from "../components/SplashBanner";
+import { tr, trMap, trDeep, tMsg } from "../lib/i18n";
 
-const KIND: Record<string, string> = { walking: "walking", sit_stand: "sitting and standing", handling: "handling props", talking: "talking", other: "other shots" };
-const LOOK: Record<string, string> = { cartoon: "Cartoon", photoreal: "Photoreal" };
+const KIND: Record<string, string> = trMap({ walking: "walking", sit_stand: "sitting and standing", handling: "handling props", talking: "talking", other: "other shots" });
+const LOOK: Record<string, string> = trMap({ cartoon: "Cartoon", photoreal: "Photoreal" });
 
 // Image models are chosen by the look, not by a route table (studio.request_start_frame / request_end_frame / request_plate).
-const IMAGE_MODELS = [
+const IMAGE_MODELS = trDeep([
   { name: "Nano Banana 2", what: "Cartoon start and end frames, empty-room plates", price: "20 credits a frame" },
   { name: "GPT Image 2.6", what: "Photoreal new setups (characters placed in the room)", price: "17 credits + 3 a person" },
-];
+], ["what", "price"]);
 
-const TOOLS: { icon: IconName; title: string; body: string; href: "/workspace" | "/motion" | "/storage" | "/review" | "/library" | "/shots" | "/billing" }[] = [
+const TOOLS: { icon: IconName; title: string; body: string; href: "/workspace" | "/motion" | "/storage" | "/review" | "/library" | "/shots" | "/billing" }[] = trDeep([
   { icon: "workspace", title: "Workspace", body: "Write shots, make frames, render.", href: "/workspace" },
   { icon: "motion", title: "Motion transfer", body: "Recast your own clip as your characters.", href: "/motion" },
   { icon: "studio", title: "Scene board", body: "Every shot of every scene at a glance.", href: "/shots" },
@@ -30,7 +31,7 @@ const TOOLS: { icon: IconName; title: string; body: string; href: "/workspace" |
   { icon: "assets", title: "Assets", body: "Find and download your work.", href: "/storage" },
   { icon: "cast", title: "Cast & places", body: "Characters, locations, series look.", href: "/library" },
   { icon: "credits", title: "Credits & plan", body: "Top up or change plan.", href: "/billing" },
-];
+], ["title", "body"]);
 
 function Section({ kicker, title, children }: { kicker: string; title: string; children: React.ReactNode }) {
   return (
@@ -50,7 +51,7 @@ export default function Home() {
   useFocusEffect(useCallback(() => { api.home().then((x) => { setD(x); setError(null); }).catch((e) => setError((e as Error).message)); }, []));
 
   const stats: [string, number | undefined][] = [
-    ["SERIES", d?.counts.series], ["SHOTS", d?.counts.shots], ["CLIPS KEPT", d?.counts.kept], ["TO REVIEW", d?.counts.to_review], ["SCENE CUTS", d?.counts.cuts],
+    [tr("SERIES"), d?.counts.series], [tr("SHOTS"), d?.counts.shots], [tr("CLIPS KEPT"), d?.counts.kept], [tr("TO REVIEW"), d?.counts.to_review], [tr("SCENE CUTS"), d?.counts.cuts],
   ];
 
   return (
@@ -65,18 +66,18 @@ export default function Home() {
         <View style={[s.hero, narrow && { padding: 18 }, { marginTop: 40 }]}>
           <View style={[s.row, { justifyContent: "space-between" }]}>
             <View style={{ flex: 1, minWidth: 220 }}>
-              <Text style={[s.kicker, font.mono]}>PICK UP WHERE YOU LEFT OFF</Text>
-              {d.last && <Text style={[s.h3, font.display]} numberOfLines={2}>{d.last.series_name} · {d.last.scene_title}, shot {d.last.ord}</Text>}
+              <Text style={[s.kicker, font.mono]}>{tr("PICK UP WHERE YOU LEFT OFF")}</Text>
+              {d.last && <Text style={[s.h3, font.display]} numberOfLines={2}>{tr("{series_name} · {scene_title}, shot {ord}", { series_name: d.last.series_name, scene_title: d.last.scene_title, ord: d.last.ord })}</Text>}
             </View>
             <View style={s.row}>
               {d.last && (
                 <Pressable style={s.cta} accessibilityRole="link"
                   onPress={() => router.navigate({ pathname: "/workspace", params: { series: d.last!.series_id, scene: d.last!.scene_id, shot: d.last!.shot_id } })}>
-                  <Text style={s.ctaText}>Continue</Text><Icon name="arrow" size={18} color={c.onAccent} />
+                  <Text style={s.ctaText}>{tr("Continue")}</Text><Icon name="arrow" size={18} color={c.onAccent} />
                 </Pressable>
               )}
               <Pressable style={s.ghost} onPress={() => router.navigate("/workspace")} accessibilityRole="link">
-                <Text style={{ color: c.ink, fontWeight: "600" }}>Open the Workspace</Text>
+                <Text style={{ color: c.ink, fontWeight: "600" }}>{tr("Open the Workspace")}</Text>
               </Pressable>
             </View>
           </View>
@@ -90,10 +91,10 @@ export default function Home() {
           </View>
         </View>
       )}
-      {error && <Text style={{ color: c.fail, marginTop: 12 }}>{error}</Text>}
+      {error && <Text style={{ color: c.fail, marginTop: 12 }}>{tMsg(error)}</Text>}
 
       {d && d.recent.length > 0 && (
-        <Section kicker="RECENT" title="Your latest work">
+        <Section kicker={tr("RECENT")} title={tr("Your latest work")}>
           <Grid min={170} gap={12}>
             {d.recent.map((r) => (
               <Pressable key={r.id} style={s.card} accessibilityRole="link" accessibilityLabel={r.title}
@@ -101,7 +102,7 @@ export default function Home() {
                   : router.navigate({ pathname: "/cut/[scene]", params: { scene: r.scene_id! } })}>
                 <View style={{ backgroundColor: c.card2 }}>
                   {r.thumb_url ? <Image source={{ uri: r.thumb_url }} style={s.thumb} resizeMode="cover" /> : <View style={s.thumb} />}
-                  <Text style={[s.tag, font.mono]}>{r.kind === "cut" ? "SCENE CUT" : "CLIP"}</Text>
+                  <Text style={[s.tag, font.mono]}>{r.kind === "cut" ? tr("SCENE CUT") : tr("CLIP")}</Text>
                 </View>
                 <View style={{ padding: 10 }}>
                   <Text style={{ color: c.ink, fontSize: 13 }} numberOfLines={1}>{r.title}</Text>
@@ -113,7 +114,7 @@ export default function Home() {
         </Section>
       )}
 
-      <Section kicker="FEATURES" title="What anlim does">
+      <Section kicker={tr("FEATURES")} title={tr("What anlim does")}>
         {/* 2026-11-20: the same glass cards and marks as the public page (no square icon tiles) */}
         <Ambient>
           <Grid min={300} gap={16}>
@@ -128,9 +129,9 @@ export default function Home() {
         </Ambient>
       </Section>
 
-      <Section kicker="MODELS" title="The models behind it">
+      <Section kicker={tr("MODELS")} title={tr("The models behind it")}>
         <Text style={[s.body, { marginBottom: 14, maxWidth: 760 }]}>
-          Video models turn your start frame into a clip. Auto sends each kind of shot to the one that did best in our tests; you can still pick one yourself on any shot.
+          {tr("Video models turn your start frame into a clip. Auto sends each kind of shot to the one that did best in our tests; you can still pick one yourself on any shot.")}
         </Text>
         {!d && !error && <ActivityIndicator style={{ marginVertical: 20 }} />}
         <Grid min={320} gap={14}>
@@ -141,11 +142,11 @@ export default function Home() {
               <View key={m.id} style={[s.card, { padding: 20 }]}>
                 <View style={[s.row, { justifyContent: "space-between" }]}>
                   <Text style={[s.h3, font.display, { marginTop: 0 }]}>{m.label ?? m.id}</Text>
-                  <Text style={[s.pill, font.mono]}>VIDEO · {m.resolution.toUpperCase()}</Text>
+                  <Text style={[s.pill, font.mono]}>{tr("VIDEO · {res}", { res: m.resolution.toUpperCase() })}</Text>
                 </View>
-                <Text style={[s.meta, font.mono]}>{m.credits_per_second} CREDITS / SECOND · {m.min_duration_s}–{m.max_duration_s} S CLIPS</Text>
-                <Text style={[s.small, { marginTop: 12 }]}>Auto's pick for</Text>
-                {Object.keys(byLook).length === 0 ? <Text style={s.body}>No kind of shot yet: available when you choose it yourself.</Text>
+                <Text style={[s.meta, font.mono]}>{tr("{credits_per_second} CREDITS / SECOND · {min_duration_s}–{max_duration_s} S CLIPS", { credits_per_second: m.credits_per_second, min_duration_s: m.min_duration_s, max_duration_s: m.max_duration_s })}</Text>
+                <Text style={[s.small, { marginTop: 12 }]}>{tr("Auto's pick for")}</Text>
+                {Object.keys(byLook).length === 0 ? <Text style={s.body}>{tr("No kind of shot yet: available when you choose it yourself.")}</Text>
                   : Object.entries(byLook).map(([look, kinds]) => (
                     <Text key={look} style={s.body}><Text style={{ color: c.ink, fontWeight: "600" }}>{LOOK[look] ?? look}: </Text>{kinds.join(", ")}</Text>
                   ))}
@@ -156,17 +157,17 @@ export default function Home() {
             <View key={m.name} style={[s.card, { padding: 20 }]}>
               <View style={[s.row, { justifyContent: "space-between" }]}>
                 <Text style={[s.h3, font.display, { marginTop: 0 }]}>{m.name}</Text>
-                <Text style={[s.pill, font.mono]}>IMAGE</Text>
+                <Text style={[s.pill, font.mono]}>{tr("IMAGE")}</Text>
               </View>
               <Text style={[s.meta, font.mono]}>{m.price.toUpperCase()}</Text>
-              <Text style={[s.small, { marginTop: 12 }]}>Used for</Text>
+              <Text style={[s.small, { marginTop: 12 }]}>{tr("Used for")}</Text>
               <Text style={s.body}>{m.what}</Text>
             </View>
           ))}
         </Grid>
       </Section>
 
-      <Section kicker="TOOLS" title="Where to go">
+      <Section kicker={tr("TOOLS")} title={tr("Where to go")}>
         <Grid min={240} gap={12}>
           {/* 2026-11-20: compact glass surface, no 1 px outline */}
           {TOOLS.map((t) => (

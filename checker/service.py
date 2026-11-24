@@ -219,6 +219,20 @@ def run_motion_check(body):
     return {"verdict": v, "reasons": reasons, "usd": r.get("usd", 0.0), "detail": r,
             "frame_flags": [{"t_s": x["from_s"], "verdict": "FLAG", "rules": ["SWAP"], "note": x["text"]} for x in r.get("issues", [])]}
 
+def run_translate(body):
+    """POST /translate: run-time messages into es/fr, or creators' shot text into en (frame_check/translate.py, 2026-11-24).
+    In fake mode the texts come back with the language in front, so tests can see the round trip."""
+    texts, lang = body.get("texts") or [], body.get("lang") or ""
+    if lang not in ("en", "es", "fr"): raise ValueError("lang must be en, es or fr")
+    if MODE == "fake":
+        return {"verdict": "OK", "out": [f"[{lang}] {t}" for t in texts], "usd": 0.0, "model": "fake"}
+    if FC not in sys.path: sys.path.insert(0, FC)
+    import translate
+    r = translate.run(texts, lang)
+    r["verdict"] = "OK"
+    return r
+
+
 def run_moderate(body):
     """POST /moderate: may anlim make this job? (frame_check/moderate.py, 2026-11-23). In fake mode the verdict comes from
     body["fake_verdict"] (default ALLOW)."""
@@ -293,17 +307,17 @@ class H(BaseHTTPRequestHandler):
         self._send(404, {"error": "not found"})
 
     def do_POST(self):
-        if self.path not in ("/check", "/motion_check", "/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate", "/lipsync"): return self._send(404, {"error": "not found"})
+        if self.path not in ("/check", "/motion_check", "/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate", "/lipsync", "/translate"): return self._send(404, {"error": "not found"})
         if not self._authed(): return self._send(401, {"error": "unauthorized"})
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
         except json.JSONDecodeError:
             return self._send(400, {"error": "bad json"})
-        if self.path in ("/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate", "/lipsync"):
+        if self.path in ("/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate", "/lipsync", "/translate"):
             try:
                 r = {"/end_frame": run_end_frame, "/compose": run_compose, "/last_frame": run_last_frame,
                      "/cutouts": run_cutouts, "/height": run_height, "/reposition_fit": run_reposition_fit, "/still_check": run_still_check,
-                     "/moderate": run_moderate, "/lipsync": run_lipsync}[self.path](body)
+                     "/moderate": run_moderate, "/lipsync": run_lipsync, "/translate": run_translate}[self.path](body)
                 name = body.get("end") or body.get("edited") or body.get("video") or body.get("image") or body.get("still") or ""
                 print(f"[{self.path[1:]}] {os.path.basename(name)}: {r['verdict']} ({len(r.get('drift', []))} drift)", flush=True)
                 return self._send(200, r)

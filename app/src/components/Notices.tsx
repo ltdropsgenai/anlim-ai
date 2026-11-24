@@ -6,6 +6,7 @@ import { AppState, Platform, Pressable, Text, View } from "react-native";
 import { router } from "expo-router";
 import { Activity, api } from "../lib/api";
 import { c, font } from "../lib/theme";
+import { tr, tMsg } from "../lib/i18n";
 
 type Notice = { key: string; text: string; tone: "ok" | "bad"; go: () => void };
 
@@ -13,16 +14,16 @@ function toNotice(a: Activity): Notice {
   const shot = a.ord != null ? `Shot ${a.ord} of ${a.scene_title}` : a.scene_title;
   const bad = a.status === "failed";
   if (a.kind === "clip") return { key: a.id + a.status, tone: bad ? "bad" : "ok",
-    text: bad ? `${shot}: the render didn't work` : `${shot} is ready to review`,
+    text: bad ? tr("{shot}: the render didn't work", { shot }) : tr("{shot} is ready to review", { shot }),
     go: () => bad ? router.navigate({ pathname: "/shot/[id]", params: { id: a.shot_id! } }) : router.navigate({ pathname: "/clip/[id]", params: { id: a.id } }) };
   if (a.kind === "frame") return { key: a.id + a.status, tone: bad ? "bad" : "ok",
-    text: bad ? `${shot}: a frame couldn't be made` : `${shot}: a new frame is ready to approve`,
+    text: bad ? tr("{shot}: a frame couldn't be made", { shot }) : tr("{shot}: a new frame is ready to approve", { shot }),
     go: () => router.navigate({ pathname: "/shot/[id]", params: { id: a.shot_id! } }) };
   if (a.kind === "cut") return { key: a.id + a.status, tone: bad ? "bad" : "ok",
-    text: bad ? `The cut of ${a.scene_title} didn't work` : `The cut of ${a.scene_title} is ready`,
+    text: bad ? tr("The cut of {scene_title} didn't work", { scene_title: a.scene_title }) : tr("The cut of {scene_title} is ready", { scene_title: a.scene_title }),
     go: () => router.navigate({ pathname: "/cut/[scene]", params: { scene: a.scene_id } }) };
   return { key: a.id + a.status, tone: bad ? "bad" : "ok",
-    text: bad ? `${shot}: audio couldn't be made` : `${shot}: audio is ready`,
+    text: bad ? tr("{shot}: audio couldn't be made", { shot }) : tr("{shot}: audio is ready", { shot }),
     go: () => router.navigate({ pathname: "/cut/[scene]", params: { scene: a.scene_id } }) };
 }
 
@@ -72,11 +73,11 @@ export function Notices() {
         <View key={n.id} accessibilityLiveRegion="polite"
           style={{ backgroundColor: c.card2, borderWidth: 1, borderColor: c.line, borderLeftWidth: 3, borderLeftColor: c.flag, borderRadius: 12,
                    paddingVertical: 12, paddingHorizontal: 14, width: "100%", gap: 6 }}>
-          <Text style={{ color: c.ink, fontWeight: "700", fontSize: 14 }}>{n.title}</Text>
-          {n.body ? <Text style={{ color: c.sub, fontSize: 13 }}>{n.body}</Text> : null}
+          <Text style={{ color: c.ink, fontWeight: "700", fontSize: 14 }}>{tMsg(n.title)}</Text>
+          {n.body ? <Text style={{ color: c.sub, fontSize: 13 }}>{tMsg(n.body)}</Text> : null}
           <View style={{ flexDirection: "row", gap: 14 }}>
-            {n.link ? <Pressable onPress={() => dismiss(n, true)} accessibilityRole="link"><Text style={{ color: c.link, fontSize: 13 }}>Open the clip</Text></Pressable> : null}
-            <Pressable onPress={() => dismiss(n, false)} accessibilityRole="button"><Text style={{ color: c.muted, fontSize: 13 }}>Dismiss</Text></Pressable>
+            {n.link ? <Pressable onPress={() => dismiss(n, true)} accessibilityRole="link"><Text style={{ color: c.link, fontSize: 13 }}>{tr("Open the clip")}</Text></Pressable> : null}
+            <Pressable onPress={() => dismiss(n, false)} accessibilityRole="button"><Text style={{ color: c.muted, fontSize: 13 }}>{tr("Dismiss")}</Text></Pressable>
           </View>
         </View>
       ))}
@@ -87,7 +88,7 @@ export function Notices() {
                    borderLeftColor: n.tone === "bad" ? c.fail : c.accent, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 14,
                    flexDirection: "row", gap: 10, alignItems: "center", shadowColor: "#000", shadowOpacity: 0.4, shadowRadius: 16 }}>
           <Text style={{ color: c.ink, fontSize: 14, flexShrink: 1 }}>{n.text}</Text>
-          <Text style={[{ color: c.link, fontSize: 12 }, font.mono]}>OPEN</Text>
+          <Text style={[{ color: c.link, fontSize: 12 }, font.mono]}>{tr("OPEN")}</Text>
         </Pressable>
       ))}
     </View>

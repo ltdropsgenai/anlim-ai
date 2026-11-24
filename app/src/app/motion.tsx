@@ -12,6 +12,7 @@ import { MOTION_NOTES, MOTION_USES, motionFamily } from "../lib/modelNotes";
 import { StillPicker } from "../components/StillPicker";
 import { MediaView } from "../components/MediaView";
 import { CreationCard } from "../components/CreationCard";
+import { tr, locale, tMsg } from "../lib/i18n";
 
 const VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
@@ -24,7 +25,7 @@ function videoSeconds(url: string): Promise<number> {
     const v = document.createElement("video");
     v.preload = "metadata";
     v.onloadedmetadata = () => resolve(v.duration);
-    v.onerror = () => reject(new Error("This video could not be read. Try an MP4 file."));
+    v.onerror = () => reject(new Error(tr("This video could not be read. Try an MP4 file.")));
     v.src = url;
   });
 }
@@ -61,13 +62,13 @@ export default function Motion() {
   const billed = used == null ? null : Math.ceil(used - 1e-6);
   const cost = billed != null && model ? billed * model.credits_per_second : null;
   const avail = me ? me.balance - me.reserved : null;
-  const why = !paid ? "Motion transfer comes with a paid account."
-    : !src || secs == null ? "Add your source clip."
-    : secs < 4 ? "The source clip must be at least 4 seconds long."
-    : refs.length === 0 ? "Add at least one reference image."
-    : !look ? "Choose Cartoon or Photoreal."
-    : !agreed ? "Confirm you may use this footage."
-    : cost != null && avail != null && cost > avail ? `This needs ${cost.toLocaleString()} credits; you have ${avail.toLocaleString()}.`
+  const why = !paid ? tr("Motion transfer comes with a paid account.")
+    : !src || secs == null ? tr("Add your source clip.")
+    : secs < 4 ? tr("The source clip must be at least 4 seconds long.")
+    : refs.length === 0 ? tr("Add at least one reference image.")
+    : !look ? tr("Choose Cartoon or Photoreal.")
+    : !agreed ? tr("Confirm you may use this footage.")
+    : cost != null && avail != null && cost > avail ? tr("This needs {v0} credits; you have {v1}.", { v0: cost.toLocaleString(locale()), v1: avail.toLocaleString(locale()) })
     : null;
 
   async function pickSource(f: File) {
@@ -81,12 +82,12 @@ export default function Motion() {
     if (why || !src || !model || !me || secs == null || !look) return;
     setErr(null);
     try {
-      setBusy("Uploading your clip…");
+      setBusy(tr("Uploading your clip…"));
       const sourcePath = await uploadMotionFile(me.user_id, "source", src.file, src.file.type);
-      setBusy("Uploading your images…");
+      setBusy(tr("Uploading your images…"));
       const refPaths: string[] = [];
       for (const r of refs) refPaths.push(await uploadMotionFile(me.user_id, "ref", r.file, r.file.type));
-      setBusy("Starting…");
+      setBusy(tr("Starting…"));
       const r = await api.motionCreate(sourcePath, refPaths, who.trim(), Math.round(secs * 1000) / 1000, model.id, null, look, agreed);   // the box is the likeness consent (2026-11-24)
       setMade(r.shot_id);
     } catch (e) { setErr((e as Error).message); }
@@ -97,9 +98,9 @@ export default function Motion() {
 
   if (Platform.OS !== "web") return (
     <View style={[s.page, { padding: 24 }]}>
-      <Text style={[s.kicker, font.mono]}>MOTION TRANSFER</Text>
-      <Text style={[s.h1, font.display, { fontSize: 28 }]}>Recast a clip with your own characters</Text>
-      <Text style={s.lead}>Motion transfer works in the web app for now: open anlim.ai on a computer.</Text>
+      <Text style={[s.kicker, font.mono]}>{tr("MOTION TRANSFER")}</Text>
+      <Text style={[s.h1, font.display, { fontSize: 28 }]}>{tr("Recast a clip with your own characters")}</Text>
+      <Text style={s.lead}>{tr("Motion transfer works in the web app for now: open anlim.ai on a computer.")}</Text>
     </View>
   );
 
@@ -109,9 +110,9 @@ export default function Motion() {
     <ScrollView style={s.page} contentContainerStyle={{ padding: narrow ? 18 : 40, paddingBottom: 80 }}>
       <View style={{ maxWidth: 1120, width: "100%", alignSelf: "center", gap: 26 }}>
         <View style={{ gap: 8 }}>
-          <Text style={[s.kicker, font.mono]}>MOTION TRANSFER</Text>
-          <Text style={[s.h1, font.display, narrow && { fontSize: 30 }]}>Recast a clip with your own characters</Text>
-          <Text style={s.lead}>The motion, camera moves and cuts stay exactly as shot. The cast, the place and the look come from your images: cartoon, or real-looking people.</Text>
+          <Text style={[s.kicker, font.mono]}>{tr("MOTION TRANSFER")}</Text>
+          <Text style={[s.h1, font.display, narrow && { fontSize: 30 }]}>{tr("Recast a clip with your own characters")}</Text>
+          <Text style={s.lead}>{tr("The motion, camera moves and cuts stay exactly as shot. The cast, the place and the look come from your images: cartoon, or real-looking people.")}</Text>
         </View>
 
         <View style={[s.uses, narrow && { flexDirection: "column" }]}>
@@ -128,32 +129,32 @@ export default function Motion() {
             <View style={{ flex: 2, minWidth: 0, gap: 18 }}>
               <View style={s.card}>
                 <View style={s.cardHead}>
-                  <Text style={s.h2}><Text style={[s.num, font.mono]}>01  </Text>Source clip</Text>
-                  {src ? <StillPicker label="Replace" types={VIDEO_TYPES} maxMb={250} typeError="Use an MP4, MOV or WebM video."
+                  <Text style={s.h2}><Text style={[s.num, font.mono]}>01  </Text>{tr("Source clip")}</Text>
+                  {src ? <StillPicker label={tr("Replace")} types={VIDEO_TYPES} maxMb={250} typeError="Use an MP4, MOV or WebM video."
                     onPick={pickSource} onError={setErr} textStyle={s.link} /> : null}
                 </View>
                 {src ? (
                   <View style={{ gap: 10 }}>
                     <MediaView kind="clip" url={src.url} />
                     <Text style={[s.meta, font.mono]}>
-                      {src.file.name.slice(0, 40)} · {secs?.toFixed(1)} s{model && secs != null && secs > model.max_duration_s ? ` · ${model.label} uses the first ${model.max_duration_s} s` : ""}
+                      {src.file.name.slice(0, 40)} · {secs?.toFixed(1)} s{model && secs != null && secs > model.max_duration_s ? tr(" · {label} uses the first {max_duration_s} s", { label: model.label, max_duration_s: model.max_duration_s }) : ""}
                     </Text>
                   </View>
                 ) : (
-                  <StillPicker label="Choose a video (MP4, MOV or WebM, 4 to 30 seconds)" types={VIDEO_TYPES} maxMb={250}
+                  <StillPicker label={tr("Choose a video (MP4, MOV or WebM, 4 to 30 seconds)")} types={VIDEO_TYPES} maxMb={250}
                     typeError="Use an MP4, MOV or WebM video." onPick={pickSource} onError={setErr} style={s.drop} textStyle={s.dropText} />
                 )}
-                <Text style={s.hint}>Your own footage, or footage you have the right to use. Its sound is kept.</Text>
+                <Text style={s.hint}>{tr("Your own footage, or footage you have the right to use. Its sound is kept.")}</Text>
               </View>
 
               <View style={s.card}>
                 <View style={s.cardHead}>
-                  <Text style={s.h2}><Text style={[s.num, font.mono]}>02  </Text>Cast and place</Text>
-                  <View style={s.seg} accessibilityRole="radiogroup" accessibilityLabel="Look">
+                  <Text style={s.h2}><Text style={[s.num, font.mono]}>02  </Text>{tr("Cast and place")}</Text>
+                  <View style={s.seg} accessibilityRole="radiogroup" accessibilityLabel={tr("Look")}>
                     {(["cartoon", "photoreal"] as Look[]).map((l) => (
                       <Pressable key={l} onPress={() => setLook(l)} accessibilityRole="radio" accessibilityState={{ checked: l === look }}
                         style={[s.segBtn, l === look && s.segOn]}>
-                        <Text style={{ color: l === look ? c.ink : c.sub, fontSize: 13, fontWeight: l === look ? "600" : "500" }}>{l === "cartoon" ? "Cartoon" : "Photoreal"}</Text>
+                        <Text style={{ color: l === look ? c.ink : c.sub, fontSize: 13, fontWeight: l === look ? "600" : "500" }}>{l === "cartoon" ? tr("Cartoon") : tr("Photoreal")}</Text>
                       </Pressable>
                     ))}
                   </View>
@@ -161,32 +162,32 @@ export default function Motion() {
                 <View style={s.thumbs}>
                   {refs.map((r, i) => (
                     <View key={r.url} style={s.thumbBox}>
-                      <Image source={{ uri: r.url }} style={s.thumb} accessibilityLabel={`Reference image ${i + 1}`} />
+                      <Image source={{ uri: r.url }} style={s.thumb} accessibilityLabel={tr("Reference image {v0}", { v0: i + 1 })} />
                       <Pressable onPress={() => setRefs(refs.filter((x) => x !== r))} accessibilityRole="button"
-                        accessibilityLabel={`Remove reference image ${i + 1}`} style={s.remove}><Text style={{ color: c.ink, fontSize: 13 }}>✕</Text></Pressable>
+                        accessibilityLabel={tr("Remove reference image {v0}", { v0: i + 1 })} style={s.remove}><Text style={{ color: c.ink, fontSize: 13 }}>✕</Text></Pressable>
                     </View>
                   ))}
                   {refs.length < 8 && (
-                    <StillPicker label={refs.length ? "+ Add image" : "+ Add a character or setting image"} types={IMAGE_TYPES} maxMb={15}
+                    <StillPicker label={refs.length ? tr("+ Add image") : tr("+ Add a character or setting image")} types={IMAGE_TYPES} maxMb={15}
                       onPick={(f) => { setErr(null); setRefs([...refs, { file: f, url: URL.createObjectURL(f) }]); }} onError={setErr}
                       style={s.addTile} textStyle={s.addText} />
                   )}
                 </View>
                 <Text style={s.hint}>{look === "photoreal"
-                  ? "Up to 8 images: photos of the people to put in the clip, and the place. Use only people who have agreed to it. A similar build to the person they replace keeps the motion clean."
-                  : !look ? "Choose Cartoon or Photoreal above, then add up to 8 images: the people to put in the clip, and the place."
-                  : "Up to 8 images. One image can hold the whole cast and the setting. Give each person in the clip someone to become, with a similar build, so the motion maps cleanly."}</Text>
+                  ? tr("Up to 8 images: photos of the people to put in the clip, and the place. Use only people who have agreed to it. A similar build to the person they replace keeps the motion clean.")
+                  : !look ? tr("Choose Cartoon or Photoreal above, then add up to 8 images: the people to put in the clip, and the place.")
+                  : tr("Up to 8 images. One image can hold the whole cast and the setting. Give each person in the clip someone to become, with a similar build, so the motion maps cleanly.")}</Text>
               </View>
 
               <View style={s.card}>
-                <Text style={s.h2}><Text style={[s.num, font.mono]}>03  </Text>Who is who <Text style={s.optional}>(optional)</Text></Text>
+                <Text style={s.h2}><Text style={[s.num, font.mono]}>03  </Text>{tr("Who is who ")}<Text style={s.optional}>{tr("(optional)")}</Text></Text>
                 <TextInput value={who} onChangeText={setWho} multiline maxLength={2000} style={s.input} placeholderTextColor={c.muted}
-                  accessibilityLabel="Who is who"
-                  placeholder="Describe each person by what they wear, so nobody swaps halfway through. E.g. the dancer in front is always the fox in the red hoodie." />
+                  accessibilityLabel={tr("Who is who")}
+                  placeholder={tr("Describe each person by what they wear, so nobody swaps halfway through. E.g. the dancer in front is always the fox in the red hoodie.")} />
               </View>
 
               <View style={s.card}>
-                <Text style={s.h2}><Text style={[s.num, font.mono]}>04  </Text>Model</Text>
+                <Text style={s.h2}><Text style={[s.num, font.mono]}>04  </Text>{tr("Model")}</Text>
                 <View style={[s.models, narrow && { flexDirection: "column" }]}>
                   {families.map((f) => {
                     const on = f === family, first = models.find((m) => motionFamily(m.id) === f)!;
@@ -196,7 +197,7 @@ export default function Motion() {
                       <Pressable key={f} onPress={() => { setFamily(f); if (!models.some((m) => motionFamily(m.id) === f && m.resolution === res)) setRes(first.resolution); }}
                         accessibilityRole="radio" accessibilityState={{ checked: on }} style={[s.model, on && s.modelOn]}>
                         <Text style={[s.modelName, on && { color: c.ink }]}>{first.label ?? f}</Text>
-                        <Text style={[s.meta, font.mono]}>{rates} · up to {first.max_duration_s} s</Text>
+                        <Text style={[s.meta, font.mono]}>{tr("{rates} · up to {max_duration_s} s", { rates, max_duration_s: first.max_duration_s })}</Text>
                         {n ? <Text style={s.modelText}>{n.best}{n.watch ? <Text style={{ color: c.muted }}> {n.watch}</Text> : null}</Text> : null}
                       </Pressable>
                     );
@@ -204,8 +205,8 @@ export default function Motion() {
                 </View>
                 {resolutions.length > 1 && (
                   <View style={s.segRow}>
-                    <Text style={s.hint}>Quality</Text>
-                    <View style={s.seg} accessibilityRole="radiogroup" accessibilityLabel="Quality">
+                    <Text style={s.hint}>{tr("Quality")}</Text>
+                    <View style={s.seg} accessibilityRole="radiogroup" accessibilityLabel={tr("Quality")}>
                       {resolutions.map((r) => (
                         <Pressable key={r} onPress={() => setRes(r)} accessibilityRole="radio" accessibilityState={{ checked: r === res }}
                           style={[s.segBtn, r === res && s.segOn]}>
@@ -219,30 +220,30 @@ export default function Motion() {
             </View>
 
             <View style={[s.card, s.summary, { flex: 1, minWidth: narrow ? 0 : 320 }]}>
-              <Text style={[s.kicker, font.mono, { color: c.muted }]}>SUMMARY</Text>
+              <Text style={[s.kicker, font.mono, { color: c.muted }]}>{tr("SUMMARY")}</Text>
               <Row k="Model" v={model ? `${model.label} · ${model.resolution}` : "…"} />
               <Row k="Length billed" v={billed != null ? `${billed} s` : "—"} />
               <Row k="Rate" v={model ? `${model.credits_per_second} cr/s` : "—"} />
               <Row k="Takes about" v={family === "genjutsu-light" ? "10 to 15 min" : "8 to 12 min"} />
               <View style={s.costRow}>
-                <Text style={{ color: c.sub, fontSize: 14 }}>Cost</Text>
-                <Text style={[s.cost, font.display]}>{cost != null ? cost.toLocaleString() : "—"}<Text style={s.costUnit}>  credits</Text></Text>
+                <Text style={{ color: c.sub, fontSize: 14 }}>{tr("Cost")}</Text>
+                <Text style={[s.cost, font.display]}>{cost != null ? cost.toLocaleString(locale()) : "—"}<Text style={s.costUnit}>{tr(" credits")}</Text></Text>
               </View>
-              {avail != null && <Text style={[s.meta, font.mono]}>You have {avail.toLocaleString()} credits</Text>}
+              {avail != null && <Text style={[s.meta, font.mono]}>{tr("You have {v0} credits", { v0: avail.toLocaleString(locale()) })}</Text>}
               <Pressable onPress={() => setAgreed(!agreed)} accessibilityRole="checkbox" accessibilityState={{ checked: agreed }} style={s.agree}>
                 <View style={[s.box, agreed && s.boxOn]}>{agreed ? <Text style={{ color: c.onAccent, fontSize: 12, fontWeight: "800" }}>✓</Text> : null}</View>
-                <Text style={{ color: c.sub, fontSize: 13, lineHeight: 19, flex: 1 }}>I made this footage or have the right to use it, and any real person in the clip or my images is me or has agreed that I may use their likeness here.</Text>
+                <Text style={{ color: c.sub, fontSize: 13, lineHeight: 19, flex: 1 }}>{tr("I made this footage or have the right to use it, and any real person in the clip or my images is me or has agreed that I may use their likeness here.")}</Text>
               </Pressable>
               <Pressable onPress={go} disabled={!!why || !!busy} accessibilityRole="button"
                 style={[s.cta, (why || busy) ? s.ctaOff : null]}>
                 <Text style={[{ color: why || busy ? c.muted : c.onAccent, fontSize: 15, fontWeight: "700" }, font.display]}>
-                  {busy ?? (cost != null ? `Recast clip · ${cost.toLocaleString()} credits` : "Recast clip")}
+                  {busy ?? (cost != null ? tr("Recast clip · {v0} credits", { v0: cost.toLocaleString(locale()) }) : tr("Recast clip"))}
                 </Text>
               </Pressable>
               {why && !busy ? <Text style={s.hint}>{why}{paid === false ? " " : ""}{paid === false
-                ? <Text style={s.link} onPress={() => router.navigate("/billing")}>See plans and credits</Text> : null}</Text> : null}
-              {err ? <Text style={{ color: c.fail, fontSize: 13 }}>{err}</Text> : null}
-              <Text style={s.small}>Charged per second of your clip, rounded up, when the clip is made. A clip with a problem can be refunded from its page.</Text>
+                ? <Text style={s.link} onPress={() => router.navigate("/billing")}>{tr("See plans and credits")}</Text> : null}</Text> : null}
+              {err ? <Text style={{ color: c.fail, fontSize: 13 }}>{tMsg(err)}</Text> : null}
+              <Text style={s.small}>{tr("Charged per second of your clip, rounded up, when the clip is made. A clip with a problem can be refunded from its page.")}</Text>
             </View>
           </View>
         )}

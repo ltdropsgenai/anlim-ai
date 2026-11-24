@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { supabase } from "../lib/supabase";
 import { c, font } from "../lib/theme";
+import { tr, tMsg } from "../lib/i18n";
 
 export function PhoneCheck({ credits = 300, onDone }: { credits?: number; onDone: () => void }) {
   const [phone, setPhone] = useState("");
@@ -16,13 +17,13 @@ export function PhoneCheck({ credits = 300, onDone }: { credits?: number; onDone
   const phoneOk = /^\+[1-9][0-9]{7,14}$/.test(e164);
   return (
     <View style={s.card}>
-      <Text style={[s.kicker, font.mono]}>FREE CREDITS</Text>
-      <Text style={{ color: c.ink, fontSize: 15 }}>Verify your phone to get your {credits} welcome credits.</Text>
-      <Text style={s.sub}>One phone number gets the welcome credits once. We only use it for this check.</Text>
+      <Text style={[s.kicker, font.mono]}>{tr("FREE CREDITS")}</Text>
+      <Text style={{ color: c.ink, fontSize: 15 }}>{tr("Verify your phone to get your {credits} welcome credits.", { credits })}</Text>
+      <Text style={s.sub}>{tr("One phone number gets the welcome credits once. We only use it for this check.")}</Text>
       {!sent ? (
         <View style={s.row}>
           <TextInput value={phone} onChangeText={setPhone} placeholder="+1 555 123 4567" placeholderTextColor={c.muted} keyboardType="phone-pad"
-            autoComplete="tel" style={[s.input, { flex: 1, minWidth: 180 }]} accessibilityLabel="Phone number with country code" />
+            autoComplete="tel" style={[s.input, { flex: 1, minWidth: 180 }]} accessibilityLabel={tr("Phone number with country code")} />
           <Pressable style={[s.btn, (!phoneOk || busy) && { opacity: 0.5 }]} disabled={!phoneOk || busy} accessibilityRole="button"
             onPress={async () => {
               setBusy(true); setError(null);
@@ -30,28 +31,28 @@ export function PhoneCheck({ credits = 300, onDone }: { credits?: number; onDone
               if (error) setError(error.message); else setSent(true);
               setBusy(false);
             }}>
-            <Text style={s.btnText}>Text me a code</Text>
+            <Text style={s.btnText}>{tr("Text me a code")}</Text>
           </Pressable>
         </View>
       ) : (
         <View style={s.row}>
-          <TextInput value={code} onChangeText={setCode} placeholder="Code" placeholderTextColor={c.muted} keyboardType="number-pad"
-            autoComplete="one-time-code" style={[s.input, { width: 140, letterSpacing: 4 }]} accessibilityLabel="Code from the text message" />
+          <TextInput value={code} onChangeText={setCode} placeholder={tr("Code")} placeholderTextColor={c.muted} keyboardType="number-pad"
+            autoComplete="one-time-code" style={[s.input, { width: 140, letterSpacing: 4 }]} accessibilityLabel={tr("Code from the text message")} />
           <Pressable style={[s.btn, (!/^\d{4,10}$/.test(code.trim()) || busy) && { opacity: 0.5 }]} disabled={!/^\d{4,10}$/.test(code.trim()) || busy}
             accessibilityRole="button"
             onPress={async () => {
               setBusy(true); setError(null);
               const { error } = await supabase.auth.verifyOtp({ phone: e164, token: code.trim(), type: "phone_change" });
-              if (error) setError(/expired|invalid/i.test(error.message) ? "That code is wrong or has expired. Ask for a new one." : error.message);
+              if (error) setError(/expired|invalid/i.test(error.message) ? tr("That code is wrong or has expired. Ask for a new one.") : error.message);
               else onDone();
               setBusy(false);
             }}>
-            <Text style={s.btnText}>Verify</Text>
+            <Text style={s.btnText}>{tr("Verify")}</Text>
           </Pressable>
-          <Pressable onPress={() => { setSent(false); setCode(""); }} accessibilityRole="button"><Text style={s.link}>Change number</Text></Pressable>
+          <Pressable onPress={() => { setSent(false); setCode(""); }} accessibilityRole="button"><Text style={s.link}>{tr("Change number")}</Text></Pressable>
         </View>
       )}
-      {error && <Text style={{ color: c.fail }}>{error}</Text>}
+      {error && <Text style={{ color: c.fail }}>{tMsg(error)}</Text>}
     </View>
   );
 }

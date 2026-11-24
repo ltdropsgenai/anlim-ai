@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 
 import { router } from "expo-router";
 import { authFlags, supabase } from "../lib/supabase";
 import { c, pageBg } from "../lib/theme";
+import { tr, tMsg } from "../lib/i18n";
 
 export default function ResetPassword() {
   const [password, setPassword] = useState("");
@@ -19,26 +20,26 @@ export default function ResetPassword() {
     setBusy(true); setError(null);
     const { error } = await supabase.auth.updateUser({ password });
     setBusy(false);
-    if (error) setError(/same/i.test(error.message) ? "That is your current password: choose a different one." : error.message);
+    if (error) setError(/same/i.test(error.message) ? tr("That is your current password: choose a different one.") : error.message);
     else { authFlags.recovery = false; setDone(true); }
   }
 
   return (
     <View style={s.page}>
       <View style={s.card}>
-        <Text style={s.title}>Choose a new password</Text>
+        <Text style={s.title}>{tr("Choose a new password")}</Text>
         {done ? (<>
-          <Text style={s.notice}>Your password is changed.</Text>
-          <Pressable style={s.button} onPress={() => router.replace("/")} accessibilityRole="button"><Text style={s.buttonText}>Continue</Text></Pressable>
+          <Text style={s.notice}>{tr("Your password is changed.")}</Text>
+          <Pressable style={s.button} onPress={() => router.replace("/")} accessibilityRole="button"><Text style={s.buttonText}>{tr("Continue")}</Text></Pressable>
         </>) : (<>
-          <TextInput style={s.input} placeholder="New password (8 characters or more)" secureTextEntry autoComplete="new-password"
-            placeholderTextColor={c.muted} value={password} onChangeText={setPassword} accessibilityLabel="New password" />
-          <TextInput style={s.input} placeholder="New password again" secureTextEntry autoComplete="new-password"
-            placeholderTextColor={c.muted} value={password2} onChangeText={setPassword2} onSubmitEditing={save} accessibilityLabel="New password again" />
-          {password2.length > 0 && password !== password2 && <Text style={s.hint}>The passwords don't match.</Text>}
-          {error && <Text style={s.error}>{error}</Text>}
+          <TextInput style={s.input} placeholder={tr("New password (8 characters or more)")} secureTextEntry autoComplete="new-password"
+            placeholderTextColor={c.muted} value={password} onChangeText={setPassword} accessibilityLabel={tr("New password")} />
+          <TextInput style={s.input} placeholder={tr("New password again")} secureTextEntry autoComplete="new-password"
+            placeholderTextColor={c.muted} value={password2} onChangeText={setPassword2} onSubmitEditing={save} accessibilityLabel={tr("New password again")} />
+          {password2.length > 0 && password !== password2 && <Text style={s.hint}>{tr("The passwords don't match.")}</Text>}
+          {error && <Text style={s.error}>{tMsg(error)}</Text>}
           <Pressable style={[s.button, (!ready || busy) && { opacity: 0.6 }]} onPress={save} disabled={!ready || busy} accessibilityRole="button">
-            {busy ? <ActivityIndicator color={c.onAccent} /> : <Text style={s.buttonText}>Save new password</Text>}
+            {busy ? <ActivityIndicator color={c.onAccent} /> : <Text style={s.buttonText}>{tr("Save new password")}</Text>}
           </Pressable>
         </>)}
       </View>

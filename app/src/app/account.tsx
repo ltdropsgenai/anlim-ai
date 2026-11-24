@@ -6,8 +6,10 @@ import { supabase } from "../lib/supabase";
 import { c, pageBg } from "../lib/theme";
 import { Connections } from "../components/Connections";
 import { DangerZone } from "../components/DangerZone";
+import { LanguagePicker } from "../components/LanguagePicker";
 import { PhoneCheck } from "../components/PhoneCheck";
 import { api, WelcomeStatus } from "../lib/api";
+import { tr, locale, trp, tMsg } from "../lib/i18n";
 
 export default function Account() {
   const [email, setEmail] = useState<string | null>(null);
@@ -25,7 +27,7 @@ export default function Account() {
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setEmail(data.user?.email ?? null);
-      setSince(data.user?.created_at ? new Date(data.user.created_at).toLocaleDateString() : null);
+      setSince(data.user?.created_at ? new Date(data.user.created_at).toLocaleDateString(locale()) : null);
     });
   }, []);
   async function out(scope: "local" | "global") {
@@ -35,47 +37,54 @@ export default function Account() {
   return (
     <ScrollView style={{ backgroundColor: pageBg }} contentContainerStyle={s.page}>
       <View style={s.card}>
-        <Text style={s.label}>Signed in as</Text>
+        <Text style={s.label}>{tr("Signed in as")}</Text>
         <Text style={s.big}>{email ?? " "}</Text>
-        {since && <Text style={s.sub}>Creator since {since}</Text>}
-        {use && <Text style={s.sub}>Storage: {use.bytes >= 1e9 ? `${(use.bytes / 1e9).toFixed(2)} GB` : `${Math.round(use.bytes / 1e6)} MB`} in {use.files.toLocaleString("en-US")} file{use.files === 1 ? "" : "s"}. Clips that failed or were rejected, discarded frames and old cuts (beyond each scene's 3 newest) are removed after 30 days; everything you keep stays.</Text>}
+        {since && <Text style={s.sub}>{tr("Creator since {since}", { since })}</Text>}
+        {use && <Text style={s.sub}>{trp(use.files, "Storage: {size} in {count} file. Clips that failed or were rejected, discarded frames and old cuts (beyond each scene's 3 newest) are removed after 30 days; everything you keep stays.", "Storage: {size} in {count} files. Clips that failed or were rejected, discarded frames and old cuts (beyond each scene's 3 newest) are removed after 30 days; everything you keep stays.", { size: use.bytes >= 1e9 ? `${(use.bytes / 1e9).toFixed(2)} GB` : `${Math.round(use.bytes / 1e6)} MB`, count: use.files.toLocaleString(locale()) })}</Text>}
       </View>
       {welcome === "needs_phone" && <PhoneCheck onDone={loadMe} />}
       {ref && ref.credits > 0 && (
         <View style={s.card}>
-          <Text style={s.label}>Invite a creator</Text>
-          <Text style={{ color: c.ink }}>When someone signs up from your link and buys credits or a plan, you get {ref.credits.toLocaleString("en-US")} credits{ref.referred_credits ? ` and they get ${ref.referred_credits.toLocaleString("en-US")} on top of their welcome credits` : ""}.</Text>
+          <Text style={s.label}>{tr("Invite a creator")}</Text>
+          <Text style={{ color: c.ink }}>{ref.referred_credits
+            ? tr("When someone signs up from your link and buys credits or a plan, you get {mine} credits and they get {theirs} on top of their welcome credits.", { mine: ref.credits.toLocaleString(locale()), theirs: ref.referred_credits.toLocaleString(locale()) })
+            : tr("When someone signs up from your link and buys credits or a plan, you get {mine} credits.", { mine: ref.credits.toLocaleString(locale()) })}</Text>
           <Pressable onPress={async () => { try { await navigator.clipboard.writeText(`https://anlim.ai/welcome?ref=${ref.code}`); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* shown anyway */ } }}
             accessibilityRole="button" style={s.ghost}>
-            <Text style={s.ghostText} selectable>{copied ? "Copied" : `anlim.ai/welcome?ref=${ref.code}`}</Text>
+            <Text style={s.ghostText} selectable>{copied ? tr("Copied") : `anlim.ai/welcome?ref=${ref.code}`}</Text>
           </Pressable>
-          <Text style={s.sub}>{ref.invited} signed up from your link · {ref.rewarded} earned you credits.</Text>
+          <Text style={s.sub}>{tr("{invited} signed up from your link · {rewarded} earned you credits.", { invited: ref.invited, rewarded: ref.rewarded })}</Text>
         </View>
       )}
+      <View style={s.card}>
+        <Text style={s.label}>{tr("Language")}</Text>
+        <Text style={s.sub}>{tr("The app, your emails, end cards and anlim's messages use it.")}</Text>
+        <LanguagePicker signedIn />
+      </View>
       <Connections />
       {mail !== null && (
         <View style={s.card}>
-          <Text style={s.label}>Emails</Text>
+          <Text style={s.label}>{tr("Emails")}</Text>
           <Pressable onPress={() => { const v = !mail; setMail(v); api.setEmailReady(v).catch((e) => { setMail(!v); setError((e as Error).message); }); }}
             accessibilityRole="switch" accessibilityState={{ checked: mail }} style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
             <View style={[s.toggle, mail && s.toggleOn]}><View style={[s.knob, mail && { alignSelf: "flex-end" }]} /></View>
-            <Text style={{ color: c.ink, flex: 1 }}>Email me when a clip or a cut I started is ready (or could not be made) while I'm away</Text>
+            <Text style={{ color: c.ink, flex: 1 }}>{tr("Email me when a clip or a cut I started is ready (or could not be made) while I'm away")}</Text>
           </Pressable>
         </View>
       )}
       <View style={s.card}>
-        <Pressable style={s.ghost} onPress={() => router.push("/reset-password")} accessibilityRole="button"><Text style={s.ghostText}>Change password</Text></Pressable>
-        <Link href="/billing" asChild><Pressable style={s.ghost} accessibilityRole="button"><Text style={s.ghostText}>Credits & plan</Text></Pressable></Link>
-        <Pressable style={s.ghost} onPress={() => out("local")} accessibilityRole="button"><Text style={s.ghostText}>Sign out</Text></Pressable>
+        <Pressable style={s.ghost} onPress={() => router.push("/reset-password")} accessibilityRole="button"><Text style={s.ghostText}>{tr("Change password")}</Text></Pressable>
+        <Link href="/billing" asChild><Pressable style={s.ghost} accessibilityRole="button"><Text style={s.ghostText}>{tr("Credits & plan")}</Text></Pressable></Link>
+        <Pressable style={s.ghost} onPress={() => out("local")} accessibilityRole="button"><Text style={s.ghostText}>{tr("Sign out")}</Text></Pressable>
         <Pressable style={s.ghost} onPress={() => out("global")} accessibilityRole="button">
-          <Text style={s.ghostText}>Sign out on every device</Text>
+          <Text style={s.ghostText}>{tr("Sign out on every device")}</Text>
         </Pressable>
-        {error && <Text style={s.error}>{error}</Text>}
+        {error && <Text style={s.error}>{tMsg(error)}</Text>}
       </View>
       <View style={[s.card, { flexDirection: "row", gap: 16, flexWrap: "wrap" }]}>
-        <Link href="/terms" style={{ color: c.link }}>Terms</Link>
-        <Link href="/privacy" style={{ color: c.link }}>Privacy</Link>
-        <Link href="/support" style={{ color: c.link }}>Help & contact</Link>
+        <Link href="/terms" style={{ color: c.link }}>{tr("Terms")}</Link>
+        <Link href="/privacy" style={{ color: c.link }}>{tr("Privacy")}</Link>
+        <Link href="/support" style={{ color: c.link }}>{tr("Help & contact")}</Link>
       </View>
       <DangerZone email={email} />
     </ScrollView>

@@ -9,6 +9,28 @@ const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE
   { auth: { persistSession: false } });
 const sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, { prepare: false, max: 3 });
 
+// Languages (2026-11-24): messages anlim writes in English while it runs (errors, check findings, cut notes, notices),
+// for a creator who chose Spanish or French. The app asks for the ones it shows (tMsg in app/src/lib/i18n.ts); numbers
+// are taken out first so one row serves every "Shot 3: trimmed to 2.10 s". A text not translated yet is added empty and
+// the worker fills it (worker/src/translate.js); the app asks again on its next look.
+const NUM = /(?<![\w.⟨{])\d+(?:\.\d+)?(?![\w⟩}])/g;
+function template(t: string) { const nums: string[] = []; return { src: t.replace(NUM, (m) => `⟨${nums.push(m) - 1}⟩`), nums }; }
+async function translateTexts(texts: string[], lang: string) {
+  const items = texts.map((t) => ({ t, ...template(t) }));
+  const srcs = [...new Set(items.map((i) => i.src))];
+  const rows = srcs.length ? await sql`select src, out from studio.translations where lang = ${lang} and src = any(${srcs})` : [];
+  const have = new Map(rows.map((r) => [r.src as string, r.out as string | null]));
+  const miss = srcs.filter((x) => !have.has(x)).slice(0, 20);   // a few new ones per request (each costs a translation)
+  if (miss.length) await sql`insert into studio.translations ${sql(miss.map((src) => ({ src, lang })))} on conflict do nothing`;
+  const out: Record<string, string> = {};
+  for (const i of items) {
+    const tr = have.get(i.src);
+    if (tr) out[i.t] = tr.replace(/⟨(\d+)⟩/g, (m, k) => i.nums[Number(k)] ?? m);
+  }
+  return out;
+}
+
+
 const cors = {
   "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -131,13 +153,24 @@ async function handle(req: Request): Promise<Response> {
           await tx`select studio.refresh_my_plan()`;           // a month boundary nobody else has crossed yet
           await tx`select studio.touch_seen()`;                // in the app now: no "ready" email (2026-11-23)
           return tx`select balance, reserved, plan_credits, plan_id, plan_status, welcome_status, debt, studio.is_admin() as is_admin,
-                           email_ready from studio.accounts where owner = ${uid}`;
+                           email_ready, language from studio.accounts where owner = ${uid}`;
         });
         // paid: has ever bought credits or a plan (no watermark); the app's account label uses it (2026-11-23)
         const [{ paid }] = await sql`select studio.has_paid(${uid}) as paid`;
         return json({ user_id: uid, email: who.user.email, balance: acc?.balance ?? 0, reserved: acc?.reserved ?? 0, paid: !!paid,
           plan_credits: acc?.plan_credits ?? 0, plan_id: acc?.plan_id ?? null, plan_status: acc?.plan_status ?? null,
-          welcome_status: acc?.welcome_status ?? null, debt: acc?.debt ?? 0, is_admin: !!acc?.is_admin, email_ready: acc?.email_ready !== false });
+          welcome_status: acc?.welcome_status ?? null, debt: acc?.debt ?? 0, is_admin: !!acc?.is_admin, email_ready: acc?.email_ready !== false,
+          language: acc?.language ?? null });
+      }
+      case "translate": {
+        const lang = String(body.lang || "");
+        if (lang !== "es" && lang !== "fr") return json({ error: "lang must be es or fr" }, 400);
+        const texts = (Array.isArray(body.texts) ? body.texts : []).filter((t): t is string => typeof t === "string" && !!t.trim() && t.length <= 2000).slice(0, 50);
+        return json({ out: texts.length ? await translateTexts(texts, lang) : {} });
+      }
+      case "language": {   // en, es or fr: the app, emails, end cards and notices (2026-11-24)
+        await asUser(uid, (tx) => tx`select studio.set_language(${String(body.language ?? "")})`);
+        return json({ ok: true });
       }
       case "email_ready": {
         await asUser(uid, (tx) => tx`select studio.set_email_ready(${body.on !== false})`);

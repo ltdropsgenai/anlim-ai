@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { api } from "../lib/api";
 import { supabase } from "../lib/supabase";
 import { c, font } from "../lib/theme";
+import { tr, tMsg } from "../lib/i18n";
 
 export function DangerZone({ email }: { email: string | null }) {
   const [open, setOpen] = useState(false);
@@ -14,15 +15,15 @@ export function DangerZone({ email }: { email: string | null }) {
   const ok = !!email && typed.trim().toLowerCase() === email.toLowerCase();
   return (
     <View style={s.card}>
-      <Text style={[s.kicker, font.mono]}>DELETE ACCOUNT</Text>
+      <Text style={[s.kicker, font.mono]}>{tr("DELETE ACCOUNT")}</Text>
       {!open ? (<>
-        <Text style={s.sub}>Deletes your account, every series, shot, clip, cut and sound you made, your credits and your ElevenLabs connection. An active plan is cancelled. This cannot be undone.</Text>
-        <Pressable style={s.ghost} onPress={() => setOpen(true)} accessibilityRole="button"><Text style={{ color: c.fail }}>Delete my account…</Text></Pressable>
+        <Text style={s.sub}>{tr("Deletes your account, every series, shot, clip, cut and sound you made, your credits and your ElevenLabs connection. An active plan is cancelled. This cannot be undone.")}</Text>
+        <Pressable style={s.ghost} onPress={() => setOpen(true)} accessibilityRole="button"><Text style={{ color: c.fail }}>{tr("Delete my account…")}</Text></Pressable>
       </>) : (<>
-        <Text style={{ color: c.ink, fontSize: 14 }}>To confirm, type your email address: <Text style={font.mono}>{email}</Text></Text>
-        <Text style={s.sub}>Unused credits are not refunded. Download anything you want to keep first (Assets › Download).</Text>
-        <TextInput value={typed} onChangeText={setTyped} autoCapitalize="none" autoCorrect={false} placeholder="Your email" placeholderTextColor={c.muted}
-          style={s.input} accessibilityLabel="Type your email to confirm deleting the account" />
+        <Text style={{ color: c.ink, fontSize: 14 }}>{tr("To confirm, type your email address: ")}<Text style={font.mono}>{email}</Text></Text>
+        <Text style={s.sub}>{tr("Unused credits are not refunded. Download anything you want to keep first (Assets › Download).")}</Text>
+        <TextInput value={typed} onChangeText={setTyped} autoCapitalize="none" autoCorrect={false} placeholder={tr("Your email")} placeholderTextColor={c.muted}
+          style={s.input} accessibilityLabel={tr("Type your email to confirm deleting the account")} />
         <View style={s.row}>
           <Pressable style={[s.btn, (!ok || busy) && { opacity: 0.5 }]} disabled={!ok || busy} accessibilityRole="button"
             onPress={async () => {
@@ -31,12 +32,12 @@ export function DangerZone({ email }: { email: string | null }) {
               catch (e) { setError((e as Error).message); }
               setBusy(false);
             }}>
-            <Text style={s.btnText}>{busy ? "Deleting everything…" : "Delete my account for good"}</Text>
+            <Text style={s.btnText}>{busy ? tr("Deleting everything…") : tr("Delete my account for good")}</Text>
           </Pressable>
-          <Pressable onPress={() => { setOpen(false); setTyped(""); }} accessibilityRole="button"><Text style={s.link}>Keep my account</Text></Pressable>
+          <Pressable onPress={() => { setOpen(false); setTyped(""); }} accessibilityRole="button"><Text style={s.link}>{tr("Keep my account")}</Text></Pressable>
         </View>
       </>)}
-      {error && <Text style={{ color: c.fail }}>{error}</Text>}
+      {error && <Text style={{ color: c.fail }}>{tMsg(error)}</Text>}
     </View>
   );
 }

@@ -13,12 +13,13 @@ import { SunStage } from "./SunLight";
 import { Icon, IconName } from "./Icon";
 import { Logo } from "./Logo";
 import { NavGlow, Wash } from "./NavGlow";
+import { tr, locale, trDeep, trp } from "../lib/i18n";
 export { Logo };
 
 type Href = "/" | "/workspace" | "/motion" | "/storage" | "/review" | "/library" | "/billing" | "/support";
 type Item = { href: Href; label: string; long?: string; icon: IconName; match: (p: string) => boolean; phone: boolean };
 // 2026-11-19 (Londi): Home (features, models, tools), Workspace (where things are made), Assets (everything made).
-const ITEMS: Item[] = [
+const ITEMS: Item[] = trDeep([
   { href: "/", label: "Home", icon: "home", match: (p) => p === "/", phone: true },
   { href: "/workspace", label: "Workspace", icon: "workspace", phone: true,
     match: (p) => p.startsWith("/workspace") || p.startsWith("/shots") || p.startsWith("/shot/") || p.startsWith("/cut/") },
@@ -30,7 +31,7 @@ const ITEMS: Item[] = [
   { href: "/billing", label: "Credits", icon: "credits", match: (p) => p.startsWith("/billing"), phone: false },
   // 2026-11-23: Help & contact and the video guides, in the compact rail too (phones reach it from Account)
   { href: "/support", label: "Help", long: "Help & support", icon: "play", match: (p) => p.startsWith("/support"), phone: false },
-];
+], ["label", "long"]);
 // compact rail and tab bar geometry (the tally light's position is computed from it)
 const RAIL_W = 72, ITEM_H = 52, TAB_H = 58, GAP = 14, TALLY = 22, GROUP_BREAK = 5;   // Cast and Credits sit apart (index of Cast in the rail)
 const SIDE_W = 248, ROW_H = 40;
@@ -80,7 +81,7 @@ export function Shell({ children }: { children: ReactNode }) {
     homeAt.current = Date.now();
     api.home().then(setHome).catch(() => {});
   }, [path, expanded]);
-  const title = TITLES.find(([r]) => r.test(path))?.[1] ?? "anlim.ai";
+  const title = tr(TITLES.find(([r]) => r.test(path))?.[1] ?? "anlim.ai");
   // the browser tab says where you are (2026-11-19: Stack titles did not reach the tab with the header hidden)
   useEffect(() => { if (Platform.OS === "web") document.title = title === "Home" ? "anlim.ai" : `${title} · anlim.ai`; }, [title]);
   const deep = /^\/(clip|shot|cut)\//.test(path) || path.startsWith("/shots");
@@ -126,7 +127,7 @@ export function Shell({ children }: { children: ReactNode }) {
           {narrow && railLabel(it.label, on, h)}
         </Pressable>
         {!narrow && hv(it.href) && tip(it.long ?? it.label, ITEM_H,
-          it.href === "/billing" && me ? `${avail.toLocaleString("en-US")} cr` : it.href === "/review" && toReview > 0 ? String(toReview) : undefined)}
+          it.href === "/billing" && me ? `${avail.toLocaleString(locale())} cr` : it.href === "/review" && toReview > 0 ? String(toReview) : undefined)}
       </View>
     );
   });
@@ -174,12 +175,12 @@ export function Shell({ children }: { children: ReactNode }) {
     <View style={{ width: SIDE_W, backgroundColor: c.rail, paddingTop: 18, paddingBottom: 14, paddingHorizontal: 14, zIndex: 2,
                    shadowColor: "#000", shadowOpacity: 0.45, shadowRadius: 36, shadowOffset: { width: 14, height: 0 } }}>
       <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 6 }}>
-        <Pressable onPress={() => router.navigate("/")} accessibilityRole="link" accessibilityLabel="anlim.ai home"
+        <Pressable onPress={() => router.navigate("/")} accessibilityRole="link" accessibilityLabel={tr("anlim.ai home")}
           style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, transform: [{ scale: pressed ? 0.98 : 1 }] })}>
           <Logo size={30} />
-          <Text style={[{ color: c.ink, fontSize: 17 }, font.display]}>anlim<Text style={{ color: c.accent }}>.</Text>ai</Text>
+          <Text style={[{ color: c.ink, fontSize: 17 }, font.display]}>{tr("anlim")}<Text style={{ color: c.accent }}>.</Text>{tr("ai")}</Text>
         </Pressable>
-        <Pressable onPress={toggleSidebar} {...hoverProps("fold")} accessibilityRole="button" accessibilityLabel="Collapse the sidebar"
+        <Pressable onPress={toggleSidebar} {...hoverProps("fold")} accessibilityRole="button" accessibilityLabel={tr("Collapse the sidebar")}
           style={({ pressed }) => ({ width: 30, height: 30, borderRadius: 8, alignItems: "center", justifyContent: "center",
                                      backgroundColor: hv("fold") ? "rgba(255,255,255,0.06)" : "transparent", transform: [{ scale: pressed ? 0.92 : 1 }] })}>
           <Icon name="fold" size={18} weight={1.6} color={hv("fold") ? c.ink : c.muted} />
@@ -188,7 +189,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
       {last && (
         <Pressable onPress={() => router.navigate({ pathname: "/workspace", params: { series: last.series_id, scene: last.scene_id } })}
-          {...hoverProps("proj")} accessibilityRole="link" accessibilityLabel={`Open ${last.series_name}`}
+          {...hoverProps("proj")} accessibilityRole="link" accessibilityLabel={tr("Open {series_name}", { series_name: last.series_name })}
           style={({ pressed }) => ({ marginTop: 18, padding: 10, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 10,
                                      backgroundColor: hv("proj") ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.035)",
                                      transform: [{ scale: pressed ? 0.98 : 1 }] })}>
@@ -198,49 +199,48 @@ export function Shell({ children }: { children: ReactNode }) {
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={{ color: c.ink, fontSize: 13, fontWeight: "600" }} numberOfLines={1}>{last.series_name}</Text>
             <Text style={[{ color: c.muted, fontSize: 9.5, letterSpacing: 0.8, textTransform: "uppercase", marginTop: 2 }, font.mono]} numberOfLines={1}>
-              Last worked on · {last.scene_title}
-            </Text>
+              {tr("Last worked on · {scene_title}", { scene_title: last.scene_title })}</Text>
           </View>
         </Pressable>
       )}
 
-      {section("MAKE")}
+      {section(tr("MAKE"))}
       {ITEMS.slice(0, 5).map((it) => sideRow(it.href, it.icon, it.long ?? it.label, it.match(path), () => router.navigate(it.href),
         it.href === "/review" && toReview > 0 ? String(toReview) : null))}
-      {section("LIBRARY")}
-      {sideRow("/library", "cast", "Cast & places", ITEMS[5].match(path), () => router.navigate("/library"))}
+      {section(tr("LIBRARY"))}
+      {sideRow("/library", "cast", tr("Cast & places"), ITEMS[5].match(path), () => router.navigate("/library"))}
       {/* 2026-11-23 (Londi: "there's no menu item that reads Support"): Help & contact, with the video guides */}
-      {section("SUPPORT")}
-      {sideRow("/support", "play", "Help & support", path.startsWith("/support"), () => router.navigate("/support"))}
+      {section(tr("SUPPORT"))}
+      {sideRow("/support", "play", tr("Help & support"), path.startsWith("/support"), () => router.navigate("/support"))}
       {me?.is_admin && <>
-        {section("ADMIN")}
-        {sideRow("/refunds", "review", "Refund requests", path.startsWith("/refunds"), () => router.navigate("/refunds" as never))}
-        {sideRow("/insights", "search", "Insights", path.startsWith("/insights"), () => router.navigate("/insights" as never))}
+        {section(tr("ADMIN"))}
+        {sideRow("/refunds", "review", tr("Refund requests"), path.startsWith("/refunds"), () => router.navigate("/refunds" as never))}
+        {sideRow("/insights", "search", tr("Insights"), path.startsWith("/insights"), () => router.navigate("/insights" as never))}
       </>}
 
       <View style={{ flex: 1 }} />
 
       {me && (
         <Pressable onPress={() => router.navigate("/billing")} {...hoverProps("gauge")} accessibilityRole="link"
-          accessibilityLabel={`${avail} credits available, about ${clips} five-second clips`}
+          accessibilityLabel={tr("{avail} credits available, about {clips} five-second clips", { avail, clips })}
           style={({ pressed }) => ({ padding: 14, borderRadius: 12, transform: [{ scale: pressed ? 0.98 : 1 }],
                                      backgroundColor: path.startsWith("/billing") ? "rgba(255,122,26,0.08)" : hv("gauge") ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.03)" })}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Icon name="credits" size={15} weight={1.6} active={path.startsWith("/billing")} color={c.muted} />
-            <Text style={[{ color: "#5A5A63", fontSize: 10, letterSpacing: 1.4, flex: 1 }, font.mono]}>CREDITS</Text>
-            <Text style={[{ color: c.ink, fontSize: 13, fontWeight: "600" }, font.mono]}>{avail.toLocaleString("en-US")}</Text>
+            <Text style={[{ color: "#5A5A63", fontSize: 10, letterSpacing: 1.4, flex: 1 }, font.mono]}>{tr("CREDITS")}</Text>
+            <Text style={[{ color: c.ink, fontSize: 13, fontWeight: "600" }, font.mono]}>{avail.toLocaleString(locale())}</Text>
           </View>
           <View style={{ height: 4, borderRadius: 2, backgroundColor: "#1E1E23", marginTop: 11, overflow: "hidden" }}>
             <View style={{ width: `${pct * 100}%`, height: 4, borderRadius: 2, backgroundColor: c.accent,
                            shadowColor: c.accent, shadowOpacity: 0.6, shadowRadius: 6, shadowOffset: { width: 0, height: 0 } }} />
           </View>
           <Text style={{ color: c.muted, fontSize: 11, marginTop: 8 }}>
-            {clips > 0 ? `About ${clips} clip${clips === 1 ? "" : "s"} at 5 s` : "Add credits to make clips"}
+            {clips > 0 ? trp(clips, "About {n} clip at 5 s", "About {n} clips at 5 s") : tr("Add credits to make clips")}
           </Text>
         </Pressable>
       )}
 
-      <Pressable onPress={() => router.navigate("/account")} {...hoverProps("acct")} accessibilityRole="link" accessibilityLabel="Account"
+      <Pressable onPress={() => router.navigate("/account")} {...hoverProps("acct")} accessibilityRole="link" accessibilityLabel={tr("Account")}
         accessibilityState={{ selected: path.startsWith("/account") }}
         style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 8, paddingVertical: 10, marginTop: 10,
                                    borderRadius: 10, backgroundColor: hv("acct") || path.startsWith("/account") ? "rgba(255,255,255,0.04)" : "transparent",
@@ -250,8 +250,8 @@ export function Shell({ children }: { children: ReactNode }) {
           <Text style={{ color: c.ink, fontSize: 12, fontWeight: "600" }}>{initial}</Text>
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={{ color: c.ink, fontSize: 13, fontWeight: "500" }} numberOfLines={1}>{me?.email?.split("@")[0] ?? "Account"}</Text>
-          <Text style={{ color: c.muted, fontSize: 11 }} numberOfLines={1}>{hasPlan ? "Plan active" : me?.paid ? "Paid account" : "Free account"}</Text>
+          <Text style={{ color: c.ink, fontSize: 13, fontWeight: "500" }} numberOfLines={1}>{me?.email?.split("@")[0] ?? tr("Account")}</Text>
+          <Text style={{ color: c.muted, fontSize: 11 }} numberOfLines={1}>{hasPlan ? tr("Plan active") : me?.paid ? tr("Paid account") : tr("Free account")}</Text>
         </View>
       </Pressable>
     </View>
@@ -265,7 +265,7 @@ export function Shell({ children }: { children: ReactNode }) {
                    paddingVertical: narrow ? 10 : 14, backgroundColor: pageBg }}>
       {deep && (
         <Pressable onPress={() => (router.canGoBack() ? router.back() : router.navigate("/workspace"))} accessibilityRole="button"
-          accessibilityLabel="Back" {...hoverProps("back")}
+          accessibilityLabel={tr("Back")} {...hoverProps("back")}
           style={({ pressed }) => ({ width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center",
                                      backgroundColor: hv("back") ? "#17171B" : "transparent", transform: [{ scale: pressed ? 0.94 : 1 }] })}>
           <Icon name="back" size={18} color={hv("back") ? c.ink : c.sub} />
@@ -275,16 +275,16 @@ export function Shell({ children }: { children: ReactNode }) {
       <Text style={[{ color: c.ink, fontSize: narrow ? 17 : 19, textTransform: "uppercase", letterSpacing: 0.4 }, font.display]} numberOfLines={1}>{title}</Text>
       <View style={{ flex: 1 }} />
       {me?.is_admin && !expanded && (
-        <Pressable onPress={() => router.navigate("/refunds" as never)} accessibilityRole="link" accessibilityLabel="Refund requests" {...hoverProps("refunds")}>
-          <Text style={[{ color: hv("refunds") ? c.ink : c.muted, fontSize: 11, letterSpacing: 0.8, textTransform: "uppercase" }, font.mono]}>Refunds</Text>
+        <Pressable onPress={() => router.navigate("/refunds" as never)} accessibilityRole="link" accessibilityLabel={tr("Refund requests")} {...hoverProps("refunds")}>
+          <Text style={[{ color: hv("refunds") ? c.ink : c.muted, fontSize: 11, letterSpacing: 0.8, textTransform: "uppercase" }, font.mono]}>{tr("Refunds")}</Text>
         </Pressable>
       )}
       {me && !expanded && (
-        <Pressable onPress={() => router.navigate("/billing")} accessibilityRole="link" accessibilityLabel={`${avail} credits available`}
+        <Pressable onPress={() => router.navigate("/billing")} accessibilityRole="link" accessibilityLabel={tr("{avail} credits available", { avail })}
           {...hoverProps("bal")} style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
           <Icon name="credits" size={16} weight={1.6} color={hv("bal") ? c.ink : c.muted} />
           <Text style={[{ color: hv("bal") ? c.ink : c.sub, fontSize: 13, fontWeight: "600" }, font.mono]}>
-            {avail.toLocaleString("en-US")}<Text style={{ color: c.muted, fontWeight: "400" }}> cr</Text>
+            {avail.toLocaleString(locale())}<Text style={{ color: c.muted, fontWeight: "400" }}>{tr(" cr")}</Text>
           </Text>
         </Pressable>
       )}
@@ -293,11 +293,11 @@ export function Shell({ children }: { children: ReactNode }) {
           style={({ pressed }) => ({ backgroundColor: hv("up") ? "#FF8A33" : c.accent, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8,
                                      transform: [{ scale: pressed ? 0.96 : 1 }], shadowColor: c.accent, shadowOpacity: hv("up") ? 0.45 : 0.25,
                                      shadowRadius: 14, shadowOffset: { width: 0, height: 0 } })}>
-          <Text style={{ color: c.onAccent, fontWeight: "700", fontSize: 13, letterSpacing: 0.2 }}>Upgrade</Text>
+          <Text style={{ color: c.onAccent, fontWeight: "700", fontSize: 13, letterSpacing: 0.2 }}>{tr("Upgrade")}</Text>
         </Pressable>
       )}
       {narrow && (
-        <Pressable onPress={() => router.navigate("/account")} accessibilityRole="link" accessibilityLabel="Account"
+        <Pressable onPress={() => router.navigate("/account")} accessibilityRole="link" accessibilityLabel={tr("Account")}
           style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: "#1C1C21", alignItems: "center", justifyContent: "center" }}>
           <Text style={{ color: "#D4D4D8", fontSize: 11, fontWeight: "600" }}>{initial}</Text>
         </Pressable>
@@ -324,18 +324,18 @@ export function Shell({ children }: { children: ReactNode }) {
   const compact = (
     <View style={{ width: RAIL_W, backgroundColor: c.rail, alignItems: "center", paddingTop: 18, paddingBottom: 14, zIndex: 2,
                    shadowColor: "#000", shadowOpacity: 0.45, shadowRadius: 30, shadowOffset: { width: 10, height: 0 } }}>
-      <Pressable onPress={() => router.navigate("/")} accessibilityRole="link" accessibilityLabel="anlim.ai home"
+      <Pressable onPress={() => router.navigate("/")} accessibilityRole="link" accessibilityLabel={tr("anlim.ai home")}
         style={({ pressed }) => ({ marginBottom: 26, transform: [{ scale: pressed ? 0.95 : 1 }] })}>
         <Logo size={34} />
       </Pressable>
       {wide && (
         <View style={{ width: RAIL_W, alignItems: "center", marginTop: -14, marginBottom: 12 }}>
-          <Pressable onPress={toggleSidebar} {...hoverProps("unfold")} accessibilityRole="button" accessibilityLabel="Expand the sidebar"
+          <Pressable onPress={toggleSidebar} {...hoverProps("unfold")} accessibilityRole="button" accessibilityLabel={tr("Expand the sidebar")}
             style={({ pressed }) => ({ width: 34, height: 30, borderRadius: 8, alignItems: "center", justifyContent: "center",
                                        backgroundColor: hv("unfold") ? "rgba(255,255,255,0.06)" : "transparent", transform: [{ scale: pressed ? 0.92 : 1 }] })}>
             <Icon name="unfold" size={18} weight={1.6} color={hv("unfold") ? c.ink : c.muted} />
           </Pressable>
-          {hv("unfold") && tip("Expand", 30)}
+          {hv("unfold") && tip(tr("Expand"), 30)}
         </View>
       )}
       <View accessibilityRole="tablist" style={{ width: RAIL_W }}>
@@ -346,7 +346,7 @@ export function Shell({ children }: { children: ReactNode }) {
       {me && (
         <View style={{ width: RAIL_W, alignItems: "center", marginBottom: 6 }}>
           <Pressable onPress={() => router.navigate("/billing")} {...hoverProps("mgauge")} accessibilityRole="link"
-            accessibilityLabel={`${avail} credits available, about ${clips} five-second clips`}
+            accessibilityLabel={tr("{avail} credits available, about {clips} five-second clips", { avail, clips })}
             style={({ pressed }) => ({ width: 48, paddingVertical: 10, borderRadius: 10, alignItems: "center", gap: 8,
                                        backgroundColor: path.startsWith("/billing") ? "rgba(255,122,26,0.08)" : hv("mgauge") ? "rgba(255,255,255,0.05)" : "transparent",
                                        transform: [{ scale: pressed ? 0.95 : 1 }] })}>
@@ -356,10 +356,10 @@ export function Shell({ children }: { children: ReactNode }) {
             </View>
             <Text style={[{ color: hv("mgauge") || path.startsWith("/billing") ? c.ink : c.sub, fontSize: 10, fontWeight: "600" }, font.mono]}>{short(avail)}</Text>
           </Pressable>
-          {hv("mgauge") && tip("Credits", 84, `${avail.toLocaleString("en-US")} cr · about ${clips} clip${clips === 1 ? "" : "s"} at 5 s`)}
+          {hv("mgauge") && tip(tr("Credits"), 84, trp(clips, "{cr} cr · about {n} clip at 5 s", "{cr} cr · about {n} clips at 5 s", { cr: avail.toLocaleString(locale()) }))}
         </View>
       )}
-      <Pressable onPress={() => router.navigate("/account")} {...hoverProps("/account")} accessibilityRole="link" accessibilityLabel="Account"
+      <Pressable onPress={() => router.navigate("/account")} {...hoverProps("/account")} accessibilityRole="link" accessibilityLabel={tr("Account")}
         style={({ pressed }) => ({ width: RAIL_W, height: ITEM_H, alignItems: "center", justifyContent: "center", gap: 6,
                                    transform: [{ scale: pressed ? 0.95 : 1 }] })}>
         <View style={{ width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center",
@@ -368,7 +368,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </View>
       </Pressable>
       {hv("/account") && <View style={{ position: "absolute", left: 0, bottom: 14, width: RAIL_W, height: ITEM_H }} pointerEvents="none">
-        {tip(me?.email?.split("@")[0] ?? "Account", ITEM_H, hasPlan ? "plan active" : me?.paid ? "paid" : "free")}</View>}
+        {tip(me?.email?.split("@")[0] ?? tr("Account"), ITEM_H, hasPlan ? "plan active" : me?.paid ? "paid" : "free")}</View>}
     </View>
   );
   return (

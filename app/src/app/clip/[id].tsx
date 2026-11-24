@@ -6,11 +6,12 @@ import { router, useLocalSearchParams } from "expo-router";
 import { api, Clip, Flag, KIND_NAMES, MODEL_NAMES } from "../../lib/api";
 import { c, font, pageBg } from "../../lib/theme";
 import { ClipPlayer, PlayerHandle } from "../../components/ClipPlayer";
+import { tr, trp, trMap, tMsg } from "../../lib/i18n";
 
 const REASONS = ["Character looks wrong", "Extra or broken limbs", "Room or props changed", "Wrong action", "Motion looks bad", "Other"];
 
 // The checker's rule names, in the words a creator would use (direction B).
-const PLAIN: Record<string, string> = {
+const PLAIN: Record<string, string> = trMap({
   "SET LAYOUT": "The room or furniture changed", "ANATOMY": "Hands or bodies look wrong", "CAMERA": "The camera moved",
   "SCREEN SIDE": "Characters swapped sides", "NATURAL POSES": "A pose looks unnatural", "BODY CONTACT": "Bodies pass into each other",
   "PROPS": "A prop looks wrong", "PROPS MOVED": "A prop moved on its own", "RELATIVE HEIGHT": "Someone's size changed",
@@ -21,7 +22,7 @@ const PLAIN: Record<string, string> = {
   "FOOT ON FURNITURE": "A foot lands on furniture", "FIXED DETAILS": "A fixed detail changed",
   "HELD OBJECTS FACE THE HOLDER": "A held object faces the wrong way", "REFLECTIONS AND SHADOWS": "A reflection or shadow is wrong",
   "EDITORIAL": "Something looks off",
-};
+});
 // The checker's reasons, rule by rule (2026-11-19): "RULE: N frame(s) f12, f16" = it stood on those frames;
 // "RULE: f20 REJECTED: ..." = a second look cleared that rule on that frame.
 function parseReasons(reasons: string[] | null) {
@@ -35,7 +36,7 @@ function parseReasons(reasons: string[] | null) {
   return { standing, cleared };
 }
 const ruleWords = (r: string) => PLAIN[r] ?? r.charAt(0) + r.slice(1).toLowerCase();
-const plain = (f: Flag) => (f.rules.length ? f.rules.map(ruleWords) : [f.verdict]).join(" · ");
+const plain = (f: Flag) => (f.rules.length ? f.rules.map(ruleWords) : [tMsg(f.verdict)]).join(" · ");
 
 export default function Review() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -72,7 +73,7 @@ export default function Review() {
     setBusy(false);
   }
 
-  if (error && !clip) return <Text style={[s.err, { padding: 16 }]}>{error}</Text>;
+  if (error && !clip) return <Text style={[s.err, { padding: 16 }]}>{tMsg(error)}</Text>;
   if (!clip) return <ActivityIndicator style={{ marginTop: 40 }} />;
 
   const decidable = !done && !clip.decision && (clip.status === "review" || clip.status === "succeeded");
@@ -87,10 +88,10 @@ export default function Review() {
   // what the moments are about, grouped, so the report reads as a short list rather than frame codes
   const groups = why.standing.map((g) => [ruleWords(g.rule), g.frames.map((fr) => timeOf[fr]).filter((t): t is number => t != null)] as [string, number[]])
     .sort((x, y) => y[1].length - x[1].length);
-  const verdict = clip.verdict === "PASS" ? { text: "✓ Passed every check", tone: "ok" as const }
-    : clip.verdict === "FAIL" ? { text: "Didn't pass", tone: "bad" as const }
-    : clip.verdict === "NOT_REVIEWED" ? { text: "! Check couldn't finish", tone: "call" as const }
-    : { text: "! Your call", tone: "call" as const };
+  const verdict = clip.verdict === "PASS" ? { text: tr("✓ Passed every check"), tone: "ok" as const }
+    : clip.verdict === "FAIL" ? { text: tr("Didn't pass"), tone: "bad" as const }
+    : clip.verdict === "NOT_REVIEWED" ? { text: tr("! Check couldn't finish"), tone: "call" as const }
+    : { text: tr("! Your call"), tone: "call" as const };
   const T = { ok: [c.passBg, c.pass, c.passLine], bad: [c.failBg, c.fail, c.failLine], call: [c.flagBg, c.flag, c.flagLine] }[verdict.tone];
 
   return (
@@ -104,29 +105,29 @@ export default function Review() {
           {clip.clip_url ? (
             <ClipPlayer ref={player} src={clip.clip_url} duration={clip.duration_s}
               markers={standing.map((f) => ({ t: f.t_s!, color: c.flag, label: plain(f) }))} />
-          ) : <Text style={s.sub}>No clip file.</Text>}
+          ) : <Text style={s.sub}>{tr("No clip file.")}</Text>}
           {clip.watermarked && (
             <Pressable onPress={() => router.push("/billing")} accessibilityRole="link">
-              <Text style={s.wm}>Free clips carry an anlim.ai watermark. Buy credits or a plan and this clip, and every earlier one, plays without it.</Text>
+              <Text style={s.wm}>{tr("Free clips carry an anlim.ai watermark. Buy credits or a plan and this clip, and every earlier one, plays without it.")}</Text>
             </Pressable>
           )}
-          {standing.length > 0 && <Text style={s.legend}>Yellow marks are moments to look at. Click one to jump there.</Text>}
+          {standing.length > 0 && <Text style={s.legend}>{tr("Yellow marks are moments to look at. Click one to jump there.")}</Text>}
 
-          <Text style={[s.h, font.display]}>Moments to look at</Text>
-          {standing.length === 0 && <Text style={s.sub}>Nothing to look at{why.cleared ? ": everything flagged was cleared on a second look" : ""}.</Text>}
+          <Text style={[s.h, font.display]}>{tr("Moments to look at")}</Text>
+          {standing.length === 0 && <Text style={s.sub}>{why.cleared ? tr("Nothing to look at: everything flagged was cleared on a second look.") : tr("Nothing to look at.")}</Text>}
           {standing.map((f, i) => (
             <Pressable key={i} onPress={() => player.current?.seek(f.t_s!)} style={s.flag} accessibilityRole="button"
-              accessibilityLabel={`Jump to ${f.t_s!.toFixed(1)} seconds: ${plain(f)}`}>
+              accessibilityLabel={tr("Jump to {s} seconds: {what}", { s: f.t_s!.toFixed(1), what: plain(f) })}>
               <Text style={[s.time, font.mono]}>{f.t_s!.toFixed(2)} s</Text>
               <View style={{ flex: 1 }}>
                 <Text style={s.rules}>{plain(f)}</Text>
-                {f.note ? <Text style={s.note}>{f.note}</Text> : null}
+                {f.note ? <Text style={s.note}>{tMsg(f.note)}</Text> : null}
               </View>
-              <Text style={s.jump}>Jump</Text>
+              <Text style={s.jump}>{tr("Jump")}</Text>
             </Pressable>
           ))}
           {why.cleared > 0 && (
-            <Text style={s.small}>{why.cleared} other possible problem{why.cleared === 1 ? " was" : "s were"} looked at a second time and cleared.</Text>
+            <Text style={s.small}>{trp(why.cleared, "{n} other possible problem was looked at a second time and cleared.", "{n} other possible problems were looked at a second time and cleared.")}</Text>
           )}
         </View>
 
@@ -136,8 +137,8 @@ export default function Review() {
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                 <View style={s.seal}><Text style={[{ color: c.accent, fontSize: 13 }, font.display]}>a.</Text></View>
                 <View>
-                  <Text style={[{ color: c.ink, fontSize: 15, textTransform: "uppercase", letterSpacing: 0.4 }, font.display]}>anlim check</Text>
-                  <Text style={{ color: c.sub, fontSize: 12 }}>Every clip, before you pay</Text>
+                  <Text style={[{ color: c.ink, fontSize: 15, textTransform: "uppercase", letterSpacing: 0.4 }, font.display]}>{tr("anlim check")}</Text>
+                  <Text style={{ color: c.sub, fontSize: 12 }}>{tr("Every clip, before you pay")}</Text>
                 </View>
               </View>
               <Text style={[s.chip, { backgroundColor: T[0], color: T[1], borderColor: T[2] }]}>{verdict.text}</Text>
@@ -146,10 +147,10 @@ export default function Review() {
               <View style={s.item}>
                 <Text style={[s.mark, { color: actOk ? c.pass : actBad ? c.fail : c.flag }]}>{actOk ? "✓" : "!"}</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={s.itemTitle}>{actOk ? "Does what the shot says" : actBad ? "Doesn't do what the shot says" : "May not do exactly what the shot says"}</Text>
+                  <Text style={s.itemTitle}>{actOk ? tr("Does what the shot says") : actBad ? tr("Doesn't do what the shot says") : tr("May not do exactly what the shot says")}</Text>
                   <Text style={s.itemText}>
                     {clip.action_check?.differs || clip.action_check?.why || ""}
-                    {clip.action_check?.confidence ? `${clip.action_check?.differs || clip.action_check?.why ? " " : ""}${clip.action_check.confidence[0].toUpperCase()}${clip.action_check.confidence.slice(1)} confidence.` : ""}
+                    {clip.action_check?.confidence ? (clip.action_check?.differs || clip.action_check?.why ? " " : "") + tr(({ high: "High confidence.", medium: "Medium confidence.", low: "Low confidence." } as Record<string, string>)[clip.action_check.confidence] ?? "{level} confidence.", { level: clip.action_check.confidence }) : ""}
                   </Text>
                 </View>
               </View>
@@ -159,87 +160,86 @@ export default function Review() {
                 <Text style={[s.mark, { color: c.flag }]}>!</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={s.itemTitle}>{k}</Text>
-                  <Text style={s.itemText}>{ts.length} moment{ts.length === 1 ? "" : "s"}{ts.length ? `: ${ts.slice(0, 4).map((t) => `${t.toFixed(1)} s`).join(", ")}${ts.length > 4 ? "…" : ""}` : ""}</Text>
+                  <Text style={s.itemText}>{trp(ts.length, "{n} moment", "{n} moments")}{ts.length ? `: ${ts.slice(0, 4).map((t) => `${t.toFixed(1)} s`).join(", ")}${ts.length > 4 ? "…" : ""}` : ""}</Text>
                 </View>
-                {ts.length > 0 && <Pressable onPress={() => player.current?.seek(ts[0])} style={s.smallBtn} accessibilityRole="button"><Text style={{ color: c.ink, fontSize: 12 }}>Jump</Text></Pressable>}
+                {ts.length > 0 && <Pressable onPress={() => player.current?.seek(ts[0])} style={s.smallBtn} accessibilityRole="button"><Text style={{ color: c.ink, fontSize: 12 }}>{tr("Jump")}</Text></Pressable>}
               </View>
             ))}
             {pt && pt !== "NOT CHECKED" && (
               <View style={s.item}>
                 <Text style={[s.mark, { color: ptBad ? c.fail : c.pass }]}>{ptBad ? "!" : "✓"}</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={s.itemTitle}>{ptBad ? (pt === "THROUGH" ? "Feet go through furniture" : "A foot lands on furniture") : "Nobody walks through furniture"}</Text>
+                  <Text style={s.itemTitle}>{ptBad ? (pt === "THROUGH" ? tr("Feet go through furniture") : tr("A foot lands on furniture")) : tr("Nobody walks through furniture")}</Text>
                 </View>
               </View>
             )}
             {!act && groups.length === 0 && (
               <View style={s.item}><Text style={[s.mark, { color: c.pass }]}>✓</Text>
-                <Text style={[s.itemTitle, { flex: 1 }]}>Nothing to look at</Text></View>
+                <Text style={[s.itemTitle, { flex: 1 }]}>{tr("Nothing to look at")}</Text></View>
             )}
 
             {done ? (
               <>
-                <Text style={[s.decided, font.display]}>{done === "approve" ? "Kept" : "Rejected"}</Text>
-                <Pressable style={s.ghost} onPress={() => router.navigate("/review")} accessibilityRole="link"><Text style={{ color: c.ink }}>Back to Review</Text></Pressable>
+                <Text style={[s.decided, font.display]}>{done === "approve" ? tr("Kept") : tr("Rejected")}</Text>
+                <Pressable style={s.ghost} onPress={() => router.navigate("/review")} accessibilityRole="link"><Text style={{ color: c.ink }}>{tr("Back to Review")}</Text></Pressable>
               </>
             ) : decidable ? (
               <>
                 <Pressable style={[s.btn, { backgroundColor: c.accent }]} onPress={() => decide("approve")} disabled={busy} accessibilityRole="button">
-                  <Text style={s.btnText}>Keep it</Text>
+                  <Text style={s.btnText}>{tr("Keep it")}</Text>
                 </Pressable>
                 {!rejecting ? (
                 <Pressable style={s.ghost} onPress={() => setRejecting(true)} disabled={busy} accessibilityRole="button">
-                  <Text style={{ color: c.ink, fontWeight: "600", fontSize: 15 }}>Reject</Text>
+                  <Text style={{ color: c.ink, fontWeight: "600", fontSize: 15 }}>{tr("Reject")}</Text>
                 </Pressable>
                 ) : (<>
-                <Text style={[s.kicker, font.mono, { marginTop: 14 }]}>WHAT'S WRONG WITH IT?</Text>
-                <Text style={s.sub}>Pick what's wrong and say in a sentence what you see (and when, if you can). We look at every rejected
-                  clip: if we can see the problem, the{clip.credits_reserved ? ` ${clip.credits_reserved}` : ""} credits come back to you and we tell you.</Text>
+                <Text style={[s.kicker, font.mono, { marginTop: 14 }]}>{tr("WHAT'S WRONG WITH IT?")}</Text>
+                <Text style={s.sub}>{clip.credits_reserved ? tr("Pick what's wrong and say in a sentence what you see (and when, if you can). We look at every rejected clip: if we can see the problem, the {n} credits come back to you and we tell you.", { n: clip.credits_reserved }) : tr("Pick what's wrong and say in a sentence what you see (and when, if you can). We look at every rejected clip: if we can see the problem, the credits come back to you and we tell you.")}</Text>
                 <View style={s.chips}>
                   {REASONS.map((r) => (
                     <Pressable key={r} onPress={() => setPicked((p) => p.includes(r) ? p.filter((x) => x !== r) : [...p, r])}
                       style={[s.reason, picked.includes(r) && { backgroundColor: c.accent, borderColor: c.accent }]} accessibilityRole="checkbox"
                       accessibilityState={{ checked: picked.includes(r) }}>
-                      <Text style={{ color: picked.includes(r) ? c.onAccent : c.ink, fontSize: 13 }}>{r}</Text>
+                      <Text style={{ color: picked.includes(r) ? c.onAccent : c.ink, fontSize: 13 }}>{tr(r)}</Text>
                     </Pressable>
                   ))}
                 </View>
-                <TextInput style={[s.input, { marginTop: 8 }]} placeholder="What's wrong, e.g. the fox's tail comes off its body" placeholderTextColor={c.muted}
+                <TextInput style={[s.input, { marginTop: 8 }]} placeholder={tr("What's wrong, e.g. the fox's tail comes off its body")} placeholderTextColor={c.muted}
                   value={note} onChangeText={setNote} multiline />
-                <TextInput style={[s.input, { marginTop: 8, minHeight: 0 }]} placeholder="When (seconds, optional), e.g. 2.1" placeholderTextColor={c.muted}
+                <TextInput style={[s.input, { marginTop: 8, minHeight: 0 }]} placeholder={tr("When (seconds, optional), e.g. 2.1")} placeholderTextColor={c.muted}
                   value={refundAt} onChangeText={setRefundAt} keyboardType="decimal-pad" />
                 <Pressable style={[s.ghost, (picked.length === 0 || note.trim().length < 15) && { opacity: 0.45 }]} onPress={() => decide("reject")}
                   disabled={busy || picked.length === 0 || note.trim().length < 15} accessibilityRole="button">
-                  <Text style={{ color: c.ink, fontWeight: "600", fontSize: 15 }}>Reject and ask for a refund</Text>
+                  <Text style={{ color: c.ink, fontWeight: "600", fontSize: 15 }}>{tr("Reject and ask for a refund")}</Text>
                 </Pressable>
-                <Pressable onPress={() => setRejecting(false)} disabled={busy} accessibilityRole="button"><Text style={[s.small, { textDecorationLine: "underline" }]}>Cancel</Text></Pressable>
+                <Pressable onPress={() => setRejecting(false)} disabled={busy} accessibilityRole="button"><Text style={[s.small, { textDecorationLine: "underline" }]}>{tr("Cancel")}</Text></Pressable>
                 </>)}
-                {error && <Text style={s.err}>{error}</Text>}
-                <Text style={s.small}>Every clip is charged when it is made, because the video model is paid for every render.</Text>
+                {error && <Text style={s.err}>{tMsg(error)}</Text>}
+                <Text style={s.small}>{tr("Every clip is charged when it is made, because the video model is paid for every render.")}</Text>
               </>
             ) : null}
             {refunded ? (
-              <Text style={[s.sub, { marginTop: 14 }]}>Rejected. We'll look at the clip and let you know; if we can see the problem, the credits come back to you.</Text>
+              <Text style={[s.sub, { marginTop: 14 }]}>{tr("Rejected. We'll look at the clip and let you know; if we can see the problem, the credits come back to you.")}</Text>
             ) : clip.refund ? (
-              <Text style={[s.sub, { marginTop: 14 }]}>{clip.refund.status === "pending" ? "Refund requested: we're looking at it."
-                : clip.refund.status === "upheld" ? "Refund approved: the credits are back in your account." : `Refund declined${clip.refund.decision_note ? `: ${clip.refund.decision_note}` : "."}`}</Text>
+              <Text style={[s.sub, { marginTop: 14 }]}>{clip.refund.status === "pending" ? tr("Refund requested: we're looking at it.")
+                : clip.refund.status === "upheld" ? tr("Refund approved: the credits are back in your account.") : (clip.refund.decision_note ? tr("Refund declined: {note}", { note: tMsg(clip.refund.decision_note) }) : tr("Refund declined."))}</Text>
             ) : null}
             {!decidable && !done && clip.decision ? (
-              <Text style={[s.decided, font.display]}>You {clip.decision === "approve" ? "kept" : "rejected"} this clip</Text>
-            ) : !decidable && !done && !clip.refund && !refunded ? <Text style={s.sub}>This clip {clip.status === "failed" ? "didn't work" : `is ${clip.status}`}{clip.error ? `: ${clip.error}` : ""}.</Text> : null}
+              <Text style={[s.decided, font.display]}>{clip.decision === "approve" ? tr("You kept this clip") : tr("You rejected this clip")}</Text>
+            ) : !decidable && !done && !clip.refund && !refunded ? <Text style={s.sub}>{(clip.status === "failed" ? tr("This clip didn't work") : tr("This clip is {status}", { status: tr(clip.status) })) + (clip.error ? `: ${tMsg(clip.error)}` : "") + "."}</Text> : null}
           </View>
 
           <View style={[s.panel, { marginTop: 14 }]}>
-            <Text style={[s.kicker, font.mono]}>HOW IT WAS MADE</Text>
+            <Text style={[s.kicker, font.mono]}>{tr("HOW IT WAS MADE")}</Text>
             <Text style={{ color: c.ink, fontSize: 14 }}>
-              {MODEL_NAMES[clip.model_id] ?? clip.model_id}{clip.route_kind ? `, Auto's pick for ${KIND_NAMES[clip.route_kind] ?? clip.route_kind}` : ", chosen by you"}
+              {MODEL_NAMES[clip.model_id] ?? clip.model_id}{clip.route_kind ? tr(", Auto's pick for {kind}", { kind: KIND_NAMES[clip.route_kind] ?? clip.route_kind }) : tr(", chosen by you")}
             </Text>
             {clip.route_reason ? <Text style={[s.sub, { marginTop: 4 }]}>{clip.route_reason}</Text> : null}
-            {clip.start_url && <Image source={{ uri: clip.start_url }} style={s.still} resizeMode="contain" accessibilityLabel="Approved start frame" />}
+            {clip.start_url && <Image source={{ uri: clip.start_url }} style={s.still} resizeMode="contain" accessibilityLabel={tr("Approved start frame")} />}
             <Pressable onPress={() => router.push({ pathname: "/shot/[id]", params: { id: clip.shot_id } })} accessibilityRole="link">
-              <Text style={s.link}>Open the shot (end frame, render again)</Text>
+              <Text style={s.link}>{tr("Open the shot (end frame, render again)")}</Text>
             </Pressable>
-            <Text style={s.small}>Check cost ${checkUsd.toFixed(3)}</Text>
+            <Text style={s.small}>{tr("Check cost ${usd}", { usd: checkUsd.toFixed(3) })}</Text>
           </View>
         </View>
       </View>

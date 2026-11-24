@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { api, Insights } from "../lib/api";
 import { c, font, pageBg } from "../lib/theme";
+import { tr, locale, trp, tMsg } from "../lib/i18n";
 
 const RANGES = [7, 30, 90];
 
@@ -18,21 +19,21 @@ export default function InsightsPage() {
 
   return (
     <ScrollView style={{ backgroundColor: pageBg }} contentContainerStyle={{ padding: 16, maxWidth: 1100, width: "100%", alignSelf: "center", gap: 14 }}>
-      <Text style={[s.h1, font.display]}>Insights</Text>
+      <Text style={[s.h1, font.display]}>{tr("Insights")}</Text>
       <View style={s.row}>
         {RANGES.map((n) => (
           <Pressable key={n} onPress={() => setDays(n)} style={[s.chip, days === n && s.chipOn]} accessibilityRole="radio" accessibilityState={{ checked: days === n }}>
-            <Text style={{ color: days === n ? c.onAccent : c.ink, fontWeight: "600" }}>Last {n} days</Text>
+            <Text style={{ color: days === n ? c.onAccent : c.ink, fontWeight: "600" }}>{tr("Last {n} days", { n })}</Text>
           </Pressable>
         ))}
-        <Pressable onPress={load} accessibilityRole="button"><Text style={s.link}>Refresh</Text></Pressable>
+        <Pressable onPress={load} accessibilityRole="button"><Text style={s.link}>{tr("Refresh")}</Text></Pressable>
       </View>
-      {error && <Text style={{ color: c.fail }}>{error}</Text>}
+      {error && <Text style={{ color: c.fail }}>{tMsg(error)}</Text>}
       {!d && !error && <ActivityIndicator style={{ marginTop: 30 }} />}
       {d && (<>
         <View style={s.card}>
-          <Text style={s.h2}>New accounts: how far they got</Text>
-          <Text style={s.sub}>Accounts made in the window. Each step counts accounts that ever did it; a clip made from words alone needs no picture, so "First clip" can be higher than "First picture".</Text>
+          <Text style={s.h2}>{tr("New accounts: how far they got")}</Text>
+          <Text style={s.sub}>{tr("Accounts made in the window. Each step counts accounts that ever did it; a clip made from words alone needs no picture, so \"First clip\" can be higher than \"First picture\".")}</Text>
           {d.funnel.map((f) => (
             <View key={f.step} style={s.bar}>
               <Text style={[s.cell, { width: 130 }]}>{f.step}</Text>
@@ -42,29 +43,29 @@ export default function InsightsPage() {
               </Text>
             </View>
           ))}
-          <Text style={s.small}>h = median hours from sign-up to the step.</Text>
+          <Text style={s.small}>{tr("h = median hours from sign-up to the step.")}</Text>
         </View>
         <View style={s.card}>
-          <Text style={s.h2}>Jobs</Text>
+          <Text style={s.h2}>{tr("Jobs")}</Text>
           {d.jobs.map((j) => (
-            <Text key={j.kind} style={s.cell}>{j.kind}: {j.total} made, {j.failed} failed{j.total ? ` (${Math.round((j.failed / j.total) * 100)}%)` : ""}</Text>
+            <Text key={j.kind} style={s.cell}>{tr("{kind}: {total} made, {failed} failed{v3}", { kind: j.kind, total: j.total, failed: j.failed, v3: j.total ? ` (${Math.round((j.failed / j.total) * 100)}%)` : "" })}</Text>
           ))}
-          <Text style={s.cell}>Blocked by the content check: {d.blocked}</Text>
+          <Text style={s.cell}>{tr("Blocked by the content check: {blocked}", { blocked: d.blocked })}</Text>
         </View>
         <View style={s.card}>
-          <Text style={s.h2}>Most common errors</Text>
-          {d.errors.length === 0 && <Text style={s.sub}>None.</Text>}
+          <Text style={s.h2}>{tr("Most common errors")}</Text>
+          {d.errors.length === 0 && <Text style={s.sub}>{tr("None.")}</Text>}
           {d.errors.map((e, i) => (
             <View key={i} style={s.err}>
-              <Text style={[s.small, font.mono]}>{e.source} · {e.place || "?"} · {e.n}× · {e.accounts} account{e.accounts === 1 ? "" : "s"} · last {new Date(e.last).toLocaleString()}</Text>
+              <Text style={[s.small, font.mono]}>{trp(e.accounts, "{source} · {place} · {times}× · {n} account · last {last}", "{source} · {place} · {times}× · {n} accounts · last {last}", { source: e.source, place: e.place || "?", times: e.n, last: new Date(e.last).toLocaleString(locale()) })}</Text>
               <Text style={s.cell} selectable>{e.message}</Text>
             </View>
           ))}
         </View>
         <View style={s.card}>
-          <Text style={s.h2}>Pages opened</Text>
-          {d.views.length === 0 && <Text style={s.sub}>None yet.</Text>}
-          {d.views.map((v) => <Text key={v.route} style={[s.cell, font.mono]}>{v.route}  {v.n}× · {v.accounts} account{v.accounts === 1 ? "" : "s"}</Text>)}
+          <Text style={s.h2}>{tr("Pages opened")}</Text>
+          {d.views.length === 0 && <Text style={s.sub}>{tr("None yet.")}</Text>}
+          {d.views.map((v) => <Text key={v.route} style={[s.cell, font.mono]}>{trp(v.accounts, "{route} {times}× · {n} account", "{route} {times}× · {n} accounts", { route: v.route, times: v.n })}</Text>)}
         </View>
       </>)}
     </ScrollView>

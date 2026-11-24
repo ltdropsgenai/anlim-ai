@@ -11,6 +11,7 @@ import { autoNote, MODEL_NOTES } from "../lib/modelNotes";
 import { CreationCard } from "./CreationCard";
 import { c, font } from "../lib/theme";
 import { clearDraft, peekDraft, saveDraft } from "../lib/draft";
+import { tr, tMsg } from "../lib/i18n";
 
 const IDEAS: Record<Look, string[]> = {
   cartoon: [
@@ -100,8 +101,8 @@ export function Composer({ narrow, guest = false, afterBanner = false }: { narro
 
   return (
     <View style={[s.wrap, narrow && { paddingTop: 28 }, afterBanner && { paddingTop: narrow ? 6 : 0, marginTop: narrow ? -28 : -64 }]}>
-      <Text style={[s.h1, font.display, narrow && { fontSize: 30, lineHeight: 34 }]}>What are we making today?</Text>
-      <Text style={s.lead}>Describe a shot. anlim makes the image or the clip; download it, or keep building it as a project.</Text>
+      <Text style={[s.h1, font.display, narrow && { fontSize: 30, lineHeight: 34 }]}>{tr("What are we making today?")}</Text>
+      <Text style={s.lead}>{tr("Describe a shot. anlim makes the image or the clip; download it, or keep building it as a project.")}</Text>
 
       <FloatCard float style={[s.box, focus && { borderColor: c.accent }]}>
         <TextInput
@@ -110,11 +111,11 @@ export function Composer({ narrow, guest = false, afterBanner = false }: { narro
           value={text}
           onChangeText={(t) => { setText(t); if (error) setError(null); }}
           onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
-          placeholder={(effLook ? IDEAS[effLook][0] : "Describe a shot") + "…"}
+          placeholder={(effLook ? tr(IDEAS[effLook][0]) : tr("Describe a shot")) + "…"}
           placeholderTextColor={c.muted}
           multiline
           maxLength={2000}
-          accessibilityLabel="Describe your shot"
+          accessibilityLabel={tr("Describe your shot")}
           onKeyPress={(e) => {
             const n = e.nativeEvent as unknown as { key: string; metaKey?: boolean; ctrlKey?: boolean };
             if (n.key === "Enter" && (n.metaKey || n.ctrlKey)) go();
@@ -122,26 +123,26 @@ export function Composer({ narrow, guest = false, afterBanner = false }: { narro
         />
         <View style={s.bar}>
           <View style={[s.row, { flex: 1 }]}>
-            <View style={s.seg} accessibilityRole="radiogroup" accessibilityLabel="Make">
+            <View style={s.seg} accessibilityRole="radiogroup" accessibilityLabel={tr("Make")}>
               {(["image", "video"] as Output[]).map((o) => (
                 <Pressable key={o} onPress={() => setOutput(o)} style={[s.segItem, output === o && s.segOn]}
                   accessibilityRole="radio" accessibilityState={{ checked: output === o }}>
-                  <Text style={{ color: output === o ? c.onAccent : c.ink, fontSize: 13, fontWeight: "600" }}>{o === "image" ? "Image" : "Video"}</Text>
+                  <Text style={{ color: output === o ? c.onAccent : c.ink, fontSize: 13, fontWeight: "600" }}>{o === "image" ? tr("Image") : tr("Video")}</Text>
                 </Pressable>
               ))}
             </View>
-            <View style={s.seg} accessibilityRole="radiogroup" accessibilityLabel="Look">
+            <View style={s.seg} accessibilityRole="radiogroup" accessibilityLabel={tr("Look")}>
               {(["cartoon", "photoreal"] as Look[]).map((l) => {
                 const on = effLook === l, locked = !!picked;
                 return (
                   <Pressable key={l} disabled={locked} onPress={() => setLook(l)} style={[s.segItem, on && s.segOn, locked && !on && { opacity: 0.4 }]}
                     accessibilityRole="radio" accessibilityState={{ checked: on, disabled: locked }}>
-                    <Text style={{ color: on ? c.onAccent : c.ink, fontSize: 13, fontWeight: "600" }}>{l === "cartoon" ? "Cartoon" : "Photoreal"}</Text>
+                    <Text style={{ color: on ? c.onAccent : c.ink, fontSize: 13, fontWeight: "600" }}>{l === "cartoon" ? tr("Cartoon") : tr("Photoreal")}</Text>
                   </Pressable>
                 );
               })}
             </View>
-            {output === "video" && <View style={s.seg} accessibilityRole="radiogroup" accessibilityLabel="Clip length">
+            {output === "video" && <View style={s.seg} accessibilityRole="radiogroup" accessibilityLabel={tr("Clip length")}>
               {LENGTHS.map((n) => (
                 <Pressable key={n} onPress={() => setLen(n)} style={[s.segItem, len === n && s.segOn]} accessibilityRole="radio" accessibilityState={{ checked: len === n }}>
                   <Text style={[{ color: len === n ? c.onAccent : c.ink, fontSize: 12 }, font.mono]}>{n} S</Text>
@@ -150,14 +151,14 @@ export function Composer({ narrow, guest = false, afterBanner = false }: { narro
             </View>}
           </View>
           <Pressable onPress={go} disabled={!ready} style={[s.send, !ready && { opacity: 0.35 }]} accessibilityRole="button"
-            accessibilityLabel={guest ? `Create an account and make this ${output}` : `Make this ${output}`}>
+            accessibilityLabel={guest ? tr("Create an account and make this {output}", { output }) : tr("Make this {output}", { output })}>
             <Text style={{ color: c.onAccent, fontSize: 20, fontWeight: "800", lineHeight: 22 }}>{busy ? "…" : "↑"}</Text>
           </Pressable>
         </View>
       </FloatCard>
 
-      <View style={[s.row, { marginTop: 12, justifyContent: "center" }]} accessibilityRole="radiogroup" accessibilityLabel="Shape">
-        <Text style={[s.small, font.mono]}>SHAPE</Text>
+      <View style={[s.row, { marginTop: 12, justifyContent: "center" }]} accessibilityRole="radiogroup" accessibilityLabel={tr("Shape")}>
+        <Text style={[s.small, font.mono]}>{tr("SHAPE")}</Text>
         {ASPECTS.map((a) => {
           const on = effAspect === a.id, locked = !!picked;
           return (
@@ -172,29 +173,29 @@ export function Composer({ narrow, guest = false, afterBanner = false }: { narro
         })}
       </View>
       <Text style={[s.small, { textAlign: "center", marginTop: 4 }]}>
-        {picked ? `${picked.name} is ${effAspect}; change it in the project's settings.` : ASPECTS.find((a) => a.id === effAspect)?.hint}
+        {picked ? tr("{name} is {effAspect}; change it in the project's settings.", { name: picked.name, effAspect }) : ASPECTS.find((a) => a.id === effAspect)?.hint}
       </Text>
 
       {output === "video" && !guest && fits.length > 0 && (
-        <View style={[s.row, { marginTop: 12, justifyContent: "center" }]} accessibilityRole="radiogroup" accessibilityLabel="Video model">
-          <Text style={[s.small, font.mono]}>MODEL</Text>
-          {[{ id: null as string | null, label: "Auto", credits_per_second: CLIP_CREDITS_PER_S }, ...fits].map((m) => {
+        <View style={[s.row, { marginTop: 12, justifyContent: "center" }]} accessibilityRole="radiogroup" accessibilityLabel={tr("Video model")}>
+          <Text style={[s.small, font.mono]}>{tr("MODEL")}</Text>
+          {[{ id: null as string | null, label: tr("Auto"), credits_per_second: CLIP_CREDITS_PER_S }, ...fits].map((m) => {
             const on = model === m.id, locked = m.id !== null && !paid;
             return (
               <Pressable key={m.id ?? "auto"} disabled={locked} onPress={() => setModel(m.id)} style={[s.chip, on && s.chipOn, locked && { opacity: 0.4 }]}
                 accessibilityRole="radio" accessibilityState={{ checked: on, disabled: locked }}>
                 <Text style={{ color: on ? c.ink : c.sub, fontSize: 12 }} numberOfLines={1}>
-                  {m.id === null ? "Auto" : `${m.label ?? m.id} · ${m.credits_per_second * len} cr`}
+                  {m.id === null ? tr("Auto") : tr("{v0} · {v1} cr", { v0: m.label ?? m.id, v1: m.credits_per_second * len })}
                 </Text>
               </Pressable>
             );
           })}
-          {!paid && <Text style={s.small}>Picking a model comes with a paid account.</Text>}
+          {!paid && <Text style={s.small}>{tr("Picking a model comes with a paid account.")}</Text>}
         </View>
       )}
       {/* 2026-11-20 (Londi): say what the chosen model is good at, from our own tests */}
       {output === "video" && !guest && fits.length > 0 && (() => {
-        const n = model ? MODEL_NOTES[model] : autoNote("Kling 4.0");
+        const n = model ? MODEL_NOTES[model] : autoNote(tr("Kling 4.0"));
         if (!n) return null;
         return (
           <View style={{ marginTop: 8, alignSelf: "center", maxWidth: 560, paddingHorizontal: 8 }}>
@@ -207,9 +208,9 @@ export function Composer({ narrow, guest = false, afterBanner = false }: { narro
 
       {series.length > 0 && (
         <View style={[s.row, { marginTop: 12, justifyContent: "center" }]}>
-          <Text style={[s.small, font.mono]}>ADD TO</Text>
+          <Text style={[s.small, font.mono]}>{tr("ADD TO")}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }} style={{ flexGrow: 0, maxWidth: "100%" }}>
-            {[{ id: null as string | null, name: "New project" }, ...series.map((x) => ({ id: x.id as string | null, name: x.name }))].map((o) => (
+            {[{ id: null as string | null, name: tr("New project") }, ...series.map((x) => ({ id: x.id as string | null, name: x.name }))].map((o) => (
               <Pressable key={o.id ?? "new"} onPress={() => setTarget(o.id)} style={[s.chip, target === o.id && s.chipOn]}
                 accessibilityRole="radio" accessibilityState={{ checked: target === o.id }}>
                 <Text style={{ color: target === o.id ? c.ink : c.sub, fontSize: 12 }} numberOfLines={1}>{o.name}</Text>
@@ -219,24 +220,24 @@ export function Composer({ narrow, guest = false, afterBanner = false }: { narro
         </View>
       )}
 
-      {!effLook && text.trim().length >= 8 && <Text style={{ color: c.link, marginTop: 12, textAlign: "center" }}>Choose Cartoon or Photoreal for the new project.</Text>}
-      {busy && <Text style={{ color: c.link, marginTop: 12, textAlign: "center" }}>Starting…</Text>}
-      {error && <Text style={{ color: c.fail, marginTop: 12, textAlign: "center" }}>{error}</Text>}
+      {!effLook && text.trim().length >= 8 && <Text style={{ color: c.link, marginTop: 12, textAlign: "center" }}>{tr("Choose Cartoon or Photoreal for the new project.")}</Text>}
+      {busy && <Text style={{ color: c.link, marginTop: 12, textAlign: "center" }}>{tr("Starting…")}</Text>}
+      {error && <Text style={{ color: c.fail, marginTop: 12, textAlign: "center" }}>{tMsg(error)}</Text>}
 
       {made && <CreationCard key={made.shot} shotId={made.shot} output={made.output} onAgain={() => { setMade(null); setText(""); input.current?.focus(); }} />}
 
       {!made && <View style={[s.row, { marginTop: 18, justifyContent: "center" }]}>
-        {(effLook ? IDEAS[effLook].map((t) => ({ t, l: effLook })) : MIXED).slice(narrow ? 2 : 0).map(({ t: idea, l }) => (
+        {(effLook ? IDEAS[effLook].map((t) => ({ t, l: effLook })) : MIXED).slice(narrow ? 2 : 0).map(({ t: ideaEn, l }) => { const idea = tr(ideaEn); return (
           <Pressable key={idea} style={s.idea} onPress={() => { setText(idea); if (!effLook) setLook(l); input.current?.focus(); }} accessibilityRole="button"
-            accessibilityLabel={`Use idea: ${idea}`}>
+            accessibilityLabel={tr("Use idea: {idea}", { idea })}>
             <Text style={{ color: c.sub, fontSize: 13 }} numberOfLines={1}>{idea}</Text>
           </Pressable>
-        ))}
+        ); })}
       </View>}
       <Text style={[s.small, { textAlign: "center", marginTop: 14 }]}>
-        {output === "image" ? "An image uses 20 credits." : picked && picked.has_cast ? `A ${len} s video uses about ${20 + perS * len} credits: 20 for a start image of your cast, the rest for the clip. If a clip is unusable, request a refund and tell us why.`
-          : `A ${len} s video uses about ${perS * len} credits, made straight from your words. If a clip is unusable, request a refund and tell us why.`}
-        {guest ? " Press the arrow and create a free account to see it; new accounts get free starter credits." : picked ? ` It is added to ${picked.name}.` : " It is saved in a new Untitled project in your Workspace."}
+        {output === "image" ? tr("An image uses 20 credits.") : picked && picked.has_cast ? tr("A {len} s video uses about {v1} credits: 20 for a start image of your cast, the rest for the clip. If a clip is unusable, request a refund and tell us why.", { len, v1: 20 + perS * len })
+          : tr("A {len} s video uses about {v1} credits, made straight from your words. If a clip is unusable, request a refund and tell us why.", { len, v1: perS * len })}
+        {guest ? tr(" Press the arrow and create a free account to see it; new accounts get free starter credits.") : picked ? tr(" It is added to {name}.", { name: picked.name }) : tr(" It is saved in a new Untitled project in your Workspace.")}
       </Text>
     </View>
   );

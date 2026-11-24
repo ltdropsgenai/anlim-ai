@@ -27,6 +27,7 @@ import * as storage from "./storage.js";
 import { watermark, VAULT, MARK } from "./watermark.js";
 import * as captions from "./captions.js";
 import * as style from "./editstyle.js";
+import * as translate from "./translate.js";
 
 // A shot's voiceover starts this long after the shot does in a cut (worker.js lip-syncs to the same offset)
 export const SPEECH_LEAD = 0.15;
@@ -99,7 +100,7 @@ async function part(src, dest, format, frames, fades, skip = 0, credit = false, 
   const sp = speed && Math.abs(speed - 1) > 0.001 ? `setpts=PTS/${speed.toFixed(4)},` +
     (speed < 1 ? `minterpolate=fps=${FPS}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1,` : `fps=${FPS},`) : "";
   if (skip > 0 || sp) fc = fc.replace(`fps=${FPS},`, `fps=${FPS},` + (skip > 0 ? `trim=start_frame=${skip},setpts=PTS-STARTPTS,` : "") + sp);
-  const inputs = ["-i", src, ...(credit ? ["-loop", "1", "-framerate", String(FPS), "-t", (t + 2).toFixed(3), "-i", MADE_WITH] : [])];
+  const inputs = ["-i", src, ...(credit ? ["-loop", "1", "-framerate", String(FPS), "-t", (t + 2).toFixed(3), "-i", typeof credit === "string" ? credit : MADE_WITH] : [])];
   await ff([...inputs, "-filter_complex", fc, "-map", "[v]", "-frames:v", String(frames), "-an", "-c:v", "libx264",
             "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", String(FPS), dest]);
   const got = await probe(dest);
@@ -109,6 +110,11 @@ async function part(src, dest, format, frames, fades, skip = 0, credit = false, 
 // "Made with anlim.ai" end card: the words and the anlim mark on black, fading in. 2026-11-22 (Londi: "Video should end
 // with a clear Made with Anlim.ai"): the card said only "anlim.ai"; it now says "Made with", is larger and stays 3 s.
 const MADE_WITH = path.join(path.dirname(MARK), "made_with.png");
+// 2026-11-24 (languages): "Hecho con" / "Créé avec" for a creator who chose Spanish or French (made_with_es/fr.png)
+async function madeWithFor(owner) {
+  const lang = await translate.ownerLang(owner).catch(() => "en");
+  return lang === "es" || lang === "fr" ? path.join(path.dirname(MARK), `made_with_${lang}.png`) : MADE_WITH;
+}
 const ASSETS = path.dirname(MARK);
 
 // 2026-11-23 (Londi's promo: "actual words falling from him as the VO delivers them"): words drawn over a shot, each
@@ -396,7 +402,7 @@ async function build(a) {
     if (from || keep < p.frames) notes.push(`Shot ${it.ord}: trimmed to ${(keep / FPS).toFixed(2)} s (from ${(from / FPS).toFixed(2)} s).`);
     if (out !== Math.max(1, Math.round(keep / speed)) || out !== keep) notes.push(`Shot ${it.ord}: ${speed !== 1 ? `at ${Math.round(speed * 100)}% speed, ` : ""}${(out / FPS).toFixed(2)} s in the cut.`);
     // 2026-11-22: end_card puts the credit over the last 2 s of the last shot
-    const credit = !!opts.end_card && last;
+    const credit = !!opts.end_card && last ? await madeWithFor(a.owner) : false;
     await renew(a);                                                // slowed shots take minutes each: keep the lease
     const words = Array.isArray(it.words) ? it.words : [];
     const look = sty ? { s: sty, kIn: first ? null : changes[i - 1], kOut: last ? null : changes[i] } : null;

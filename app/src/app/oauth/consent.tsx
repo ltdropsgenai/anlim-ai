@@ -9,6 +9,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { setOauthReturn } from "../../lib/oauthReturn";
 import { c, font, pageBg } from "../../lib/theme";
+import { tr, tMsg } from "../../lib/i18n";
 
 type Details = { authorization_id: string; redirect_uri: string; client: { id: string; name: string; uri: string; logo_uri: string };
                  user: { id: string; email: string }; scope: string };
@@ -22,7 +23,7 @@ export default function Consent() {
 
   useEffect(() => {
     (async () => {
-      if (!id) { setErr("This sign-in link is missing its request. Start the connection again from your AI tool."); return; }
+      if (!id) { setErr(tr("This sign-in link is missing its request. Start the connection again from your AI tool.")); return; }
       const { data: s } = await supabase.auth.getSession();
       if (!s.session) { setSignedOut(true); return; }
       const { data, error } = await supabase.auth.oauth.getAuthorizationDetails(id);
@@ -46,35 +47,35 @@ export default function Consent() {
   return (
     <View style={[s.page, { backgroundColor: pageBg }]}>
       <View style={s.card}>
-        <Text style={[s.small, font.mono]}>ANLIM.AI · CONNECT AN AI TOOL</Text>
-        {Platform.OS !== "web" ? <Text style={s.body}>Open this link in a web browser.</Text>
+        <Text style={[s.small, font.mono]}>{tr("ANLIM.AI · CONNECT AN AI TOOL")}</Text>
+        {Platform.OS !== "web" ? <Text style={s.body}>{tr("Open this link in a web browser.")}</Text>
           : signedOut ? (<>
-            <Text style={s.title}>Sign in to continue</Text>
-            <Text style={s.body}>An AI tool asked to connect to your anlim account. Sign in first; you come back here to approve or deny it.</Text>
+            <Text style={s.title}>{tr("Sign in to continue")}</Text>
+            <Text style={s.body}>{tr("An AI tool asked to connect to your anlim account. Sign in first; you come back here to approve or deny it.")}</Text>
             <Pressable style={[s.btn, s.primary]} accessibilityRole="button"
               onPress={() => { setOauthReturn(`/oauth/consent?authorization_id=${encodeURIComponent(id ?? "")}`); router.replace("/login"); }}>
-              <Text style={s.primaryText}>Sign in</Text>
+              <Text style={s.primaryText}>{tr("Sign in")}</Text>
             </Pressable>
           </>)
           : !d && !err ? <ActivityIndicator color={c.accent} />
           : d ? (<>
-            <Text style={s.title}>{d.client.name || "An AI tool"} wants to use your anlim account</Text>
-            <Text style={s.body}>Signed in as {d.user.email}. It will be able to:</Text>
-            <Text style={s.li}>• see your projects, your recent clips and your credit balance</Text>
-            <Text style={s.li}>• make images and clips with your credits when you ask it to (paid accounts; up to 5 every 10 minutes)</Text>
-            <Text style={s.body}>It cannot buy credits, delete anything or change your account. You can disconnect it any time in the AI tool.</Text>
-            <Text style={[s.small, { marginTop: 10 }]}>After you choose, you go back to: <Text style={{ color: c.ink }}>{host(d.redirect_uri)}</Text></Text>
-            {loopback ? <Text style={[s.small, { color: c.flag }]}>That is a program on this computer. Approve only if you just started the connection yourself.</Text> : null}
+            <Text style={s.title}>{tr("{v0} wants to use your anlim account", { v0: d.client.name || tr("An AI tool") })}</Text>
+            <Text style={s.body}>{tr("Signed in as {email}. It will be able to:", { email: d.user.email })}</Text>
+            <Text style={s.li}>{tr("• see your projects, your recent clips and your credit balance")}</Text>
+            <Text style={s.li}>{tr("• make images and clips with your credits when you ask it to (paid accounts; up to 5 every 10 minutes)")}</Text>
+            <Text style={s.body}>{tr("It cannot buy credits, delete anything or change your account. You can disconnect it any time in the AI tool.")}</Text>
+            <Text style={[s.small, { marginTop: 10 }]}>{tr("After you choose, you go back to: ")}<Text style={{ color: c.ink }}>{host(d.redirect_uri)}</Text></Text>
+            {loopback ? <Text style={[s.small, { color: c.flag }]}>{tr("That is a program on this computer. Approve only if you just started the connection yourself.")}</Text> : null}
             <View style={s.row}>
               <Pressable style={[s.btn, s.primary, busy && { opacity: 0.5 }]} disabled={busy} onPress={() => decide(true)} accessibilityRole="button">
-                <Text style={s.primaryText}>Approve</Text>
+                <Text style={s.primaryText}>{tr("Approve")}</Text>
               </Pressable>
               <Pressable style={[s.btn, busy && { opacity: 0.5 }]} disabled={busy} onPress={() => decide(false)} accessibilityRole="button">
-                <Text style={{ color: c.ink, fontWeight: "600" }}>Deny</Text>
+                <Text style={{ color: c.ink, fontWeight: "600" }}>{tr("Deny")}</Text>
               </Pressable>
             </View>
           </>) : null}
-        {err ? <Text style={[s.body, { color: c.fail }]}>{err}</Text> : null}
+        {err ? <Text style={[s.body, { color: c.fail }]}>{tMsg(err)}</Text> : null}
       </View>
     </View>
   );
