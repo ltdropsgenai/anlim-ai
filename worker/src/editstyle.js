@@ -17,6 +17,7 @@
 //   - captions in a serif with small capitals (Cinzel, OFL), small, low in the frame; a title over the first 3.5 s; a
 //     small handle tag (the reference carries its maker's tag above the middle)
 import fs from "node:fs/promises";
+import * as glyphs from "./glyphs.js";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -368,6 +369,8 @@ export async function overlays(s, dir, assets, W, H, total, notes) {
   if (s.handle) {
     const file = path.join(dir, "style_handle.txt");
     await fs.writeFile(file, s.handle);
+    const noGlyph = await glyphs.missing(SERIF(assets), s.handle);
+    if (noGlyph.length) notes.push(`Edit style: the handle uses characters its font cannot draw (${glyphs.list(noGlyph)}): they show as boxes.`);
     out.push(`drawtext=fontfile=${SERIF(assets)}:textfile=${file}:expansion=none:fontsize=${Math.round(m * 0.024)}:fontcolor=white@0.55` +
              `:shadowcolor=black@0.4:shadowx=0:shadowy=1:x=(w-tw)/2:y=${Math.round(H * (v ? 0.30 : 0.12))}`);
   }
@@ -377,8 +380,9 @@ export async function overlays(s, dir, assets, W, H, total, notes) {
     // 2026-11-24: the title's script picks the font (Noto, OFL); drawtext shapes and orders right-to-left text itself
     // (text_shaping, on by default where ffmpeg has fribidi). Latin, Cyrillic and Vietnamese stay in Montserrat.
     const font = TITLE_FONTS.find(([re]) => re.test(s.title))?.[1] || "Montserrat-Bold.ttf";
-    if (/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(s.title))
-      notes.push("The title has Chinese, Japanese or Korean letters, which the title fonts do not have: they may show as boxes.");
+    // 2026-11-24: any character the picked font lacks (Chinese, Japanese, Korean, Greek, emoji...) is named in a note
+    const noGlyph = await glyphs.missing(path.join(assets, "fonts", font), s.title);
+    if (noGlyph.length) notes.push(`Edit style: the title uses characters its font cannot draw (${glyphs.list(noGlyph)}): they show as boxes.`);
     const size = Math.round(Math.min(m * 0.062, (W * 0.88) / (s.title.length * 0.62)));
     out.push(`drawtext=fontfile=${path.join(assets, "fonts", font)}:textfile=${file}:expansion=none:fontsize=${size}` +
              `:fontcolor=white:shadowcolor=black@0.6:shadowx=0:shadowy=3:x=(w-tw)/2:y=${Math.round(H * (v ? 0.42 : 0.40))}-th/2` +

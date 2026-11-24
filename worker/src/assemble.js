@@ -28,6 +28,7 @@ import { watermark, VAULT, MARK } from "./watermark.js";
 import * as captions from "./captions.js";
 import * as style from "./editstyle.js";
 import * as translate from "./translate.js";
+import * as glyphs from "./glyphs.js";
 
 // A shot's voiceover starts this long after the shot does in a cut (worker.js lip-syncs to the same offset)
 export const SPEECH_LEAD = 0.15;
@@ -437,6 +438,9 @@ async function build(a) {
       await part(src, dest, a.format, out, fades, from, credit, speed, words, { w: p.w, h: p.h }, hold ? { s: null, hold } : null);
     }
     if ((it.words || []).length) notes.push(`Shot ${it.ord}: ${it.words.length} word${it.words.length > 1 ? "s" : ""} drawn over it.`);
+    // 2026-11-24: a character the font lacks is drawn as a box, silently; say so (glyphs.js)
+    const noGlyph = await glyphs.missing(WORD_FONT, (it.words || []).map((w) => String(w.text || "")).join(" "));
+    if (noGlyph.length) notes.push(`Shot ${it.ord}: the words over it use characters the font cannot draw (${glyphs.list(noGlyph)}): they show as boxes.`);
     if (fades.in) quiet.push([frames / FPS, frames / FPS + FADE_IN]);
     starts.push(frames / FPS); lens.push(out / FPS);
     frames += out;
@@ -472,7 +476,10 @@ async function build(a) {
     if (!(sound.speech || []).length) notes.push("Captions: this cut has no voiceover or narration to caption.");
     else if (!list.length) notes.push("Captions: no words could be timed, so the cut has none.");
     else {
-      over.push(...await captions.filters(list, dir, sty ? style.SERIF(ASSETS) : WORD_FONT, W, H, sty ? "story" : "plain"));
+      const ccFont = sty ? style.SERIF(ASSETS) : WORD_FONT;
+      over.push(...await captions.filters(list, dir, ccFont, W, H, sty ? "story" : "plain"));
+      const noGlyph = await glyphs.missing(ccFont, list.map((c) => c.text).join(" "));
+      if (noGlyph.length) notes.push(`Captions: they use characters the caption font cannot draw (${glyphs.list(noGlyph)}): they show as boxes. The .srt file has them right.`);
       const srtFile = path.join(dir, "captions.srt");
       await fs.writeFile(srtFile, captions.srt(list));
       cc = { lines: list.length, srt: `${a.owner}/cuts/${a.id}.srt` };
