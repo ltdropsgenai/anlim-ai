@@ -539,7 +539,7 @@ async function callTool(uid: string, name: string, a: Args) {
       const id = await asUser(uid, async (tx) => {
         const [r] = await tx`select studio.create_series(${String(a.name || "")}, ${a.style ? String(a.style) : null}, ${look}) as id`;
         await tx`select studio.set_series_aspect(${r.id}, ${aspect})`;
-        await tx`select studio.create_scene(${r.id}, 'Scene 1')`;
+        await tx`select studio.create_scene(${r.id}, studio.ui_word('Scene 1'))`;   // in the creator's language (2026-11-24)
         return r.id as string;
       });
       return text(`Project "${a.name}" created (${look}, ${aspect}). project_id ${id}.`, { project_id: id });
