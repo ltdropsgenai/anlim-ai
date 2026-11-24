@@ -14,7 +14,11 @@ export default function Account() {
   const [since, setSince] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [welcome, setWelcome] = useState<WelcomeStatus>(null);
-  const loadMe = () => api.me().then((m) => setWelcome(m.welcome_status)).catch(() => null);
+  const [mail, setMail] = useState<boolean | null>(null);   // "ready" emails (2026-11-23)
+  const [ref, setRef] = useState<{ code: string; credits: number; invited: number; rewarded: number } | null>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { api.myReferral().then(setRef).catch(() => null); }, []);
+  const loadMe = () => api.me().then((m) => { setWelcome(m.welcome_status); setMail(m.email_ready !== false); }).catch(() => null);
   // 2026-11-23: how much this account stores (studio.my_storage)
   const [use, setUse] = useState<{ bytes: number; files: number } | null>(null);
   useEffect(() => { loadMe(); api.storageUse().then(setUse).catch(() => null); }, []);
@@ -37,7 +41,28 @@ export default function Account() {
         {use && <Text style={s.sub}>Storage: {use.bytes >= 1e9 ? `${(use.bytes / 1e9).toFixed(2)} GB` : `${Math.round(use.bytes / 1e6)} MB`} in {use.files.toLocaleString("en-US")} file{use.files === 1 ? "" : "s"}. Clips that failed or were rejected, discarded frames and old cuts (beyond each scene's 3 newest) are removed after 30 days; everything you keep stays.</Text>}
       </View>
       {welcome === "needs_phone" && <PhoneCheck onDone={loadMe} />}
+      {ref && ref.credits > 0 && (
+        <View style={s.card}>
+          <Text style={s.label}>Invite a creator</Text>
+          <Text style={{ color: c.ink }}>When someone signs up from your link and buys credits or a plan, you both get {ref.credits.toLocaleString("en-US")} credits.</Text>
+          <Pressable onPress={async () => { try { await navigator.clipboard.writeText(`https://anlim.ai/welcome?ref=${ref.code}`); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* shown anyway */ } }}
+            accessibilityRole="button" style={s.ghost}>
+            <Text style={s.ghostText} selectable>{copied ? "Copied" : `anlim.ai/welcome?ref=${ref.code}`}</Text>
+          </Pressable>
+          <Text style={s.sub}>{ref.invited} signed up from your link · {ref.rewarded} earned you credits.</Text>
+        </View>
+      )}
       <Connections />
+      {mail !== null && (
+        <View style={s.card}>
+          <Text style={s.label}>Emails</Text>
+          <Pressable onPress={() => { const v = !mail; setMail(v); api.setEmailReady(v).catch((e) => { setMail(!v); setError((e as Error).message); }); }}
+            accessibilityRole="switch" accessibilityState={{ checked: mail }} style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+            <View style={[s.toggle, mail && s.toggleOn]}><View style={[s.knob, mail && { alignSelf: "flex-end" }]} /></View>
+            <Text style={{ color: c.ink, flex: 1 }}>Email me when a clip or a cut I started is ready (or could not be made) while I'm away</Text>
+          </Pressable>
+        </View>
+      )}
       <View style={s.card}>
         <Pressable style={s.ghost} onPress={() => router.push("/reset-password")} accessibilityRole="button"><Text style={s.ghostText}>Change password</Text></Pressable>
         <Link href="/billing" asChild><Pressable style={s.ghost} accessibilityRole="button"><Text style={s.ghostText}>Credits & plan</Text></Pressable></Link>
@@ -63,4 +88,6 @@ const s = StyleSheet.create({
   label: { color: c.sub, fontSize: 13 }, big: { color: c.ink, fontSize: 18, fontWeight: "700" }, sub: { color: c.sub, fontSize: 13 },
   ghost: { borderWidth: 1, borderColor: c.line, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 14, backgroundColor: c.field },
   ghostText: { color: c.ink }, error: { color: c.fail },
+  toggle: { width: 40, height: 22, borderRadius: 11, backgroundColor: c.line, padding: 3, justifyContent: "center" },
+  toggleOn: { backgroundColor: c.accent }, knob: { width: 16, height: 16, borderRadius: 8, backgroundColor: c.ink },
 });

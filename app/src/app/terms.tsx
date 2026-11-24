@@ -34,6 +34,8 @@ export default function Terms() {
         <Li>You keep the rights you have in what you upload and what you make with anlim, subject to the terms of the AI model providers that generate it and to the law where you publish it.</Li>
         <Li>You give us permission to store and process your uploads and results only to run the service for you (making frames, clips, checks and cuts).</Li>
         <Li>Only upload pictures, voices and music you have the right to use. Do not use anlim to make content that depicts real people without their consent, sexual content involving minors, content that harasses or deceives people, or anything illegal. We may remove such content and close accounts that make it.</Li>
+        <Li>When you upload a photo or video of a person, you confirm that they are you or agreed that you may use their likeness; anlim keeps that confirmation with the file.</Li>
+        <Li>Before an image, clip or sound is made, anlim checks the words and pictures it would use. Requests for sexual content or nudity, real public figures in photoreal pictures or video, real people shown in a sexual, humiliating or deceptive way, hate, graphic gore, self-harm or harassment are refused, and nothing is charged for them.</Li>
         <Li>Label AI-made video where the platform you publish on asks you to.</Li>
         <H>Connected accounts</H>
         <P>If you connect your ElevenLabs account, anlim uses your API key only to make the audio you ask for. You can disconnect at any time; that deletes the key. Your use of ElevenLabs is also under ElevenLabs' own terms.</P>

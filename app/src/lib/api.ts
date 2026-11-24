@@ -152,8 +152,9 @@ export type CutFormat = "16x9" | "9x16" | "4x5" | "1x1" | "4x3" | "3x4" | "21x9"
 export type Cut = {
   id: string; format: CutFormat; options: { fade: boolean; end_card: boolean; music_path: string | null; voice?: boolean; sfx?: boolean };
   status: "queued" | "running" | "done" | "failed"; duration_s: string | null; error: string | null; skipped: number[]; shots: number;
-  report: { checks: { name: string; ok: boolean; detail: string }[]; notes: string[]; voiceovers?: number; narration?: boolean; effects?: number } | null;
-  watermarked: boolean; url: string | null; created_at: string;
+  report: { checks: { name: string; ok: boolean; detail: string }[]; notes: string[]; voiceovers?: number; narration?: boolean; effects?: number;
+            captions?: { lines: number; srt: string } | null } | null;
+  watermarked: boolean; url: string | null; srt_url?: string | null; created_at: string;
 };
 export type Series = {
   id: string; name: string; look: Look; aspect?: Aspect; quality: Quality; genre: Genre | null; style_prompt: string | null; scenes: { id: string; title: string; ord: number; location_id: string | null }[];
@@ -214,7 +215,7 @@ export const startFrameCredits = (mode: string, look?: string | null, people = 2
 
 // Display names for the video models (studio.models ids).
 export const MODEL_NAMES: Record<string, string> = {
-  "kling-v4-i2v-720p": "Kling 4.0", "minimax-h3-i2v-768p": "MiniMax H3", "mock-i2v": "Test model",
+  "kling-v4-i2v-720p": "Kling 4.0", "minimax-h3-i2v-768p": "MiniMax H3", "mock-i2v": "Test model", "kling-lipsync": "Kling LipSync", "seedance-2-0-i2v-720p": "Seedance 2.0",
 };
 export const KIND_NAMES: Record<string, string> = {
   walking: "walking shots", sit_stand: "sitting and standing", handling: "handling props", talking: "talking shots", other: "this kind of shot",
@@ -244,6 +245,21 @@ async function call<T>(body: Record<string, unknown>, fn = "studio-api"): Promis
   return j as T;
 }
 
+// A whole project as zip files (2026-11-23)
+export type ProjectExport = { id: string; status: "queued" | "running" | "done" | "failed"; files: number | null; bytes: number | null;
+  error: string | null; created_at: string; parts: { name: string; bytes: number; files: number; url: string | null }[] };
+
+// Lip sync (2026-11-23): the price of lip-syncing a shot's kept clip to its voiceover, or why it cannot be made now
+export type LipsyncQuote = { ok: boolean; why: string | null; seconds: number; clip_s: number | null; credits: number;
+  last: { generation_id: string; status: string; error: string | null; kept: boolean } | null };
+
+// Insights (admins only, 2026-11-23)
+export type Insights = { days: number; since: string; blocked: number;
+  funnel: { step: string; n: number; median_h?: number | null }[];
+  jobs: { kind: string; total: number; failed: number }[];
+  errors: { source: string; place: string | null; message: string; n: number; accounts: number; last: string }[];
+  views: { route: string; n: number; accounts: number }[] };
+
 // Quick create from the Home prompt (2026-11-20): an image, or an image and a clip, in an "Untitled project"
 export type Output = "image" | "video";
 export type QuickCreated = { series_id: string; scene_id: string; shot_id: string; job_id: string; series_name: string;
@@ -264,7 +280,7 @@ export type AdminRefund = { id: string; generation_id: string; owner: string; em
   owner_requests: number; owner_reversed: number; clip_url: string | null; start_url: string | null };
 
 export const api = {
-  me: () => call<{ user_id: string; email: string; balance: number; reserved: number; plan_credits: number; is_admin?: boolean; debt?: number; paid?: boolean;
+  me: () => call<{ user_id: string; email: string; balance: number; reserved: number; plan_credits: number; is_admin?: boolean; debt?: number; paid?: boolean; email_ready?: boolean;
                    plan_id: string | null; plan_status: string | null;
                    welcome_status: WelcomeStatus }>({ op: "me" }),
   // billing (studio-billing Edge Function: Stripe Checkout and billing portal)
@@ -291,7 +307,8 @@ export const api = {
     call<{ id: string }>({ op: "shot_create", scene_id: sceneId, action, duration_s: durationS, camera }),
   updateShot: (id: string, action: string, camera: string | null, durationS: number) =>
     call<{ ok: boolean }>({ op: "shot_update", shot_id: id, action, camera, duration_s: durationS }),
-  setStartFrame: (id: string, path: string) => call<{ ok: boolean }>({ op: "shot_start_frame", shot_id: id, path }),
+  // consent: the creator ticked the likeness consent box (components/LikenessConsent, 2026-11-24)
+  setStartFrame: (id: string, path: string, consent = false) => call<{ ok: boolean }>({ op: "shot_start_frame", shot_id: id, path, consent }),
   approveStartFrame: (id: string) => call<{ ok: boolean }>({ op: "shot_start_approve", shot_id: id }),
   deleteShot: (id: string) => call<{ ok: boolean }>({ op: "shot_delete", shot_id: id }),
   requestStartFrame: (id: string, mode: StartMode, instruction?: string, source?: StartSource) =>
@@ -311,9 +328,18 @@ export const api = {
     call<QuickCreated>({ op: "quick_create", prompt, look, duration_s: durationS, output, series_id: seriesId, model, aspect }),
   promptModels: () => call<{ paid: boolean; models: PromptModel[] }>({ op: "prompt_models" }),
   motionModels: () => call<{ paid: boolean; models: MotionModel[] }>({ op: "motion_models" }),
-  motionCreate: (sourcePath: string, refPaths: string[], prompt: string, seconds: number, model: string, seriesId: string | null, look: Look) =>
+  motionCreate: (sourcePath: string, refPaths: string[], prompt: string, seconds: number, model: string, seriesId: string | null, look: Look,
+                 consent = false) =>
     call<{ series_id: string; scene_id: string; shot_id: string; generation_id: string; series_name: string; seconds: number; credits: number }>(
-      { op: "motion_create", source_path: sourcePath, ref_paths: refPaths, prompt, seconds, model, series_id: seriesId, look }),
+      { op: "motion_create", source_path: sourcePath, ref_paths: refPaths, prompt, seconds, model, series_id: seriesId, look, consent }),
+  exportCreate: (seriesId: string) => call<{ ok: boolean; id: string }>({ op: "export_create", series_id: seriesId }),
+  exportLatest: (seriesId: string) => call<{ export: ProjectExport | null }>({ op: "export_latest", series_id: seriesId }).then((r) => r.export),
+  setEmailReady: (on: boolean) => call<{ ok: boolean }>({ op: "email_ready", on }),
+  lipsyncQuote: (shotId: string) => call<LipsyncQuote>({ op: "lipsync_quote", shot_id: shotId }),
+  lipsyncCreate: (shotId: string) => call<{ generation_id: string; credits: number; seconds: number }>({ op: "lipsync_create", shot_id: shotId }),
+  adminInsights: (days: number) => call<Insights>({ op: "admin_insights", days }),
+  likenessConsent: (paths: string[], kind: "upload" | "character" | "start_still" | "motion" = "upload") =>
+    call<{ ok: boolean; n: number }>({ op: "likeness_consent", paths, kind }),
   creation: (shotId: string) => call<Creation>({ op: "creation", shot_id: shotId }),
   keepCreation: (generationId: string) => call<{ ok: true }>({ op: "creation_keep", generation_id: generationId }),
   // refunds (2026-11-20): credits back at once, reviewed by anlim, may be reversed with a reason
@@ -329,6 +355,10 @@ export const api = {
   renameScene: (id: string, title: string) => call<{ ok: true }>({ op: "scene_rename", scene_id: id, title }),
   deleteSeries: (id: string) => call<{ ok: true; files: number }>({ op: "series_delete", series_id: id }),
   deleteScene: (id: string) => call<{ ok: true; files: number }>({ op: "scene_delete", scene_id: id }),
+  duplicateSeries: (id: string) => call<{ id: string }>({ op: "series_duplicate", series_id: id }).then((r) => r.id),
+  duplicateScene: (id: string) => call<{ id: string }>({ op: "scene_duplicate", scene_id: id }).then((r) => r.id),
+  myReferral: () => call<{ code: string; credits: number; invited: number; rewarded: number }>({ op: "referral_me" }),
+  claimReferral: (code: string) => call<{ ok: boolean }>({ op: "referral_claim", code }),
   moveShot: (id: string, dir: -1 | 1) => call<{ ok: true }>({ op: "shot_move", shot_id: id, dir }),
   deleteAsset: (kind: AssetKind, id: string, path?: string) => call<{ ok: true; files: number }>({ op: "asset_delete", kind, id, path: path ?? null }),
   activity: (since: number) => call<{ items: Activity[]; now: number }>({ op: "activity", since }),
@@ -345,7 +375,7 @@ export const api = {
   narrationStart: (id: string, atS: number) => call<{ ok: true }>({ op: "narration_start", id, at_s: atS }),
   audio: (sceneId: string) => call<{ items: AudioJob[] }>({ op: "audio_list", scene_id: sceneId }).then((r) => r.items),
   useAudio: (id: string, on: boolean) => call<{ ok: true }>({ op: "audio_use", id, on }),
-  makeCut: (sceneId: string, format: CutFormat, opts: { fade: boolean; end_card: boolean; music_path: string | null; voice?: boolean; sfx?: boolean }) =>
+  makeCut: (sceneId: string, format: CutFormat, opts: { fade: boolean; end_card: boolean; music_path: string | null; voice?: boolean; sfx?: boolean; captions?: boolean }) =>
     call<{ id: string }>({ op: "assembly_create", scene_id: sceneId, format, ...opts }),
   cuts: (sceneId: string) => call<{ items: Cut[] }>({ op: "assemblies", scene_id: sceneId }).then((r) => r.items),
   updateSeries: (seriesId: string, look?: Look, style?: string) =>
@@ -353,7 +383,7 @@ export const api = {
   createCharacter: (seriesId: string, name: string, height: string, wardrobe: string, kind: Kind = "person", what = "") =>
     call<{ id: string }>({ op: "character_create", series_id: seriesId, name, height: height.trim() || null, wardrobe: wardrobe.trim() || null,
                            kind, what: what.trim() || null }),
-  setCharacterRef: (id: string, path: string) => call<{ ok: boolean }>({ op: "character_ref", character_id: id, path }),
+  setCharacterRef: (id: string, path: string, consent = false) => call<{ ok: boolean }>({ op: "character_ref", character_id: id, path, consent }),
   // edit a character's card (2026-11-18): new frames and renders use it; finished ones keep what they were given
   updateCharacter: (id: string, name: string, height: string, wardrobe: string, kind: Kind, what: string) =>
     call<{ ok: boolean }>({ op: "character_update", character_id: id, name, height, wardrobe, kind, what }),

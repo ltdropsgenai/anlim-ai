@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
-import { api, AudioJob, AudioKind, Connection, cutSeconds as shotCutSeconds, scoreSections, ShotRow, uploadMusic, Voice } from "../lib/api";
+import { api, AudioJob, AudioKind, Connection, cutSeconds as shotCutSeconds, LipsyncQuote, scoreSections, ShotRow, uploadMusic, Voice } from "../lib/api";
 import { c, font } from "../lib/theme";
 import { pad2 } from "../lib/shotStatus";
 import { StillPicker } from "./StillPicker";
@@ -121,6 +121,46 @@ function Narration({ sceneId, voice, jobs, connected, cutLen, onMade, onUse, set
   );
 }
 
+// Lip sync (2026-11-23, Kling LipSync): a copy of the shot's kept clip with the mouths moved to its voiceover. It goes to
+// Review; keeping it puts it in the cut (the old clip stays until then). Shown once the shot has a voiceover.
+const LS_BUSY = ["queued", "running", "checking"];
+function LipSync({ shotId, voKey, setError }: { shotId: string; voKey: string; setError: (e: string | null) => void }) {
+  const [q, setQ] = useState<LipsyncQuote | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => { api.lipsyncQuote(shotId).then(setQ).catch(() => setQ(null)); }, [shotId]);
+  useEffect(load, [load, voKey]);
+  const making = !!q?.last && LS_BUSY.includes(q.last.status);
+  useEffect(() => { if (!making) return; const t = setInterval(load, 15000); return () => clearInterval(t); }, [making, load]);
+  if (!q) return null;
+  async function go() {
+    setBusy(true); setError(null);
+    try { await api.lipsyncCreate(shotId); load(); } catch (e) { setError((e as Error).message); }
+    setBusy(false);
+  }
+  const last = q.last;
+  return (
+    <View style={{ marginTop: 8, gap: 4 }}>
+      <Text style={s.label}>Lip sync</Text>
+      {making ? <Text style={s.small}>Making the lip-synced clip… usually 2 to 5 minutes.</Text>
+        : last?.kept ? <Text style={[s.small, { color: c.pass }]}>✓ The cut uses the lip-synced clip.</Text>
+        : last?.status === "review" || last?.status === "succeeded" ? (
+          <Pressable onPress={() => router.navigate(`/clip/${last.generation_id}` as never)} accessibilityRole="link">
+            <Text style={[s.small, { color: c.link, textDecorationLine: "underline" }]}>The lip-synced clip is ready: open it in Review and keep it to use it in the cut.</Text>
+          </Pressable>)
+        : last?.status === "failed" && last.error && last.error !== "rejected by creator" ? <Text style={[s.small, { color: c.fail }]}>The last lip sync could not be made: {last.error}</Text>
+        : null}
+      {!making && (q.ok ? (
+        <View style={s.row}>
+          <Pressable style={[s.btnSm, busy && { opacity: 0.5 }]} disabled={busy} onPress={go} accessibilityRole="button">
+            <Text style={s.btnText}>{busy ? "Starting…" : `Lip-sync to the voiceover · ${q.credits} credits`}</Text>
+          </Pressable>
+          <Text style={s.small}>Moves the mouths in the kept clip to this voiceover. fal bills {q.seconds} s for this {Number(q.clip_s).toFixed(1)} s clip.</Text>
+        </View>
+      ) : <Text style={s.small}>{q.why}</Text>)}
+    </View>
+  );
+}
+
 function ShotSound({ r, sceneId, voice, jobs, connected, onMade, onUse, setError }: {
   r: ShotRow; sceneId: string; voice: Voice | null; jobs: AudioJob[]; connected: boolean;
   onMade: () => void; onUse: (j: AudioJob, on: boolean) => void; setError: (e: string | null) => void }) {
@@ -155,6 +195,8 @@ function ShotSound({ r, sceneId, voice, jobs, connected, onMade, onUse, setError
         {voice && <Text style={s.small}>Voice: {voice.name}</Text>}
       </View>
       <Takes jobs={vo} shotS={r.duration_s} onUse={onUse} label="voiceover" />
+      {vo.some((j) => j.status === "done") && <LipSync shotId={r.id} setError={setError}
+        voKey={vo.map((j) => `${j.id}:${j.status}:${j.in_cut}`).join(",")} />}
 
       <Text style={[s.label, { marginTop: 12 }]}>Sound effect</Text>
       <View style={s.row}>

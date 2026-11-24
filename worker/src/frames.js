@@ -23,6 +23,7 @@ import path from "node:path";
 import { config } from "./config.js";
 import * as db from "./db.js";
 import * as storage from "./storage.js";
+import * as moderate from "./moderate.js";
 import * as fal from "./providers/fal.js";
 import * as mock from "./providers/mock.js";
 import { lookWords, subjects, wantsExtras, wantsText } from "./compile.js";
@@ -276,6 +277,8 @@ async function stepQueued(j) {
   if (j.kind === "start" && j.mode === "prompt") {
     // no image to start from: text to image only
     const prompt = framePrompt(j.instruction || shot?.action || "", look, stylePrompt, characters, aspect);
+    // content check (2026-11-23) before the image model is paid
+    await moderate.guard({ kind: "frame", ref: j.id, owner: j.owner, look, text: moderate.shotWords({ ...shot, style_prompt: stylePrompt }, characters, j.instruction) });
     // 2026-11-21: the project's shape (was always 16:9)
     const sub = await provider().submit(j.endpoint, { prompt, num_images: 1, aspect_ratio: aspect, resolution: "1K", output_format: "png" });
     await db.updateFrame(j.id, { status: "running", prompt, provider_request_id: sub.requestId, provider_status_url: sub.statusUrl,
@@ -313,6 +316,11 @@ async function stepQueued(j) {
     if (fit.verdict !== "PASS")
       return fail(j, `this still is a close-up (${fit.why}). Use "New setup from the location", or start from a wider still`);
   }
+  // content check (2026-11-23): the instruction, the cast and every picture the image model would get. Plates (an empty
+  // room made from a location) have no instruction of their own and are checked like any edit.
+  await moderate.guard({ kind: "frame", ref: j.id, owner: j.owner, look,
+    text: moderate.shotWords({ ...shot, style_prompt: stylePrompt }, characters, j.kind === "plate" ? "The same place with nobody in it" : j.instruction),
+    paths: [j.source_path || shot?.start_frame_path, ...(j.mode === "new_setup" ? (j.ref_paths || []) : [])].filter(Boolean) });
   const size = await pngSize(base);
   let prompt, urls = [await storage.signedUrl(j.source_path || shot.start_frame_path)];
   if (j.kind === "plate") prompt = platePrompt(look, characters);
@@ -434,6 +442,7 @@ export async function handle(j) {
     await steps[j.status](j);
   } catch (e) {
     const tries = (j.tries || 0) + 1;
+    if (!e.blocked) await db.logError(`picture ${j.kind} ${j.status}`, j.id, j.owner, e, { tries, mode: j.mode || null });
     if (e.permanent || tries >= config.maxStepTries) return fail(j, e.message);
     const backoff = Math.min(300000, 5000 * 2 ** tries);
     await db.updateFrame(j.id, { tries, error: e.message.slice(0, 1000), next_poll_at: later(backoff), locked_by: null, locked_until: null });

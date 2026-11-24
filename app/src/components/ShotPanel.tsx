@@ -8,6 +8,7 @@ import { api, CutoutJob, END_FRAME_CREDITS, FRAME_CREDITS, EndCheck, HeightCheck
 import { c, font, pageBg } from "../lib/theme";
 import { autoNote, MODEL_NOTES } from "../lib/modelNotes";
 import { StillPicker } from "./StillPicker";
+import { LikenessConsent } from "./LikenessConsent";
 
 const MAKING = ["queued", "running", "composing"];
 const MODE_TEXT: Record<StartMode, string> = {
@@ -235,6 +236,7 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({ action: "", camera: "", dur: "5" });
   const [showMaker, setShowMaker] = useState(false);
+  const [consent, setConsent] = useState(false);   // likeness consent for an uploaded start image (2026-11-24)
 
   const load = useCallback(async () => {
     try {
@@ -381,11 +383,12 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
       {!startMaking && !startCandidate && (<>
         {(!shot.start_frame_approved || showMaker) ? (<>
           <StartMaker shot={shot} busy={busy || !!inFlight || making} run={run} />
+          <LikenessConsent on={consent} onChange={setConsent} disabled={busy || !!inFlight || making} />
           <View style={s.row}>
-            <StillPicker label={shot.start_url ? "Or upload a different image" : "Or upload your own image"} disabled={busy || !!inFlight || making}
+            <StillPicker label={shot.start_url ? "Or upload a different image" : "Or upload your own image"} disabled={busy || !!inFlight || making || !consent}
               style={{}} textStyle={s.link} onError={setError}
               onPick={(f) => run(async () => {
-                await api.setStartFrame(shot.id, await uploadStill(shot.owner, shot.id, f, f.type));
+                await api.setStartFrame(shot.id, await uploadStill(shot.owner, shot.id, f, f.type), consent);
                 await api.requestHeightCheck(shot.id).catch(() => null);   // 2026-11-16: uploaded stills get the height check too
               })} />
             {shot.start_url && !shot.start_frame_approved && (

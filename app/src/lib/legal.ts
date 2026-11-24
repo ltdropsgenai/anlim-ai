@@ -4,4 +4,4 @@ export const OPERATOR = "CodeAscent";                 // the business name on th
 export const OPERATOR_PLACE = "Utah, United States";
 export const SUPPORT_EMAIL = "";                      // e.g. support@anlim.ai: empty shows "coming soon"
 export const LEGAL_REVIEWED = false;                  // false shows a "draft" note on Terms and Privacy
-export const LAST_UPDATED = "November 19, 2026";
+export const LAST_UPDATED = "November 23, 2026";

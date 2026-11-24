@@ -23,6 +23,7 @@ import { config } from "./config.js";
 import * as db from "./db.js";
 import * as storage from "./storage.js";
 import { watermark, VAULT, MARK } from "./watermark.js";
+import * as captions from "./captions.js";
 
 const exec = promisify(execFile);
 const FPS = 24;
@@ -233,7 +234,8 @@ async function mix(dir, a, opts, starts, lens, total, notes) {
     notes.push(`The narration starts at ${nar.at.toFixed(1)} s, after the end of the video (${total.toFixed(1)} s): it is not heard.`);
     nar = null;
   }
-  if (!vo.length && !fx.length && !nar) return { ...(await soundtrack(dir, opts.music_path, total, notes)), voiceovers: 0, effects: 0 };
+  if (!vo.length && !fx.length && !nar) return { ...(await soundtrack(dir, opts.music_path, total, notes)), voiceovers: 0, effects: 0, speech: [] };
+  const speech = [];                                             // each voice take and where it starts (captions)
   const bedTarget = vo.length || nar ? -27 : -20;                // under speech, or under effects only
   const bed = await soundtrack(dir, opts.music_path, total, notes, bedTarget, "bed_level.wav");
   const inputs = [bed.out], filters = [];
@@ -254,6 +256,7 @@ async function mix(dir, a, opts, starts, lens, total, notes) {
     }
     if (at + len > total + 0.05) notes.push(`Shot ${ord}'s voiceover is cut off at the end of the video.`);
     v.span = [at, at + len];
+    speech.push({ path: v.path, local: src, at });
     inputs.push(dest); filters.push(`[${inputs.length - 1}:a]adelay=${Math.round(at * 1000)}:all=1[s${inputs.length - 1}]`);
   }
   if (nar) {
@@ -261,6 +264,7 @@ async function mix(dir, a, opts, starts, lens, total, notes) {
     await storage.download(nar.path, src);
     await stem(src, dest, -16, null);
     const len = await audioDur(dest), end = nar.at + len;
+    speech.push({ path: nar.path, local: src, at: nar.at });
     if (end > total + 0.05) notes.push(`The narration (${len.toFixed(1)} s from ${nar.at.toFixed(1)} s) runs ${(end - total).toFixed(1)} s past the end of the video and is cut off. Start it earlier, slow shots down, or shorten it.`);
     const clash = vo.filter((v) => v.span && v.span[0] < end && v.span[1] > nar.at).map((v) => a.items[v.i].ord);
     if (clash.length) notes.push(`The narration plays over shot ${clash.join(", ")}'s own voiceover: both are heard at once. Leave one out.`);
@@ -284,10 +288,10 @@ async function mix(dir, a, opts, starts, lens, total, notes) {
   if (!isFinite(I) || I < -70) {
     notes.push("The sound measured silent, so it was left as it is.");
     await ff(["-i", summed, "-c:a", "pcm_s16le", out]);
-    return { out, lufs: null, gain_db: 0, limiter: false, lufs_out: null, voiceovers: vo.length, narration: !!nar, effects: fx.length, music_lufs_before: bed.lufs };
+    return { out, lufs: null, gain_db: 0, limiter: false, lufs_out: null, voiceovers: vo.length, narration: !!nar, effects: fx.length, music_lufs_before: bed.lufs, speech };
   }
   const lv = await levelTo(summed, out, I, tp, LUFS, [`atrim=0:${total.toFixed(3)}`]);
-  return { out, lufs: I, ...lv, voiceovers: vo.length, narration: !!nar, effects: fx.length, music_lufs_before: bed.lufs };
+  return { out, lufs: I, ...lv, voiceovers: vo.length, narration: !!nar, effects: fx.length, music_lufs_before: bed.lufs, speech };
 }
 
 async function checks(file, format, expectFrames, quiet, hasMusic) {
@@ -368,14 +372,40 @@ async function build(a) {
   await renew(a);
   const sound = await mix(dir, a, opts, starts, lens, total, notes);
   const audio = sound.out;
+  // 2026-11-23: captions from the voiceovers and the narration (options.captions), drawn over the picture, and a .srt
+  let shown = picture, cc = null;
+  if (opts.captions) {
+    const words = [];
+    for (const sp of sound.speech || []) {
+      const w = await captions.takeWords(a.owner, sp.path, sp.local, notes);
+      if (w) words.push(...w.map((x) => ({ ...x, start: x.start + sp.at, end: x.end + sp.at })));
+    }
+    const list = captions.cues(words, total);
+    if (!(sound.speech || []).length) notes.push("Captions: this cut has no voiceover or narration to caption.");
+    else if (!list.length) notes.push("Captions: no words could be timed, so the cut has none.");
+    else {
+      const [W, H] = SIZES[a.format];
+      const fx = await captions.filters(list, dir, WORD_FONT, W, H);
+      shown = path.join(dir, "picture_cc.mp4");
+      await renew(a);
+      await ff(["-i", picture, "-vf", fx.join(","), "-frames:v", String(frames), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+                "-pix_fmt", "yuv420p", "-r", String(FPS), shown]);
+      const srtFile = path.join(dir, "captions.srt");
+      await fs.writeFile(srtFile, captions.srt(list));
+      cc = { lines: list.length, srt: `${a.owner}/cuts/${a.id}.srt` };
+      await storage.upload(srtFile, cc.srt, "application/x-subrip");
+      notes.push(`Captions: ${list.length} line${list.length > 1 ? "s" : ""}, also as a .srt file.`);
+    }
+  }
   const final = path.join(dir, "cut.mp4");
-  await ff(["-i", picture, "-i", audio, "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+  await ff(["-i", shown, "-i", audio, "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
             "-t", total.toFixed(3), "-movflags", "+faststart", final]);
   const hasSound = !!opts.music_path || sound.voiceovers > 0 || !!sound.narration || sound.effects > 0;
   const report = { checks: await checks(final, a.format, frames, quiet, hasSound), notes,
                    shots: a.items.length, music_lufs_before: sound.music_lufs_before ?? sound.lufs, music_gain_db: sound.gain_db ?? null,
                    music_limiter: sound.limiter ?? false, voiceovers: sound.voiceovers, narration: !!sound.narration, effects: sound.effects,
-                   music: !opts.music_path ? null : /\/audio\/music\//.test(opts.music_path) ? "score" : "track", fps: FPS, size: SIZES[a.format] };
+                   music: !opts.music_path ? null : /\/audio\/music\//.test(opts.music_path) ? "score" : "track", fps: FPS, size: SIZES[a.format],
+                   captions: cc };
   return { final, total, report, dir };
 }
 
@@ -400,6 +430,7 @@ export async function handle(a) {
   } catch (e) {
     if (e.leaseLost) { log(a, `stopped: ${e.message}`); return; }  // the other claim owns the job now
     const tries = (a.tries || 0) + 1, give = tries >= 3;
+    await db.logError("cut", a.id, a.owner, e, { tries });
     await db.q(`update studio.assemblies set tries = $2, error = $3, status = $4, locked_by = null, locked_until = null,
                        next_try_at = now() + make_interval(secs => $5), updated_at = now() where id = $1 and locked_by = $6`,
                [a.id, tries, String(e.message || e).slice(0, 1000), give ? "failed" : "queued", 30 * tries, config.workerId]);

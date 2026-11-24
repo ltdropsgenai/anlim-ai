@@ -8,6 +8,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-n
 import { api } from "../lib/api";
 import { supabase } from "../lib/supabase";
 import { c, font, pageBg } from "../lib/theme";
+import { LikenessConsent } from "../components/LikenessConsent";
 
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
@@ -41,6 +42,9 @@ export default function Upload() {
   const [drag, setDrag] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [signInError, setSignInError] = useState<string | null>(null);
+  // likeness consent (2026-11-24): ticked, it is kept for each file uploaded while it is on; unticked, the AI tool must
+  // ask the creator in the chat before a person's photo or video can be used
+  const [consent, setConsent] = useState(false);
   useEffect(() => { api.me().then((m) => setOwner(m.user_id)).catch((e) => setSignInError((e as Error).message || "Could not sign you in.")); }, []);
 
   const set = (i: number, r: Partial<Row>) => setRows((xs) => xs.map((x, k) => (k === i ? { ...x, ...r } : x)));
@@ -62,6 +66,7 @@ export default function Upload() {
         const path = `${owner}/motion/${id}${secs && isFinite(secs) ? `_d${Math.round(secs * 100)}` : ""}.${ext}`;
         const { error } = await supabase.storage.from("studio").upload(path, f, { contentType: f.type, upsert: false });
         if (error) throw new Error(error.message);
+        if (consent) await api.likenessConsent([path], "upload");
         set(i, { state: "done", id, seconds: secs ?? undefined });
       } catch (e) { set(i, { state: "failed", note: (e as Error).message }); }
     }));
@@ -83,6 +88,7 @@ export default function Upload() {
         <Text style={s.lead}>For Claude, ChatGPT or any AI tool connected to anlim: upload here, then tell it you're done. It sees
           each file by its upload id and can use it for a character's reference photo, a background, a start image or a motion
           transfer video. Images: PNG, JPEG or WebP up to {MAX_IMAGE_MB} MB. Videos: MP4, MOV or WebM up to {MAX_VIDEO_MB} MB.</Text>
+        <LikenessConsent on={consent} onChange={setConsent} plural />
         {/* a plain drop zone: the browser's own file input, so it also works with a click */}
         <label onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
           onDrop={(e) => { e.preventDefault(); setDrag(false); send(Array.from(e.dataTransfer.files)); }}

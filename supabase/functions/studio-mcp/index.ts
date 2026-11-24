@@ -26,7 +26,7 @@ const CREATE_LIMIT = 5, CREATE_WINDOW_MIN = 10, SPEND_LIMIT = 10;
 // 2026-11-23 (review): sound runs on the creator's own ElevenLabs credits and cuts on anlim's worker; neither had a limit
 // from chat, so a looping agent could drain one or hold the other.
 const AUDIO_TOOLS = ["make_voiceover", "make_sound_effect", "make_score"], AUDIO_LIMIT = 15, CUT_LIMIT = 6;
-const SPEND_TOOLS = ["make_start_image", "make_end_image", "animate", "motion_transfer", "add_location"];
+const SPEND_TOOLS = ["make_start_image", "make_end_image", "animate", "motion_transfer", "add_location", "lip_sync"];
 const APP = "https://anlim.ai";
 const ASPECTS = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
 const PROTOCOLS = ["2025-11-25", "2025-06-18", "2025-03-26"];
@@ -123,6 +123,7 @@ const TOOLS = [
       kind: { type: "string", enum: ["person", "animal", "object"], default: "person" },
       description: { type: "string", maxLength: 200, description: "Optional, e.g. 'a tall man in his thirties with a short beard'" },
       wardrobe: { type: "string", maxLength: 500, description: "Optional: what they wear in this project" },
+      likeness_consent: { type: "boolean", description: "Set true only after the creator said, in this chat, that any real person in the photo or video is them or agreed to it. Not needed if they ticked that box on anlim.ai/upload." },
     }, required: ["project_id", "name", "upload_id"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
   { name: "add_location", title: "Add a location",
@@ -155,6 +156,7 @@ const TOOLS = [
       project_id: { type: "string" }, name: { type: "string", description: "The character's current name" },
       new_name: { type: "string", minLength: 1, maxLength: 100 }, description: { type: "string", maxLength: 200 },
       wardrobe: { type: "string", maxLength: 500 }, upload_id: { type: "string", description: "A new reference photo" },
+      likeness_consent: { type: "boolean", description: "Set true only after the creator said, in this chat, that any real person in the photo or video is them or agreed to it. Not needed if they ticked that box on anlim.ai/upload." },
     }, required: ["project_id", "name"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
   { name: "update_shot", title: "Change a shot",
@@ -246,6 +248,15 @@ const TOOLS = [
       voice_id: { type: "string", description: "From list_voices" },
     }, required: ["text", "voice_id"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } },
+  { name: "lip_sync", title: "Lip-sync a shot to its voiceover",
+    description: "Makes a copy of the shot's kept clip with the mouths moved to the shot's voiceover (Kling LipSync). Needs a kept " +
+      "clip of 2 to 10 s at normal speed and the shot's voiceover in the cut (make_voiceover first). Paid accounts; about 20 credits " +
+      "for a clip up to 5 s, 40 up to 10 s (call without confirm to see the price and whether it can be made). The new clip goes to " +
+      "Review: keep it with review_clip to use it in the cut; until then the cut keeps the old clip.",
+    inputSchema: { type: "object", properties: { shot_id: { type: "string" },
+      confirm: { type: "boolean", description: "true to start it and spend the credits; leave out to only see the price" } },
+      required: ["shot_id"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } },
   { name: "set_narration_start", title: "Move the narration",
     description: "Sets where the scene's narration (audio id from list_audio) starts in the cut, in seconds, without making it again.",
     inputSchema: { type: "object", properties: { audio_id: { type: "string" }, at_s: { type: "number", minimum: 0, maximum: 600 } },
@@ -293,7 +304,8 @@ const TOOLS = [
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
   { name: "set_start_image", title: "Use an uploaded image as a start image",
     description: "Uses one of the creator's uploaded images (upload id) as a shot's first frame, approved. Free.",
-    inputSchema: { type: "object", properties: { shot_id: { type: "string" }, upload_id: { type: "string" } },
+    inputSchema: { type: "object", properties: { shot_id: { type: "string" }, upload_id: { type: "string" },
+      likeness_consent: { type: "boolean", description: "Set true only after the creator said, in this chat, that any real person in the photo or video is them or agreed to it. Not needed if they ticked that box on anlim.ai/upload." }, },
       required: ["shot_id", "upload_id"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
   { name: "approve_start_image", title: "Approve or discard a start image",
@@ -326,6 +338,7 @@ const TOOLS = [
       model: { type: "string", description: "A motion model id from list_models" },
       look: { type: "string", enum: ["cartoon", "photoreal"], description: "Required without project_id (a new project): ask the creator which; there is no default" },
       project_id: { type: "string" },
+      likeness_consent: { type: "boolean", description: "Set true only after the creator said, in this chat, that any real person in the photo or video is them or agreed to it. Not needed if they ticked that box on anlim.ai/upload." },
     }, required: ["source_upload_id", "reference_upload_ids", "model"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
   { name: "list_models", title: "Models and prices",
@@ -339,6 +352,7 @@ const TOOLS = [
       project_id: { type: "string" }, format: { type: "string", enum: ["16x9", "9x16", "1x1", "4x5", "4x3", "3x4", "21x9"] },
       end_card: { type: "boolean", default: true }, fade: { type: "boolean", default: true },
       voiceover: { type: "boolean", default: true }, sound_effects: { type: "boolean", default: true },
+      captions: { type: "boolean", default: false, description: "Draw the voiceovers' and narration's words over the picture, timed to the speech; also a .srt file (get_cut). Uses the creator's ElevenLabs account to time the words." },
       music: { type: "boolean", default: true, description: "The scene's score in the cut (from make_score), if there is one" },
     }, required: ["project_id"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
@@ -512,9 +526,11 @@ async function callTool(uid: string, name: string, a: Args) {
       const id = await asUser(uid, async (tx) => {
         const [r] = await tx`select studio.create_character(${pid}, ${String(a.name || "")}, ${null}::numeric,
           ${a.wardrobe ? String(a.wardrobe) : null}, ${kind}, ${a.description ? String(a.description) : null}) as id`;
+        if (kind === "person") await carryConsent(tx, uid, [up.path], [path], "character", a.likeness_consent);
         await tx`select studio.set_character_ref(${r.id}, ${path})`;
         return r.id as string;
-      });
+      }).catch((e) => { if (/likeness consent/.test(String(e?.message))) return null; throw e; });
+      if (!id) return text(CONSENT_ASK, undefined, true);
       return text(`${a.name} added with the reference photo. Shots in this project can now place ${a.name} with make_start_image mode new_setup.`,
         { character_id: id });
     }
@@ -587,18 +603,22 @@ async function callTool(uid: string, name: string, a: Args) {
       const [c] = await asUser(uid, (tx) => tx`select id, name, height_units, wardrobe, kind, what from studio.characters
                                                  where series_id = ${pid} and lower(name) = lower(${String(a.name || "").trim()})`);
       if (!c) return text(`No character called ${a.name} in this project.`, undefined, true);
-      let path: string | null = null;
+      let path: string | null = null, upPath: string | null = null;
       if (a.upload_id) {
         const up = await findUpload(uid, String(a.upload_id));
         if (!up || up.kind !== "image") return text("upload_id must be an image from list_uploads.", undefined, true);
         path = await copyUpload(uid, up, "characters");
+        upPath = up.path;
       }
       const name = a.new_name ? String(a.new_name) : c.name;
-      await asUser(uid, async (tx) => {
+      const done = await asUser(uid, async (tx) => {
         await tx`select studio.update_character(${c.id}, ${name}, ${c.height_units}::numeric,
           ${a.wardrobe !== undefined ? String(a.wardrobe) : c.wardrobe}, ${c.kind}, ${a.description !== undefined ? String(a.description) : c.what})`;
+        if (path && (c.kind || "person") === "person") await carryConsent(tx, uid, [String(upPath)], [path], "character", a.likeness_consent);
         if (path) await tx`select studio.set_character_ref(${c.id}, ${path})`;
-      });
+        return true;
+      }).catch((e) => { if (/likeness consent/.test(String(e?.message))) return false; throw e; });
+      if (!done) return text(CONSENT_ASK, undefined, true);
       return text(`${name} updated${path ? " with the new reference photo" : ""}. New start images use it; existing images and clips stay as they are.`);
     }
     case "update_shot": {
@@ -685,6 +705,19 @@ async function callTool(uid: string, name: string, a: Args) {
       const vs = ((await r.json())?.voices || []).map((v: any) => ({ id: v.voice_id, name: v.name, kind: v.category,
         gender: v.labels?.gender ?? null, accent: v.labels?.accent ?? null }));
       return text(vs.length ? vs.map((v: any) => `${v.name} (${v.kind}${v.gender ? `, ${v.gender}` : ""}) id ${v.id}`).join("\n") : "No voices match.", { voices: vs });
+    }
+    case "lip_sync": {
+      const sid = String(a.shot_id || "");
+      if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
+      const [q] = await asUser(uid, (tx) => tx`select studio.lipsync_quote(${sid}::uuid) as q`);
+      const quote = q.q as Record<string, unknown>;
+      if (!quote.ok) return text(String(quote.why), quote, true);
+      if (a.confirm !== true) return text(`Lip sync of this shot: ${quote.credits} credits (fal bills ${quote.seconds} s for a ${Number(quote.clip_s).toFixed(1)} s clip). ` +
+        "Call again with confirm: true to start it.", quote);
+      const gate = await spendGate(uid, "lip_sync");
+      if (gate) return gate;
+      const [r] = await asUser(uid, (tx) => tx`select studio.lipsync_create(${sid}::uuid) as r`);
+      return text(`Lip sync started (${(r.r as Record<string, unknown>).credits} credits). It usually takes 2 to 5 minutes; follow it with get_creation, then keep it with review_clip.`, r.r);
     }
     case "make_voiceover":
     case "make_sound_effect": {
@@ -797,7 +830,12 @@ async function callTool(uid: string, name: string, a: Args) {
       const up = await findUpload(uid, String(a.upload_id || ""));
       if (!up || up.kind !== "image") return text("upload_id must be an image from list_uploads.", undefined, true);
       const path = await copyUpload(uid, up, "stills");
-      await asUser(uid, async (tx) => { await tx`select studio.set_start_frame(${sid}, ${path})`; await tx`select studio.approve_start_frame(${sid})`; });
+      const ok = await asUser(uid, async (tx) => {
+        await carryConsent(tx, uid, [up.path], [path], "start_still", a.likeness_consent);
+        await tx`select studio.set_start_frame(${sid}, ${path})`; await tx`select studio.approve_start_frame(${sid})`;
+        return true;
+      }).catch((e) => { if (/likeness consent/.test(String(e?.message))) return false; throw e; });
+      if (!ok) return text(CONSENT_ASK, undefined, true);
       return text("The uploaded image is now the shot's approved start image. Next: animate.");
     }
     case "approve_start_image": {
@@ -855,9 +893,13 @@ async function callTool(uid: string, name: string, a: Args) {
       if (!pid && !mlook) return text("Ask the creator: cartoon or photoreal? A new project needs a look (there is no default).", undefined, true);
       const gate = await spendGate(uid, "motion_transfer");
       if (gate) return gate;
-      const [r] = await asUser(uid, (tx) => tx`select studio.motion_create(${src.path}, ${refs}::text[], ${String(a.prompt || "")},
-        ${src.seconds}::numeric, ${String(a.model || "")}, ${pid}::uuid, ${mlook}::text) as r`);
-      const q = r.r as Record<string, unknown>;
+      const rows = await asUser(uid, async (tx) => {
+        await carryConsent(tx, uid, [src.path, ...refs], [src.path, ...refs], "motion", a.likeness_consent);
+        return tx`select studio.motion_create(${src.path}, ${refs}::text[], ${String(a.prompt || "")},
+          ${src.seconds}::numeric, ${String(a.model || "")}, ${pid}::uuid, ${mlook}::text) as r`;
+      }).catch((e) => { if (/likeness consent/.test(String(e?.message))) return null; throw e; });
+      if (!rows) return text(CONSENT_ASK, undefined, true);
+      const q = rows[0].r as Record<string, unknown>;
       return text(`Motion transfer started: ${q.seconds} s, about ${q.credits} credits, in "${q.series_name}". shot_id ${q.shot_id}; ` +
         `project_id ${q.series_id}. It usually takes 8 to 15 minutes; follow it with get_creation.`, q);
     }
@@ -880,6 +922,7 @@ async function callTool(uid: string, name: string, a: Args) {
       const [score] = a.music === false ? [] : await asUser(uid, (tx) => tx`select id from studio.audio_jobs where scene_id = ${scene}
                                                     and kind = 'music' and in_cut and status = 'done' order by created_at desc limit 1`);
       const opts = { fade: a.fade !== false, end_card: a.end_card !== false, voice: a.voiceover !== false, sfx: a.sound_effects !== false,
+                     captions: a.captions === true,
                      music_path: score ? `${uid}/audio/music/${score.id}.mp3` : null };
       const [r] = await asUser(uid, (tx) => tx`select studio.request_assembly(${scene}, ${format}, ${tx.json(opts)}) as id`);
       return text(`The cut is being made (${format}${opts.end_card ? ", with Made with anlim.ai on the last shot" : ""}); usually under a minute (longer with slowed shots). ` +
@@ -889,14 +932,16 @@ async function callTool(uid: string, name: string, a: Args) {
       const pid = String(a.project_id || "");
       if (!UUID.test(pid)) return text("project_id must be an id from list_projects.", undefined, true);
       const scene = await latestScene(uid, pid);
-      const rows = await asUser(uid, (tx) => tx`select id, format, status, duration_s, error, output_path, preview_path, created_at
+      const rows = await asUser(uid, (tx) => tx`select id, format, status, duration_s, error, output_path, preview_path, created_at,
+                                                    report -> 'captions' ->> 'srt' as srt
                                                     from studio.assemblies where scene_id = ${scene} order by created_at desc limit 3`);
       if (!rows.length) return text("No cut yet: make_cut.", undefined, true);
       const [{ paid }] = await sql`select studio.has_paid(${uid}) as paid`;
       const out = await Promise.all(rows.map(async (c) => ({ format: c.format, status: c.status, seconds: c.duration_s, error: c.error,
-        url: c.status === "done" ? (paid ? await sign(c.output_path) : await sign(c.preview_path)) : null })));
+        url: c.status === "done" ? (paid ? await sign(c.output_path) : await sign(c.preview_path)) : null,
+        captions_srt: c.status === "done" && c.srt && String(c.srt).startsWith(`${uid}/`) ? await sign(String(c.srt)) : null })));
       return text(out.map((c) => `${c.format} ${c.status}${c.seconds ? ` ${Number(c.seconds).toFixed(1)} s` : ""}` +
-        `${c.url ? `: ${c.url}` : c.error ? `: ${c.error}` : ""}`).join("\n"), { cuts: out });
+        `${c.url ? `: ${c.url}` : c.error ? `: ${c.error}` : ""}${c.captions_srt ? ` (captions .srt: ${c.captions_srt})` : ""}`).join("\n"), { cuts: out });
     }
     default:
       return text(`Unknown tool ${name}.`, undefined, true);
@@ -939,6 +984,21 @@ async function copyStored(from: string, to: string) {
 // the app's functions take images only from their own folders (studio.owned_file), so an upload is copied there
 const copyUpload = (uid: string, u: Upload, folder: "characters" | "locations" | "stills") =>
   copyStored(u.path, `${uid}/${folder}/${u.id}.${ext(u.path) === "jpeg" ? "jpg" : ext(u.path)}`);
+// Likeness consent (2026-11-24, migration studio_safety): a person's photo, an uploaded start image and a motion
+// transfer's files need the creator's confirmation that any real person in them is them or agreed. It comes from the
+// box on anlim.ai/upload (kept for the uploaded file) or from the chat (likeness_consent: true, which the tool
+// descriptions say to set only after the creator said so). Recorded for the copies the app's functions use.
+async function carryConsent(tx: postgres.TransactionSql, uid: string, originals: string[], paths: string[],
+                            kind: "character" | "start_still" | "motion", confirmed: unknown) {
+  let ok = confirmed === true;
+  if (!ok) {
+    const rows = await tx`select bool_and(studio.has_likeness_consent(${uid}::uuid, p)) as ok from unnest(${originals}::text[]) p`;
+    ok = rows[0]?.ok === true;
+  }
+  if (ok) await tx`select studio.record_likeness_consent(${paths}::text[], ${kind}, 'connector')`;
+}
+const CONSENT_ASK = "Ask the creator first: is every real person in it them, or someone who agreed to be used? Only if they say yes, " +
+  "call again with likeness_consent: true (or they can tick that box when uploading on anlim.ai/upload).";
 async function latestScene(uid: string, pid: string): Promise<string> {
   return asUser(uid, async (tx) => {
     const [p] = await tx`select id from studio.series where id = ${pid}`;
@@ -1044,6 +1104,8 @@ async function rpc(uid: string, m: Rpc) {
         if ((e as { code?: string })?.code === "P0001") return ok(m.id, text(msg.slice(0, 300), undefined, true));
         const ref = crypto.randomUUID().slice(0, 8);
         console.error(`studio-mcp ${name} ref ${ref}: ${msg}`);
+        await sql`insert into studio.app_errors(source, owner, place, message, ref) values ('mcp', ${uid}::uuid, ${name.slice(0, 200)},
+          ${msg.slice(0, 2000)}, ${ref})`.catch((x) => console.error("app_errors:", (x as Error).message));
         return ok(m.id, text(`Something went wrong (ref ${ref}). Try again; if it keeps happening, contact support with this reference.`, undefined, true));
       }
     }

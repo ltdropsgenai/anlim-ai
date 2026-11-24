@@ -17,11 +17,14 @@ export default function Privacy() {
         <Li>If you connect ElevenLabs: your API key, stored encrypted, and the last four characters to show you which key it is.</Li>
         <Li>If phone checks are switched on: your phone number, kept by our sign-in service, and a one-way hash of it so free credits go to one number once.</Li>
         <Li>A one-way hash of your email address, kept even after you delete your account, so the free starter credits cannot be claimed again with the same address. It cannot be turned back into your email.</Li>
+        <Li>How the app is used and what went wrong: the pages you open in the app (the page address, without what follows a "?"), errors the app or our servers ran into, and the answers of the content check. They are kept for 90 days to fix problems and improve anlim (content check answers are kept longer, to deal with misuse).</Li>
+        <Li>Your likeness confirmations: when you confirm that the people in an upload are you or agreed, the file it was for and the time.</Li>
         <H>Who handles it for us</H>
         <Li>Supabase: database, sign-in and file storage.</Li>
         <Li>Stripe: payments and plans.</Li>
+        <Li>Resend: sends the emails that tell you a clip or cut is ready (your email address and the names of what finished). You can turn them off in Account.</Li>
         <Li>fal.ai and the AI models it runs (video: Kling, MiniMax; images: Nano Banana, GPT Image): your shot text and frames are sent to make frames and clips.</Li>
-        <Li>Anthropic: frames from your clips are sent to Claude for the anlim check.</Li>
+        <Li>Anthropic: frames from your clips are sent to Claude for the anlim check, and the words and pictures of each request for the content check before it is made.</Li>
         <Li>ElevenLabs: only if you connect your account; the text and settings for audio you ask for.</Li>
         <Li>Our hosting providers (the website and the background workers that make your clips), and on the website, Google Fonts for typefaces.</Li>
         <P>We do not sell your data and do not use it for advertising.</P>

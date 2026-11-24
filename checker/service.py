@@ -26,6 +26,9 @@ Python standard library only (no installs beyond what frame_check already needs)
                 "OK"|"WRONG"|"UNSURE"|"NOT CHECKED", "problems", "usd"}. Physical staging of a made still (~$0.01).
   Every frame route above also takes "look" (cartoon | photoreal) and "subjects" ([{"name", "kind": person | animal |
   object, "what"}]): what counts as a character and which matting model cuts them out (2026-11-16).
+  POST /moderate {"text", "images"?: [local paths], "look"?, "kind"?: clip | frame | audio} -> frame_check/moderate.check:
+                {"verdict": "ALLOW"|"BLOCK", "category", "reason", "usd", "model"}. One AI question (about $0.001 for words,
+                about $0.01 with pictures) before a paid model is called (2026-11-23).
   GET  /health  -> {"ok": true, "mode": "real"|"fake", "frame_check": "<dir>"}
 
 Environment:
@@ -211,6 +214,22 @@ def run_motion_check(body):
     return {"verdict": v, "reasons": reasons, "usd": r.get("usd", 0.0), "detail": r,
             "frame_flags": [{"t_s": x["from_s"], "verdict": "FLAG", "rules": ["SWAP"], "note": x["text"]} for x in r.get("issues", [])]}
 
+def run_moderate(body):
+    """POST /moderate: may anlim make this job? (frame_check/moderate.py, 2026-11-23). In fake mode the verdict comes from
+    body["fake_verdict"] (default ALLOW)."""
+    imgs = [p for p in (body.get("images") or []) if p]
+    for p in imgs:
+        if not os.path.exists(p): raise FileNotFoundError(p)
+    if MODE == "fake":
+        v = body.get("fake_verdict", "ALLOW")
+        return {"verdict": v, "category": "none" if v == "ALLOW" else "sexual", "reason": "" if v == "ALLOW" else "fake block",
+                "usd": 0.0, "model": "fake", "images": len(imgs), "drift": []}
+    if FC not in sys.path: sys.path.insert(0, FC)
+    import moderate
+    r = moderate.check(body.get("text") or "", imgs, body.get("look") or "cartoon", body.get("kind") or "clip")
+    r["drift"] = []
+    return r
+
 def run_last_frame(body):
     """POST /last_frame {"video", "out_png"}: the clip's last decodable frame as a PNG. The frame count in the header
     can be off by a frame or two, so the last few frames are read through and the last one that decodes is kept."""
@@ -252,16 +271,17 @@ class H(BaseHTTPRequestHandler):
         self._send(404, {"error": "not found"})
 
     def do_POST(self):
-        if self.path not in ("/check", "/motion_check", "/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check"): return self._send(404, {"error": "not found"})
+        if self.path not in ("/check", "/motion_check", "/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate"): return self._send(404, {"error": "not found"})
         if not self._authed(): return self._send(401, {"error": "unauthorized"})
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
         except json.JSONDecodeError:
             return self._send(400, {"error": "bad json"})
-        if self.path in ("/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check"):
+        if self.path in ("/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate"):
             try:
                 r = {"/end_frame": run_end_frame, "/compose": run_compose, "/last_frame": run_last_frame,
-                     "/cutouts": run_cutouts, "/height": run_height, "/reposition_fit": run_reposition_fit, "/still_check": run_still_check}[self.path](body)
+                     "/cutouts": run_cutouts, "/height": run_height, "/reposition_fit": run_reposition_fit, "/still_check": run_still_check,
+                     "/moderate": run_moderate}[self.path](body)
                 name = body.get("end") or body.get("edited") or body.get("video") or body.get("image") or body.get("still") or ""
                 print(f"[{self.path[1:]}] {os.path.basename(name)}: {r['verdict']} ({len(r.get('drift', []))} drift)", flush=True)
                 return self._send(200, r)

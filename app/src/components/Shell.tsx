@@ -38,7 +38,7 @@ const CLIP_5S = 200;   // credits of a 5 s Kling 4.0 clip (40 cr/s, studio.model
 const TITLES: [RegExp, string][] = [
   [/^\/$/, "Home"], [/^\/workspace/, "Workspace"], [/^\/storage/, "Assets"], [/^\/review/, "Review"],
   [/^\/clip\//, "Review a clip"], [/^\/shots/, "Scene board"], [/^\/shot\//, "Shot"], [/^\/cut\//, "Scene cut"],
-  [/^\/library/, "Cast & places"], [/^\/billing/, "Credits & plan"], [/^\/account/, "Account"], [/^\/refunds/, "Refund requests"],
+  [/^\/library/, "Cast & places"], [/^\/billing/, "Credits & plan"], [/^\/account/, "Account"], [/^\/refunds/, "Refund requests"], [/^\/insights/, "Insights"],
 ];
 // 7685 -> "7.7k", 950 -> "950": the mini gauge's label
 const short = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n));
@@ -215,6 +215,7 @@ export function Shell({ children }: { children: ReactNode }) {
       {me?.is_admin && <>
         {section("ADMIN")}
         {sideRow("/refunds", "review", "Refund requests", path.startsWith("/refunds"), () => router.navigate("/refunds" as never))}
+        {sideRow("/insights", "search", "Insights", path.startsWith("/insights"), () => router.navigate("/insights" as never))}
       </>}
 
       <View style={{ flex: 1 }} />

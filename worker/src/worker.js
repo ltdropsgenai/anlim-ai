@@ -25,6 +25,8 @@ import * as frames from "./frames.js";
 import { watermark, VAULT } from "./watermark.js";
 import * as assemble from "./assemble.js";
 import * as audio from "./audio.js";
+import * as moderate from "./moderate.js";
+import * as exporter from "./export.js";
 
 const run = promisify(execFile);
 const providers = { fal, mock, higgsfield };
@@ -71,7 +73,7 @@ async function clipFps(file) {
 async function fail(g, error, { release = true } = {}) {
   if (release) await db.settle(g.id, "release");
   await db.unlock(g.id, { status: "failed", error: String(error).slice(0, 1000), finished_at: new Date() });
-  await db.setShot(g.shot_id, "ready");
+  if (!isLipsync(g)) await db.setShot(g.shot_id, "ready");   // a lip sync leaves the shot and its kept clip as they were
   log(g, `failed: ${error}`);
 }
 
@@ -120,6 +122,63 @@ async function endFrameGate(g, shot, characters = []) {
 const fromText = (g) => g.route_kind === "text";
 // Motion transfer (2026-11-20): the creator's source clip recast with their reference images (studio.motion_create).
 const isMotion = (g) => g.route_kind === "motion";
+// Lip sync (2026-11-23, studio.lipsync_create): the shot's kept clip with the mouths moved to its voiceover (Kling
+// LipSync on fal). The kept clip stays in the cut until the creator keeps the lip-synced one.
+function isLipsync(g) { return g.route_kind === "lipsync"; }
+
+// Kling LipSync takes a 2-10 s video whose width and height are both 720 to 1920 px, and 2-60 s of audio up to 5 MB
+// (fal.ai/models/fal-ai/kling-video/lipsync/audio-to-video, read 2026-11-23). The voiceover starts where the shot starts
+// in the cut, which is trim_start_s into the clip at normal speed (studio.lipsync_quote refuses other speeds), so the
+// audio sent is that much silence, then the voice, cut or padded to the clip's length.
+async function submitLipsync(g, shot) {
+  const dir = path.join(config.workDir, g.id);
+  await fs.mkdir(dir, { recursive: true });
+  const [src] = await db.q("select output_path from studio.generations where id = $1", [g.lipsync_source]);
+  const [vo] = await db.q("select output_path from studio.audio_jobs where id = $1 and status = 'done'", [g.lipsync_audio]);
+  if (!src?.output_path) throw Object.assign(new Error("the kept clip to lip-sync is missing; nothing was charged"), { permanent: true });
+  if (!vo?.output_path) throw Object.assign(new Error("the voiceover to lip-sync to is missing; nothing was charged"), { permanent: true });
+  const clipIn = path.join(dir, "lipsync-src.mp4"), voIn = path.join(dir, "lipsync-voice-src.mp3");
+  await storage.download(src.output_path, clipIn);
+  await storage.download(vo.output_path, voIn);
+  const { stdout } = await run("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:format=duration",
+                                           "-of", "json", clipIn]);
+  const info = JSON.parse(stdout);
+  const w = info.streams?.[0]?.width, h = info.streams?.[0]?.height, secs = parseFloat(info.format?.duration);
+  if (!w || !h || !(secs > 0)) throw Object.assign(new Error("the kept clip could not be read; nothing was charged"), { permanent: true });
+  if (secs < 2 || secs > 10.05) throw Object.assign(new Error(`lip sync works on clips of 2 to 10 s; this one is ${secs.toFixed(1)} s. Nothing was charged.`), { permanent: true });
+  let f = Math.max(1, 720 / Math.min(w, h));
+  if (Math.max(w, h) * f > 1920) f = 1920 / Math.max(w, h);
+  const W = Math.round((w * f) / 2) * 2, H = Math.round((h * f) / 2) * 2;
+  const video = path.join(dir, "lipsync-in.mp4"), voice = path.join(dir, "lipsync-voice.mp3");
+  await run("ffmpeg", ["-y", "-v", "error", "-i", clipIn, "-map", "0:v:0", "-an",
+    ...(W !== w || H !== h ? ["-vf", `scale=${W}:${H}:flags=lanczos`, "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-pix_fmt", "yuv420p"]
+                           : ["-c", "copy"]), "-movflags", "+faststart", video]);
+  const lead = Math.max(0, Number(shot.trim_start_s) || 0);
+  await run("ffmpeg", ["-y", "-v", "error", "-i", voIn, "-af", `adelay=${Math.round(lead * 1000)}:all=1,apad`, "-t", secs.toFixed(3),
+                       "-ac", "1", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "128k", voice]);
+  const vPath = `${g.owner}/lipsync/${g.id}-in.mp4`, aPath = `${g.owner}/lipsync/${g.id}-voice.mp3`;
+  await storage.upload(video, vPath, "video/mp4");
+  await storage.upload(voice, aPath, "audio/mpeg");
+  const input = { video_url: await storage.signedUrl(vPath, 7200), audio_url: await storage.signedUrl(aPath, 7200) };
+  const sub = await providers[shot.provider].submit(shot.endpoint, input);
+  await db.unlock(g.id, {
+    status: "running", request: JSON.stringify({ video_url: vPath, audio_url: aPath, endpoint: shot.endpoint, size: [W, H], voice_from_s: lead }),
+    provider_request_id: sub.requestId, provider_status_url: sub.statusUrl, provider_response_url: sub.responseUrl,
+    submitted_at: new Date(), next_poll_at: later(config.pollMs), tries: 0,
+  });
+  log(g, `lip sync submitted (${sub.requestId}): ${secs.toFixed(2)} s at ${W}x${H}${W !== w ? ` (from ${w}x${h})` : ""}, voice from ${lead} s`);
+}
+
+// No clip check on a lip-synced copy: the clip was checked when it was made, and only the mouths change. It is charged
+// when made, like any clip, and goes to Review: keeping it puts it in the cut.
+async function checkLipsync(g) {
+  await db.recordQc(g.id, { verdict: "NOT_REVIEWED", reasons: ["lip sync: a copy of the kept clip with the mouths moved to the voiceover; compare it with the kept clip"],
+                            review_usd: 0, models: { lipsync: "kling-lipsync" } });
+  await db.settle(g.id, "charge");
+  await db.unlock(g.id, { status: "review", finished_at: new Date(), error: null });
+  await db.q("update studio.shots set status = case when approved_generation_id is not null then 'approved' else 'review' end where id = $1", [g.shot_id]);
+  log(g, "lip sync made; waiting for the creator in Review");
+}
 
 // The billed length is what the app measured in the browser (motion_create p_seconds), so the server must not trust
 // it (2026-11-21 review): a 30 s clip sent as "4 s" would be charged 4 s while Higgsfield bills the real length. The
@@ -172,8 +231,14 @@ async function submitMotion(g, shot) {
 
 async function stepQueued(g) {
   const ctx = await db.shotContext(g);
+  const modDir = path.join(config.workDir, g.id, "moderate");
+  if (isLipsync(g)) return submitLipsync(g, ctx.shot);   // the clip and the voiceover were checked when they were made
   if (isMotion(g)) {
     if (!ctx.shot.motion_source_path) return fail(g, "the source clip is missing; nothing was charged");
+    // content check (2026-11-23): the words and what the provider would get (the source clip's frames, the references)
+    await moderate.guard({ kind: "clip", ref: g.id, owner: g.owner, look: ctx.shot.look, dir: modDir,
+      text: moderate.shotWords({ ...ctx.shot, action: ctx.shot.action === "Motion transfer" ? "" : ctx.shot.action }, [], "Motion transfer: the source video is recast with the reference pictures"),
+      paths: [ctx.shot.motion_source_path, ...(ctx.shot.motion_ref_paths || [])] });
     return submitMotion(g, ctx.shot);
   }
   const characters = ctx.characters;
@@ -184,6 +249,10 @@ async function stepQueued(g) {
     const blocked = await endFrameGate(g, shot, characters);
     if (blocked) return fail(g, blocked);
   }
+  // content check (2026-11-23): the shot's words, its cast and the start and end pictures the model would get. A
+  // blocked job fails here with its credits released (moderate.Blocked is permanent, see handle()).
+  await moderate.guard({ kind: "clip", ref: g.id, owner: g.owner, look: shot.look, dir: modDir,
+    text: moderate.shotWords(shot, characters), paths: text ? [] : [shot.start_frame_path, shot.end_frame_path].filter(Boolean) });
   const startUrl = text ? null : await storage.signedUrl(shot.start_frame_path);
   const endUrl = !text && shot.end_frame_path ? await storage.signedUrl(shot.end_frame_path) : null;
   const input = compile.providerInput(shot, characters, startUrl, endUrl);
@@ -240,7 +309,7 @@ async function stepRunning(g) {
     await db.q("update studio.shots set start_frame_path = $2, start_frame_approved = true where id = $1", [g.shot_id, framePath]);
     log(g, `first frame stored as the shot's start frame (${framePath})`);
   }
-  const usd = shot.usd_per_second * shot.duration_s;
+  const usd = shot.usd_per_second * (isLipsync(g) ? (g.lipsync_s || 5) : shot.duration_s);   // fal bills lip sync in 5 s steps
   // 2026-11-23 (review): the clip's real length, so trims and the score's sections use it rather than the asked length
   let clipS = null;
   try {
@@ -297,6 +366,7 @@ async function checkMotion(g) {
 }
 
 async function stepChecking(g) {
+  if (isLipsync(g)) return checkLipsync(g);
   if (isMotion(g)) return checkMotion(g);
   const { shot, characters } = await db.shotContext(g);
   const dir = path.join(config.workDir, g.id);
@@ -392,11 +462,12 @@ async function handle(g) {
     await steps[g.status](g);
   } catch (e) {
     const tries = (g.tries || 0) + 1;
+    if (!e.blocked) await db.logError(`clip ${g.status}`, g.id, g.owner, e, { tries, route: g.route_kind || null });
     if (e.permanent || tries >= config.maxStepTries) {
       if (g.status === "checking") {                 // the clip exists; a person can still judge it
         await db.settle(g.id, "charge");            // policy v2: the clip was made and delivered
         await db.unlock(g.id, { status: "review", error: `checker unavailable: ${e.message}`.slice(0, 1000), tries });
-        await db.setShot(g.shot_id, "review");
+        if (!isLipsync(g)) await db.setShot(g.shot_id, "review");
         return log(g, `checker gave up after ${tries} tries; sent to review`);
       }
       return fail(g, e.message);
@@ -428,12 +499,24 @@ let nextRetention = Date.now() + 10 * 60_000;
 function maybeRetention() {
   if (Date.now() < nextRetention) return;
   nextRetention = Date.now() + 24 * 3600_000;
+  db.q("select studio.insights_trim() as n").catch((e) => console.error("insights_trim:", e.message));
   storage.retention(30).then((r) => r && console.log(`retention: ${r.done} removed (${r.files} files, ${Math.round((r.bytes || 0) / 1e6)} MB), ` +
     `${r.skipped} skipped, ${r.candidates} due`)).catch((e) => console.error("retention:", e.message));
+}
+// "Your clip is ready" emails (2026-11-23): the studio-mail function sends what is waiting; once a minute, never awaited
+let nextMail = Date.now() + 30_000;
+function maybeMail() {
+  if (Date.now() < nextMail || config.storage !== "function") return;
+  nextMail = Date.now() + 60_000;
+  fetch(`${config.supabaseUrl}/functions/v1/studio-mail`, {
+    method: "POST", headers: { "x-worker-token": config.storageToken, "Content-Type": "application/json" }, body: JSON.stringify({ op: "flush" }),
+  }).then(async (r) => { const j = await r.json().catch(() => ({})); if (j.sent || j.failed || j.error) console.log(`mail: ${JSON.stringify(j)}`); })
+    .catch((e) => console.error("mail:", e.message));
 }
 export async function tick() {
   await refreshPlans();
   maybeRetention();
+  maybeMail();
   const jobs = await db.claim(config.workerId, config.batch, 1500);
   const now = [];
   for (const g of jobs) {
@@ -442,10 +525,11 @@ export async function tick() {
     if (inflight.size >= config.checkerSlots) { await db.unlock(g.id, { next_poll_at: later(20000) }); continue; }
     inflight.set(g.id, handle(g).catch((e) => console.error("check:", e.message)).finally(() => inflight.delete(g.id)));
   }
-  const [, nFrames, nCuts, nAudio] = await Promise.all([Promise.all(now.map(handle)), frames.tick(),   // end-frame jobs (frames.js)
+  const [, nFrames, nCuts, nAudio, nExports] = await Promise.all([Promise.all(now.map(handle)), frames.tick(),   // end-frame jobs (frames.js)
     assemble.tick().catch((e) => { console.error("assemble:", e.message); return 0; }),           // scene cuts (assemble.js)
-    audio.tick().catch((e) => { console.error("audio:", e.message); return 0; })]);               // ElevenLabs audio (audio.js)
-  return now.length + nFrames + nCuts + nAudio;
+    audio.tick().catch((e) => { console.error("audio:", e.message); return 0; }),                 // ElevenLabs audio (audio.js)
+    exporter.tick().catch((e) => { console.error("export:", e.message); return 0; })]);          // project downloads (export.js)
+  return now.length + nFrames + nCuts + nAudio + nExports;
 }
 
 async function main() {

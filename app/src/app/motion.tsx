@@ -87,7 +87,7 @@ export default function Motion() {
       const refPaths: string[] = [];
       for (const r of refs) refPaths.push(await uploadMotionFile(me.user_id, "ref", r.file, r.file.type));
       setBusy("Starting…");
-      const r = await api.motionCreate(sourcePath, refPaths, who.trim(), Math.round(secs * 1000) / 1000, model.id, null, look);
+      const r = await api.motionCreate(sourcePath, refPaths, who.trim(), Math.round(secs * 1000) / 1000, model.id, null, look, agreed);   // the box is the likeness consent (2026-11-24)
       setMade(r.shot_id);
     } catch (e) { setErr((e as Error).message); }
     finally { setBusy(null); }
@@ -231,7 +231,7 @@ export default function Motion() {
               {avail != null && <Text style={[s.meta, font.mono]}>You have {avail.toLocaleString()} credits</Text>}
               <Pressable onPress={() => setAgreed(!agreed)} accessibilityRole="checkbox" accessibilityState={{ checked: agreed }} style={s.agree}>
                 <View style={[s.box, agreed && s.boxOn]}>{agreed ? <Text style={{ color: c.onAccent, fontSize: 12, fontWeight: "800" }}>✓</Text> : null}</View>
-                <Text style={{ color: c.sub, fontSize: 13, lineHeight: 19, flex: 1 }}>I made this footage or have the right to use it, and anyone shown in my images has agreed to appear.</Text>
+                <Text style={{ color: c.sub, fontSize: 13, lineHeight: 19, flex: 1 }}>I made this footage or have the right to use it, and any real person in the clip or my images is me or has agreed that I may use their likeness here.</Text>
               </Pressable>
               <Pressable onPress={go} disabled={!!why || !!busy} accessibilityRole="button"
                 style={[s.cta, (why || busy) ? s.ctaOff : null]}>

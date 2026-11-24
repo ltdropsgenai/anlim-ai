@@ -73,8 +73,14 @@ async function thumb(path: string | null) {
 
 // Remove stored files a delete function returned. Only the caller's own folder and their clean copies are touched,
 // whatever the list says (2026-11-19).
+// 2026-11-23: a duplicated project or scene shares its files with the original, so a file still used by another row
+// (studio.still_used) is kept.
 async function removeFiles(uid: string, paths: string[]) {
-  const mine = [...new Set(paths)].filter((p) => p.startsWith(`${uid}/`) || p.startsWith(`00000000-0000-0000-0000-000000000000/clean/${uid}/`));
+  let mine = [...new Set(paths)].filter((p) => p.startsWith(`${uid}/`) || p.startsWith(`00000000-0000-0000-0000-000000000000/clean/${uid}/`));
+  if (mine.length) {
+    const used = new Set((await sql`select studio.still_used(${mine}::text[]) as p`).map((r) => String(r.p)));
+    mine = mine.filter((p) => !used.has(p));
+  }
   for (let i = 0; i < mine.length; i += 100) {
     const { error } = await admin.storage.from(BUCKET).remove(mine.slice(i, i + 100));
     if (error) console.error(`remove files for ${uid}: ${error.message}`);
@@ -123,14 +129,19 @@ async function handle(req: Request): Promise<Response> {
       case "me": {
         const [acc] = await asUser(uid, async (tx) => {
           await tx`select studio.refresh_my_plan()`;           // a month boundary nobody else has crossed yet
-          return tx`select balance, reserved, plan_credits, plan_id, plan_status, welcome_status, debt, studio.is_admin() as is_admin
-                      from studio.accounts where owner = ${uid}`;
+          await tx`select studio.touch_seen()`;                // in the app now: no "ready" email (2026-11-23)
+          return tx`select balance, reserved, plan_credits, plan_id, plan_status, welcome_status, debt, studio.is_admin() as is_admin,
+                           email_ready from studio.accounts where owner = ${uid}`;
         });
         // paid: has ever bought credits or a plan (no watermark); the app's account label uses it (2026-11-23)
         const [{ paid }] = await sql`select studio.has_paid(${uid}) as paid`;
         return json({ user_id: uid, email: who.user.email, balance: acc?.balance ?? 0, reserved: acc?.reserved ?? 0, paid: !!paid,
           plan_credits: acc?.plan_credits ?? 0, plan_id: acc?.plan_id ?? null, plan_status: acc?.plan_status ?? null,
-          welcome_status: acc?.welcome_status ?? null, debt: acc?.debt ?? 0, is_admin: !!acc?.is_admin });
+          welcome_status: acc?.welcome_status ?? null, debt: acc?.debt ?? 0, is_admin: !!acc?.is_admin, email_ready: acc?.email_ready !== false });
+      }
+      case "email_ready": {
+        await asUser(uid, (tx) => tx`select studio.set_email_ready(${body.on !== false})`);
+        return json({ ok: true });
       }
       case "queue": {
         // newest first; "review" = waiting for the creator. Includes the latest checker run and decision.
@@ -267,9 +278,12 @@ async function handle(req: Request): Promise<Response> {
       }
       case "motion_create": {
         const refs = Array.isArray(body.ref_paths) ? body.ref_paths.map((x: unknown) => String(x)).slice(0, 8) : [];
-        const [r] = await asUser(uid, (tx) => tx`select studio.motion_create(${String(body.source_path || "")}, ${refs}::text[],
+        const [r] = await asUser(uid, async (tx) => {
+          if (body.consent === true) await tx`select studio.record_likeness_consent(${[String(body.source_path || ""), ...refs]}::text[], 'motion', 'app')`;
+          return tx`select studio.motion_create(${String(body.source_path || "")}, ${refs}::text[],
           ${String(body.prompt || "")}, ${Number(body.seconds || 0)}::numeric, ${String(body.model || "")},
-          ${body.series_id ? String(body.series_id) : null}::uuid, ${body.look == null ? null : String(body.look)}::text) as r`);
+          ${body.series_id ? String(body.series_id) : null}::uuid, ${body.look == null ? null : String(body.look)}::text) as r`;
+        });
         return json(r.r);
       }
       case "prompt_models": {
@@ -413,7 +427,10 @@ async function handle(req: Request): Promise<Response> {
       }
       case "shot_start_frame": {
         // the app uploaded the file to <uid>/stills/... with the creator's own session (storage policy studio_files_write)
-        await asUser(uid, (tx) => tx`select studio.set_start_frame(${String(body.shot_id || "")}, ${String(body.path || "")})`);
+        await asUser(uid, async (tx) => {
+          if (body.consent === true) await tx`select studio.record_likeness_consent(${[String(body.path || "")]}::text[], 'start_still', 'app')`;
+          await tx`select studio.set_start_frame(${String(body.shot_id || "")}, ${String(body.path || "")})`;
+        });
         return json({ ok: true });
       }
       case "shot_start_approve": {
@@ -507,7 +524,7 @@ async function handle(req: Request): Promise<Response> {
       // ---- scene cuts (studio.assemblies, worker assemble.js, 2026-11-19)
       case "assembly_create": {
         const opts = { fade: body.fade !== false, end_card: !!body.end_card, music_path: body.music_path ? String(body.music_path) : null,
-                       voice: body.voice !== false, sfx: body.sfx !== false };
+                       voice: body.voice !== false, sfx: body.sfx !== false, captions: body.captions === true };
         const [r] = await asUser(uid, (tx) => tx`select studio.request_assembly(${String(body.scene_id || "")}, ${String(body.format || "16x9")},
           ${tx.json(opts)}) as id`);   // tx.json: a JSON object (a stringified one arrives as one jsonb string and every option is lost)
         return json({ ok: true, id: r.id });
@@ -522,8 +539,10 @@ async function handle(req: Request): Promise<Response> {
         const items = await Promise.all(rows.map(async (a) => {
           const marked = !paid;   // fail closed (2026-11-21 review)
           const { output_path: _o, preview_path: _p, ...rest } = a;
+          const srt = (a.report as { captions?: { srt?: string } } | null)?.captions?.srt ?? null;
           return { ...rest, watermarked: marked,
-                   url: a.status === "done" ? (marked ? (a.preview_path ? await sign(a.preview_path, 3600) : null) : await sign(a.output_path, 3600)) : null };
+                   url: a.status === "done" ? (marked ? (a.preview_path ? await sign(a.preview_path, 3600) : null) : await sign(a.output_path, 3600)) : null,
+                   srt_url: a.status === "done" && srt && srt.startsWith(`${uid}/`) ? await sign(srt, 3600) : null };
         }));
         return json({ items });
       }
@@ -543,8 +562,20 @@ async function handle(req: Request): Promise<Response> {
         return json({ ok: true });
       }
       case "character_ref": {
-        await asUser(uid, (tx) => tx`select studio.set_character_ref(${String(body.character_id || "")}, ${String(body.path || "")})`);
+        // likeness consent (2026-11-24, migration studio_safety): the creator ticked "any real person ... is me or agreed";
+        // recorded for this file in the same transaction. A person's photo without it is refused by the trigger.
+        await asUser(uid, async (tx) => {
+          if (body.consent === true) await tx`select studio.record_likeness_consent(${[String(body.path || "")]}::text[], 'character', 'app')`;
+          await tx`select studio.set_character_ref(${String(body.character_id || "")}, ${String(body.path || "")})`;
+        });
         return json({ ok: true });
+      }
+      // likeness consent for files uploaded on anlim.ai/upload (for AI tools) before they are used (2026-11-24)
+      case "likeness_consent": {
+        const paths = Array.isArray(body.paths) ? body.paths.map((x: unknown) => String(x)).slice(0, 20) : [];
+        const kind = ["upload", "character", "start_still", "motion"].includes(String(body.kind)) ? String(body.kind) : "upload";
+        const [r] = await asUser(uid, (tx) => tx`select studio.record_likeness_consent(${paths}::text[], ${kind}, 'app') as n`);
+        return json({ ok: true, n: r.n });
       }
       case "location_create": {
         const [r] = await asUser(uid, (tx) => tx`select studio.create_location(${String(body.series_id || "")}, ${String(body.name || "")},
@@ -788,6 +819,62 @@ async function handle(req: Request): Promise<Response> {
           order by 4 limit 30`);
         return json({ items: rows, now: Date.now() });
       }
+      // Duplicates and referrals (2026-11-23, migration studio_duplicate_referrals)
+      case "series_duplicate": {
+        const [r] = await asUser(uid, (tx) => tx`select studio.duplicate_series(${String(body.series_id || "")}::uuid, ${body.name ? String(body.name) : null}) as id`);
+        return json({ id: r.id });
+      }
+      case "scene_duplicate": {
+        const [r] = await asUser(uid, (tx) => tx`select studio.duplicate_scene(${String(body.scene_id || "")}::uuid) as id`);
+        return json({ id: r.id });
+      }
+      case "referral_me": {
+        const [r] = await asUser(uid, (tx) => tx`select studio.my_referral() as r`);
+        return json(r.r);
+      }
+      case "referral_claim": {
+        const [r] = await asUser(uid, (tx) => tx`select studio.claim_referral(${String(body.code || "").slice(0, 40)}) as ok`);
+        return json({ ok: !!r.ok });
+      }
+      // Download a whole project (2026-11-23, migration studio_exports): start one, and the latest with its links
+      case "export_create": {
+        const [r] = await asUser(uid, (tx) => tx`select studio.request_export(${String(body.series_id || "")}::uuid) as id`);
+        return json({ ok: true, id: r.id });
+      }
+      case "export_latest": {
+        const [e] = await asUser(uid, (tx) => tx`select id, status, parts, files, bytes, error, created_at, updated_at from studio.exports
+                                                   where series_id = ${String(body.series_id || "")}::uuid order by created_at desc limit 1`);
+        if (!e) return json({ export: null });
+        const parts = e.status === "done" ? await Promise.all(((e.parts as { path: string; bytes: number; files: number; name: string }[]) || [])
+          .filter((p) => p.path.startsWith(`${uid}/`))
+          .map(async (p) => ({ name: p.name, bytes: p.bytes, files: p.files, url: await sign(p.path, 3600) }))) : [];
+        return json({ export: { ...e, parts } });
+      }
+      // Lip sync (2026-11-23, migration studio_lipsync): the price, or why not, and starting one
+      case "lipsync_quote": {
+        const [r] = await asUser(uid, (tx) => tx`select studio.lipsync_quote(${String(body.shot_id || "")}::uuid) as q`);
+        return json(r.q);
+      }
+      case "lipsync_create": {
+        const [r] = await asUser(uid, (tx) => tx`select studio.lipsync_create(${String(body.shot_id || "")}::uuid) as r`);
+        return json(r.r);
+      }
+      // Monitoring and analytics (2026-11-23, migration studio_insights): errors the app saw, page views, and the
+      // admin Insights page. The two writes are capped per account in the database.
+      case "client_error": {
+        const detail = body.detail && typeof body.detail === "object" ? body.detail : null;
+        await asUser(uid, (tx) => tx`select studio.log_client_error(${String(body.place || "").slice(0, 200)},
+          ${String(body.message || "").slice(0, 2000)}, ${detail ? JSON.stringify(detail).slice(0, 8000) : null}::jsonb)`);
+        return json({ ok: true });
+      }
+      case "track": {
+        await asUser(uid, (tx) => tx`select studio.track(${String(body.name || "view")}, ${String(body.route || "").slice(0, 200)})`);
+        return json({ ok: true });
+      }
+      case "admin_insights": {
+        const [r] = await asUser(uid, (tx) => tx`select studio.admin_insights(${Number(body.days) || 30}::int) as r`);
+        return json(r.r);
+      }
       default:
         return json({ error: "unknown op" }, 400);
     }
@@ -798,6 +885,8 @@ async function handle(req: Request): Promise<Response> {
     if ((e as { code?: string })?.code === "P0001") return json({ error: msg.slice(0, 300) }, 400);
     const ref = crypto.randomUUID().slice(0, 8);
     console.error(`studio-api ${String(body?.op)} ref ${ref}: ${msg}`);
+    await sql`insert into studio.app_errors(source, owner, place, message, ref) values ('api', ${uid}::uuid, ${String(body?.op).slice(0, 200)},
+      ${msg.slice(0, 2000)}, ${ref})`.catch((x) => console.error("app_errors:", (x as Error).message));
     return json({ error: `Something went wrong (ref ${ref}). Try again; if it keeps happening, contact support with this reference.` }, 500);
   }
 }

@@ -1,13 +1,15 @@
 // Root layout: sends signed-out visitors to /login; a password-reset link lands on /reset-password. @anlim
 import { useEffect, useState } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
-import { DarkTheme, Stack, ThemeProvider, router, useSegments } from "expo-router";
+import { DarkTheme, Stack, ThemeProvider, router, usePathname, useSegments } from "expo-router";
 import type { Session } from "@supabase/supabase-js";
 import { authFlags, supabase } from "../lib/supabase";
 import { setOauthReturn, takeOauthReturn } from "../lib/oauthReturn";
 import { c, pageBg } from "../lib/theme";
 import { SunStage } from "../components/SunLight";
 import { Shell } from "../components/Shell";
+import { installErrorHandlers, reportError, trackView } from "../lib/telemetry";
+import { api } from "../lib/api";
 
 // Web: the studio fonts and page-level styles (dark scrollbars, base text font). Native keeps the system font.
 // 2026-11-20: plus the glass card and ambient light CSS used by components/FloatCard.web.tsx.
@@ -59,6 +61,7 @@ animation:anlim-drift 7s ease-in-out infinite;transition:transform .5s cubic-bez
 
 // A screen that throws shows this instead of a blank page (expo-router ErrorBoundary, review 2026-11-19).
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => Promise<void> }) {
+  useEffect(() => { reportError("screen", error); }, [error]);   // monitoring (2026-11-23)
   return (
     <View style={{ flex: 1, backgroundColor: c.bg, alignItems: "center", justifyContent: "center", padding: 24, gap: 12 }}>
       <Text style={{ color: c.ink, fontSize: 20, fontWeight: "700" }}>Something went wrong on this screen</Text>
@@ -78,7 +81,26 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => Pro
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const segments = useSegments();
+  const pathname = usePathname();
   useWebLook();
+  useEffect(() => { installErrorHandlers(); }, []);
+  // Referrals (2026-11-23): an invite link (?ref=CODE) is remembered on this browser, then claimed once signed in
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof window === "undefined") return;
+    try {
+      const ref = new URLSearchParams(window.location.search).get("ref");
+      if (ref && /^[a-z0-9]{6,12}$/i.test(ref)) localStorage.setItem("anlim_ref", ref.toLowerCase());
+    } catch { /* storage blocked: no referral */ }
+  }, []);
+  useEffect(() => {
+    if (!session || Platform.OS !== "web") return;
+    let ref: string | null = null;
+    try { ref = localStorage.getItem("anlim_ref"); } catch { return; }
+    if (!ref) return;
+    api.claimReferral(ref).catch(() => null).finally(() => { try { localStorage.removeItem("anlim_ref"); } catch { /* ignore */ } });
+  }, [session]);
+  // page views of signed-in creators (2026-11-23): the path only (ids become :id), to see where people stop
+  useEffect(() => { if (session) trackView(pathname); }, [session, pathname]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -126,6 +148,7 @@ export default function RootLayout() {
       <Stack.Screen name="upload" options={{ title: "Upload · anlim.ai" }} />
       <Stack.Screen name="oauth/consent" options={{ title: "Connect an AI tool · anlim.ai" }} />
       <Stack.Screen name="refunds" options={{ title: "Refund requests" }} />
+      <Stack.Screen name="insights" options={{ title: "Insights" }} />
     </Stack>
   );
   // 2026-11-20 (Londi): the sun light sits behind every page. Studio pages get it from the Shell (behind the page,

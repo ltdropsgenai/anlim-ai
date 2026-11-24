@@ -7,6 +7,8 @@ import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { api, ASPECTS, FRAME_CREDITS, Genre, GENRE_NAMES, Kind, Library, Look, Series, ShotRow, uploadImage, Quality, QUALITY_NAMES, QUALITY_HELP } from "../lib/api";
 import { c, font, pageBg } from "../lib/theme";
 import { StillPicker } from "../components/StillPicker";
+import { LikenessConsent } from "../components/LikenessConsent";
+import { ProjectDownload } from "../components/ProjectDownload";
 
 const MAKING = ["queued", "running", "composing"];
 const LOOKS: { id: Look; title: string; sub: string }[] = [
@@ -42,6 +44,7 @@ export default function LibraryScreen() {
     { name: "", height: "", wardrobe: "", kind: "person", what: "" });
   // editing one character's card (2026-11-18): its id and the form values
   const [edId, setEdId] = useState<string | null>(null);
+  const [consent, setConsent] = useState(false);   // likeness consent for people's reference photos (2026-11-24)
   const [ed, setEd] = useState<{ name: string; height: string; wardrobe: string; kind: Kind; what: string }>(
     { name: "", height: "", wardrobe: "", kind: "person", what: "" });
   const [loc, setLoc] = useState({ name: "", description: "" });
@@ -163,6 +166,7 @@ export default function LibraryScreen() {
               <Text style={s.btnText}>Save style</Text>
             </Pressable>
           )}
+          <ProjectDownload key={cur.id} seriesId={cur.id} />
         </View>
       )}
       {error && <Text style={s.err}>{error}</Text>}
@@ -171,6 +175,7 @@ export default function LibraryScreen() {
       {cur && lib && (<>
         <Text style={[s.h, font.display]}>Characters</Text>
         <Text style={s.sub}>People, animals or objects. One reference image each: the whole of them, front on, as they usually look. New setups draw them from it.</Text>
+        {lib.characters.some((x) => x.kind === "person") && <LikenessConsent on={consent} onChange={setConsent} disabled={busy} />}
         <View style={s.grid}>
           {lib.characters.map((x) => (
             <View key={x.id} style={[s.card, s.cell]}>
@@ -178,8 +183,10 @@ export default function LibraryScreen() {
               <Text style={s.sub}>{[KINDS.find((k) => k.id === x.kind)?.title, x.what, x.height_units ? `height ${Number(x.height_units)}` : null,
                 x.wardrobe].filter(Boolean).join(" · ") || " "}</Text>
               <Pic uri={x.ref_url} label={`${x.name} reference`} ratio={3 / 4} />
-              <StillPicker label={x.ref_url ? "Replace reference" : "Upload reference"} disabled={busy} style={{}} textStyle={s.link} onError={setError}
-                onPick={(f) => run(async () => api.setCharacterRef(x.id, await uploadImage(lib.owner, "characters", x.id, f, f.type)))} />
+              <StillPicker label={x.ref_url ? "Replace reference" : "Upload reference"} disabled={busy || (x.kind === "person" && !consent)} style={{}}
+                textStyle={s.link} onError={setError}
+                onPick={(f) => run(async () => api.setCharacterRef(x.id, await uploadImage(lib.owner, "characters", x.id, f, f.type), x.kind === "person" && consent))} />
+              {x.kind === "person" && !consent && <Text style={s.sub}>Tick the box above to upload a person's photo.</Text>}
               {edId !== x.id ? (
                 <Pressable disabled={busy} accessibilityRole="button" onPress={() => { setEdId(x.id);
                   setEd({ name: x.name, height: x.height_units == null ? "" : String(Number(x.height_units)), wardrobe: x.wardrobe ?? "", kind: x.kind, what: x.what ?? "" }); }}>

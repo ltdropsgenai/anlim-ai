@@ -9,6 +9,7 @@ import { Music, SoundPanel } from "../../components/SoundPanel";
 import { downloadFile } from "../../lib/download";
 import { ClipPlayer } from "../../components/ClipPlayer";
 import { CutShots } from "../../components/CutShots";
+import { ThumbnailMaker } from "../../components/ThumbnailMaker";
 
 const FORMATS: { id: CutFormat; title: string; sub: string }[] = [
   { id: "16x9", title: "Landscape 16:9", sub: "1920 × 1080 · YouTube, websites" },
@@ -34,6 +35,7 @@ export default function SceneCut() {
   const [music, setMusic] = useState<Music>(null);
   const [voiceOn, setVoiceOn] = useState(true);
   const [sfxOn, setSfxOn] = useState(true);
+  const [captionsOn, setCaptionsOn] = useState(false);   // 2026-11-23: captions from the voiceovers and narration
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aspect, setAspect] = useState("16:9");
@@ -65,7 +67,7 @@ export default function SceneCut() {
 
   async function make() {
     setBusy(true); setError(null);
-    try { await api.makeCut(scene, format, { fade, end_card: card, music_path: music?.path ?? null, voice: voiceOn, sfx: sfxOn }); await load(); }
+    try { await api.makeCut(scene, format, { fade, end_card: card, music_path: music?.path ?? null, voice: voiceOn, sfx: sfxOn, captions: captionsOn }); await load(); }
     catch (e) { setError((e as Error).message); }
     setBusy(false);
   }
@@ -96,7 +98,12 @@ export default function SceneCut() {
           <Pressable onPress={() => setCard(!card)} style={[s.chip, card && s.chipOn]} accessibilityRole="checkbox" accessibilityState={{ checked: card }}>
             <Text style={card ? { color: c.onAccent } : { color: c.ink }}>"Made with anlim.ai" on the last shot</Text>
           </Pressable>
+          <Pressable onPress={() => setCaptionsOn(!captionsOn)} style={[s.chip, captionsOn && s.chipOn]} accessibilityRole="checkbox" accessibilityState={{ checked: captionsOn }}>
+            <Text style={captionsOn ? { color: c.onAccent } : { color: c.ink }}>Captions</Text>
+          </Pressable>
         </View>
+        {captionsOn && <Text style={s.sub}>The words of the voiceovers and the narration appear at the bottom as they are spoken, and you also get a .srt file
+          to upload to YouTube or TikTok. ElevenLabs times the words (once per take, on your ElevenLabs account).</Text>}
 
         <Text style={[s.h, font.display]}>Shots in the cut</Text>
         <Text style={s.sub}>Speed, trims and words drawn over each kept shot. Save a shot, then make the cut.</Text>
@@ -126,7 +133,8 @@ export default function SceneCut() {
           <Text style={s.sub}>{new Date(x.created_at).toLocaleString()}{[x.options.music_path ? (x.options.music_path.includes("/audio/music/") ? "generated score" : "your track") : null,
             x.report?.narration ? "narration" : null,   // 2026-11-23 (ep16): a cut with only the narration read "silent"
             x.report?.voiceovers ? `${x.report.voiceovers} voiceover${x.report.voiceovers > 1 ? "s" : ""}` : null,
-            x.report?.effects ? `${x.report.effects} sound effect${x.report.effects > 1 ? "s" : ""}` : null].filter(Boolean).map((t) => ` · ${t}`).join("") || " · silent"}</Text>
+            x.report?.effects ? `${x.report.effects} sound effect${x.report.effects > 1 ? "s" : ""}` : null,
+            x.report?.captions ? "captions" : null].filter(Boolean).map((t) => ` · ${t}`).join("") || " · silent"}</Text>
           {(x.status === "queued" || x.status === "running") && <ActivityIndicator style={{ alignSelf: "flex-start", marginVertical: 6 }} />}
           {x.status === "failed" && <Text style={s.err}>{x.error}</Text>}
           {x.url && <View style={{ maxWidth: ["16x9", "21x9", "4x3"].includes(x.format) ? 900 : x.format === "1x1" ? 520 : 380, marginVertical: 8 }}>
@@ -141,6 +149,14 @@ export default function SceneCut() {
             <Pressable onPress={() => downloadFile(x.url!, `${(title ?? "scene").replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-")}-${x.format}${x.watermarked ? "-preview" : ""}.mp4`)
                 .catch((e) => setError((e as Error).message))} accessibilityRole="button">
               <Text style={s.link}>Download the MP4</Text>
+            </Pressable>
+          )}
+          {x.url && <ThumbnailMaker src={x.url} vertical={["9x16", "4x5", "3x4"].includes(x.format)}
+            name={`${(title ?? "scene").replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-")}-${x.format}`} />}
+          {x.srt_url && (
+            <Pressable onPress={() => downloadFile(x.srt_url!, `${(title ?? "scene").replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-")}-${x.format}.srt`)
+                .catch((e) => setError((e as Error).message))} accessibilityRole="button">
+              <Text style={s.link}>Download the captions (.srt)</Text>
             </Pressable>
           )}
           {x.report && (

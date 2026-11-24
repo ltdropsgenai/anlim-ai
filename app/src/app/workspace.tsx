@@ -86,8 +86,8 @@ function NewScene({ seriesId, onDone }: { seriesId: string; onDone: (err?: strin
 }
 
 // Rename and delete for a series or a scene (2026-11-19). Deleting asks a second time and says what goes with it.
-function Manage({ label, name, what, onRename, onDelete }: { label: string; name: string; what: string;
-  onRename: (v: string) => Promise<unknown>; onDelete: () => Promise<unknown> }) {
+function Manage({ label, name, what, onRename, onDelete, onDuplicate, dupWhat }: { label: string; name: string; what: string;
+  onRename: (v: string) => Promise<unknown>; onDelete: () => Promise<unknown>; onDuplicate?: () => Promise<unknown>; dupWhat?: string }) {
   const [mode, setMode] = useState<"idle" | "rename" | "delete">("idle");
   const [v, setV] = useState(name);
   const [busy, setBusy] = useState(false);
@@ -96,7 +96,11 @@ function Manage({ label, name, what, onRename, onDelete }: { label: string; name
   if (mode === "idle") return (
     <View style={[s.row, { gap: 14 }]}>
       <Pressable onPress={() => { setV(name); setMode("rename"); }} accessibilityRole="button"><Text style={s.small}>Rename {label}</Text></Pressable>
+      {/* 2026-11-23: a copy with the same words, cast, places and approved start frames, without clips, cuts or sound */}
+      {onDuplicate && <Pressable onPress={() => run(onDuplicate)} disabled={busy} accessibilityRole="button" accessibilityHint={dupWhat}>
+        <Text style={s.small}>{busy ? "Copying…" : `Duplicate ${label}`}</Text></Pressable>}
       <Pressable onPress={() => setMode("delete")} accessibilityRole="button"><Text style={[s.small, { color: c.fail }]}>Delete {label}</Text></Pressable>
+      {err && <Text style={{ color: c.fail, fontSize: 12 }}>{err}</Text>}
     </View>
   );
   if (mode === "rename") return (
@@ -241,7 +245,9 @@ export default function Workspace() {
         <Manage key={`se-${cur.id}`} label="series" name={cur.name}
           what={`its ${cur.scenes.length} scene${cur.scenes.length === 1 ? "" : "s"}, every shot, clip, cut, character and place in it`}
           onRename={async (v) => { await api.renameSeries(cur.id, v); await load(); }}
-          onDelete={async () => { await api.deleteSeries(cur.id); router.setParams({ series: "", scene: "", shot: "" }); await load(); }} />
+          onDelete={async () => { await api.deleteSeries(cur.id); router.setParams({ series: "", scene: "", shot: "" }); await load(); }}
+          dupWhat="A new project with the same cast, places, scenes and shots (words and approved start frames), without clips, cuts or sound"
+          onDuplicate={async () => { const id = await api.duplicateSeries(cur.id); await load(); pick({ series: id }); }} />
         <Text style={[s.kicker, font.mono, { marginTop: 8 }]}>SCENE</Text>
         <View style={s.row}>
           {cur.scenes.map((sc) => (
@@ -256,7 +262,9 @@ export default function Workspace() {
         {scene && <Manage key={`sc-${scene.id}`} label="scene" name={scene.title}
           what={`its ${shots.length} shot${shots.length === 1 ? "" : "s"}, their clips, frames, cuts and sound`}
           onRename={async (v) => { await api.renameScene(scene.id, v); await load(); }}
-          onDelete={async () => { await api.deleteScene(scene.id); router.setParams({ scene: "", shot: "" }); await load(); }} />}
+          onDelete={async () => { await api.deleteScene(scene.id); router.setParams({ scene: "", shot: "" }); await load(); }}
+          dupWhat="A new scene in this project with the same shots (words and approved start frames), without clips, cuts or sound"
+          onDuplicate={async () => { const id = await api.duplicateScene(scene.id); await load(); pick({ scene: id }); }} />}
       </>)}
       {scene && (<>
         <View style={[s.row, { justifyContent: "space-between", marginTop: 8 }]}>

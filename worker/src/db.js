@@ -88,3 +88,13 @@ export async function recordQc(genId, r) {
     [genId, r.verdict, JSON.stringify(r.frame_flags || []), r.review_usd || 0, r.verify_usd || 0, r.action_usd || 0,
      r.passthrough_usd || 0, JSON.stringify(r.models || {}), JSON.stringify(r)]);
 }
+
+// Error monitoring (2026-11-23, migration studio_insights): a job step that threw, kept in studio.app_errors for the
+// admin Insights page. Best effort: a failed write is only printed, never thrown.
+export async function logError(place, ref, owner, error, detail = null) {
+  try {
+    await q("insert into studio.app_errors(source, owner, place, message, ref, detail) values ('worker', $1, $2, $3, $4, $5)",
+            [owner || null, String(place).slice(0, 200), String(error?.message || error).slice(0, 2000), ref ? String(ref) : null,
+             detail ? JSON.stringify(detail) : null]);
+  } catch (e) { console.error("logError:", e.message); }
+}

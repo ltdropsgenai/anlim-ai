@@ -13,6 +13,7 @@ import { promisify } from "node:util";
 import { config } from "./config.js";
 import * as db from "./db.js";
 import * as storage from "./storage.js";
+import * as moderate from "./moderate.js";
 
 const exec = promisify(execFile);
 const XI = "https://api.elevenlabs.io", FMT = "mp3_44100_128";
@@ -86,7 +87,7 @@ async function duration(p) {
 
 // What the creator reads when it fails: plain words, and whether trying again can help.
 function explain(e) {
-  if (!(e instanceof XiError)) return { msg: `Could not reach ElevenLabs (${e.message}).`, retry: true };
+  if (!(e instanceof XiError)) return { msg: /^content check/.test(e.message) ? "The content check could not run; trying again." : `Could not reach ElevenLabs (${e.message}).`, retry: true };
   const d = e.detail.toLowerCase();
   if (d.includes("quota") || d.includes("credits") || e.status === 402) return { msg: "Your ElevenLabs plan has run out of credits for this. Top up in ElevenLabs, then try again.", retry: false };
   if (e.status === 401 || e.status === 403) {
@@ -104,6 +105,11 @@ async function handle(j) {
   try {
     const [k] = await db.q("select studio.connection_key($1, 'elevenlabs') as k", [j.owner]);
     if (!k?.k && !MOCK) throw Object.assign(new Error("not connected"), { final: "Your ElevenLabs account is not connected any more. Connect it in Account > Connections." });
+    // content check (2026-11-23): the script, the sound or the score's styles, before ElevenLabs is asked
+    const inp = j.input || {};
+    const words = [inp.text && `${j.kind === "voiceover" ? "Spoken words" : "Sound"}: ${inp.text}`, inp.styles && `Styles: ${[].concat(inp.styles).join(", ")}`,
+      ...(inp.sections || []).map((x) => `Section ${x.label || ""}: ${x.styles || ""}`)].filter(Boolean).join("\n");
+    if (words) await moderate.guard({ kind: "audio", ref: j.id, owner: j.owner, text: words });
     const meta = await make(j, k?.k, dest);
     const secs = await duration(dest);
     if (!secs) throw new Error("ElevenLabs sent an empty file");
@@ -124,9 +130,10 @@ async function handle(j) {
     finally { c.release(); }
     log(j, `done, ${secs.toFixed(2)} s${MOCK ? " (mock)" : ""}`);
   } catch (e) {
-    const x = e.final ? { msg: e.final, retry: false } : explain(e);
+    const x = e.final ? { msg: e.final, retry: false } : e.blocked ? { msg: e.message.replace(" Nothing was charged.", ""), retry: false } : explain(e);
     if (x.invalid) await db.q("update studio.connections set status = 'invalid', updated_at = now() where owner = $1 and provider = 'elevenlabs'", [j.owner]);
     const tries = (j.tries || 0) + 1, give = !x.retry || tries >= 3;
+    if (!e.blocked && !e.final) await db.logError(`audio ${j.kind}`, j.id, j.owner, e instanceof XiError ? `${e.status} ${e.detail}` : e, { tries });
     await db.q(`update studio.audio_jobs set tries = $2, error = $3, status = $4, locked_by = null, locked_until = null,
                        next_try_at = now() + make_interval(secs => $5), updated_at = now() where id = $1`,
                [j.id, tries, x.msg.slice(0, 1000), give ? "failed" : "queued", 20 * tries]);
