@@ -1,9 +1,10 @@
 // Scene cut: the scene's approved clips joined in shot order into one finished video, with music (the creator's track or a
 // generated score), voiceover and sound effects (worker assemble.js, 2026-11-19). 2026-11-23: an edit style (editstyle.js). @anlim
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Link, useFocusEffect, useLocalSearchParams } from "expo-router";
-import { api, Cut, CutFormat, EditTransition } from "../../lib/api";
+import { api, Cut, CutFormat, EditTransition, uploadImage } from "../../lib/api";
+import { StillPicker } from "../../components/StillPicker";
 import { c, font, pageBg } from "../../lib/theme";
 import { Music, SoundPanel } from "../../components/SoundPanel";
 import { downloadFile } from "../../lib/download";
@@ -28,6 +29,8 @@ const TRANSITIONS: { id: EditTransition; title: string; sub: string }[] = trDeep
   { id: "mixed", title: "Mixed", sub: "A mix of the ones below, mostly flashes, whips and plain cuts" },
   { id: "flash", title: "Flash", sub: "The picture blurs into a bright haze and the next shot comes out of it" },
   { id: "whip", title: "Whip", sub: "A fast sideways smear from one shot into the next" },
+  { id: "zoom", title: "Zoom", sub: "The picture rushes forward in a blur and the next shot settles out of it" },
+  { id: "spin", title: "Spin", sub: "The picture turns and blurs into the next shot, which turns back into place" },
   { id: "glitch", title: "Glitch", sub: "Three frames of split colours and grain" },
   { id: "punch", title: "Punch-in", sub: "The next shot starts zoomed in and snaps back" },
   { id: "cut", title: "Plain cut", sub: "No transition; the grade, push-in and the rest still apply" },
@@ -50,6 +53,9 @@ export default function SceneCut() {
   const [story, setStory] = useState(false);
   const [trans, setTrans] = useState<EditTransition>("mixed");
   const [rain, setRain] = useState(false);
+  const [drops, setDrops] = useState(false);
+  // 2026-11-24: "match this look": a picture whose colours every shot takes on (worker editstyle.js matchCurves)
+  const [lookRef, setLookRef] = useState<{ path: string; name: string; url: string } | null>(null);
   const [hits, setHits] = useState(true);
   const [beats, setBeats] = useState(true);
   const [styleTitle, setStyleTitle] = useState("");
@@ -85,8 +91,8 @@ export default function SceneCut() {
 
   async function make() {
     setBusy(true); setError(null);
-    const style = story ? { preset: "story" as const, transitions: trans, grade: true, push: true, rain, hits, beat_sync: beats,
-                            title: styleTitle.trim() || null, handle: handle.trim() || null } : null;
+    const style = story ? { preset: "story" as const, transitions: trans, grade: true, push: true, rain, drops, hits, beat_sync: beats,
+                            title: styleTitle.trim() || null, handle: handle.trim() || null, look_ref: lookRef?.path ?? null } : null;
     try { await api.makeCut(scene, format, { fade, end_card: card, music_path: music?.path ?? null, voice: voiceOn, sfx: sfxOn, captions: captionsOn, style }); await load(); }
     catch (e) { setError((e as Error).message); }
     setBusy(false);
@@ -146,13 +152,31 @@ export default function SceneCut() {
           </View>
           <Text style={s.sub}>{TRANSITIONS.find((x) => x.id === trans)?.sub}</Text>
           <View style={s.row}>
-            {[{ v: rain, set: setRain, t: tr("Rain") }, { v: hits, set: setHits, t: tr("Hits under the changes") }, { v: beats, set: setBeats, t: tr("Changes on the beat") }].map((o) => (
+            {[{ v: rain, set: setRain, t: tr("Rain") }, { v: drops, set: setDrops, t: tr("Drops on the lens") }, { v: hits, set: setHits, t: tr("Hits under the changes") }, { v: beats, set: setBeats, t: tr("Changes on the beat") }].map((o) => (
               <Pressable key={o.t} onPress={() => o.set(!o.v)} style={[s.chip, o.v && s.chipOn]} accessibilityRole="checkbox" accessibilityState={{ checked: o.v }}>
                 <Text style={o.v ? { color: c.onAccent } : { color: c.ink }}>{o.t}</Text>
               </Pressable>
             ))}
           </View>
-          <Text style={s.sub}>{tr("Hits need music, a voiceover or an effect in the cut. Changes on the beat need music: a shot may end up to a third of a second early.")}</Text>
+          <Text style={s.sub}>{tr("Hits need music, a voiceover or an effect in the cut. Changes on the beat need music: a shot may end up to a third of a second early, or a quarter of a second late with its last frame held.")}</Text>
+          <Text style={{ color: c.ink, fontWeight: "700", marginTop: 10 }}>{tr("Match a look")}</Text>
+          <Text style={s.sub}>{tr("Pick a picture whose colours you like (a frame of a video you admire, a photo): every shot takes on its tones and colours, in place of the teal grade.")}</Text>
+          {lookRef ? (
+            <View style={[s.row, { alignItems: "center" }]}>
+              <Image source={{ uri: lookRef.url }} style={{ width: 64, height: 64, borderRadius: 8 }} accessibilityLabel={tr("Look picture")} />
+              <Text style={{ color: c.ink, flexShrink: 1 }} numberOfLines={1}>{lookRef.name}</Text>
+              <Pressable onPress={() => setLookRef(null)} accessibilityRole="button"><Text style={s.link}>{tr("Remove")}</Text></Pressable>
+            </View>
+          ) : owner ? (
+            <StillPicker label={tr("Choose a picture (PNG, JPEG or WebP)")} style={s.ghost} textStyle={{ color: c.ink }} onError={setError}
+              onPick={async (f) => {
+                setError(null);
+                try {
+                  const path = await uploadImage(owner, "stills", "look", f, f.type);
+                  setLookRef({ path, name: f.name, url: typeof URL !== "undefined" && URL.createObjectURL ? URL.createObjectURL(f) : "" });
+                } catch (e) { setError((e as Error).message); }
+              }} />
+          ) : null}
           <TextInput style={s.input} value={styleTitle} onChangeText={setStyleTitle} maxLength={60} placeholderTextColor={c.muted}
             placeholder={tr("Title over the first 3.5 s (optional)")} accessibilityLabel={tr("Title over the first seconds")} />
           <TextInput style={[s.input, { marginTop: 8 }]} value={handle} onChangeText={setHandle} maxLength={30} placeholderTextColor={c.muted}

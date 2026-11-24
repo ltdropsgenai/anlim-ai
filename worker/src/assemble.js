@@ -90,7 +90,7 @@ async function part(src, dest, format, frames, fades, skip = 0, credit = false, 
   if (words.length) fx.push(...await wordFilters(words, path.dirname(dest), path.basename(dest, ".mp4"), ...SIZES[format], picRect(format, srcSize)));
   if (fades.in) fx.push(`fade=t=in:st=0:d=${FADE_IN}`);
   if (fades.out) fx.push(`fade=t=out:st=${(t - FADE_OUT).toFixed(3)}:d=${FADE_OUT}`);
-  let fc = (sty ? conform(format) + "[sty0];" + style.shotGraph("sty0", ...SIZES[format], frames, sty.s, sty.kIn, sty.kOut) : conform(format)) +
+  let fc = (sty?.s ? conform(format) + "[sty0];" + style.shotGraph("sty0", ...SIZES[format], frames, sty.s, sty.kIn, sty.kOut, "s", sty.curves || null) : conform(format)) +
            (fx.length ? "," + fx.join(",") : "");
   if (credit) {
     const [W, H] = SIZES[format], mw = Math.round(Math.min(W, H) * 0.5 / 2) * 2, st = Math.max(0, t - CREDIT_S);
@@ -99,7 +99,9 @@ async function part(src, dest, format, frames, fades, skip = 0, credit = false, 
   } else fc += ",format=yuv420p[v]";
   const sp = speed && Math.abs(speed - 1) > 0.001 ? `setpts=PTS/${speed.toFixed(4)},` +
     (speed < 1 ? `minterpolate=fps=${FPS}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1,` : `fps=${FPS},`) : "";
-  if (skip > 0 || sp) fc = fc.replace(`fps=${FPS},`, `fps=${FPS},` + (skip > 0 ? `trim=start_frame=${skip},setpts=PTS-STARTPTS,` : "") + sp);
+  const hold = sty?.hold || 0;   // 2026-11-24: beat sync may run a shot a few frames past its clip: hold the last frame
+  if (skip > 0 || sp || hold) fc = fc.replace(`fps=${FPS},`, `fps=${FPS},` + (skip > 0 ? `trim=start_frame=${skip},setpts=PTS-STARTPTS,` : "") + sp +
+    (hold ? `tpad=stop_mode=clone:stop=${hold},` : ""));
   const inputs = ["-i", src, ...(credit ? ["-loop", "1", "-framerate", String(FPS), "-t", (t + 2).toFixed(3), "-i", typeof credit === "string" ? credit : MADE_WITH] : [])];
   await ff([...inputs, "-filter_complex", fc, "-map", "[v]", "-frames:v", String(frames), "-an", "-c:v", "libx264",
             "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", String(FPS), dest]);
@@ -381,6 +383,21 @@ async function build(a) {
   }
   const sty = style.normalize(opts.style);
   const changes = sty ? style.kinds(plan.length, sty.transitions) : [];
+  // 2026-11-24 (match this look): the creator's picture, read once; each shot's curves are made from its own clip below
+  let lookRef = null;
+  if (sty?.look_ref) {
+    try {
+      if (!sty.look_ref.startsWith(`${a.owner}/`)) throw new Error("the look picture is not yours");
+      const f = path.join(dir, "look_ref" + (path.extname(sty.look_ref) || ".png"));
+      await storage.download(sty.look_ref, f);
+      if ((await fs.stat(f)).size > 20 * 1024 * 1024) throw new Error("the look picture is over 20 MB");
+      lookRef = await style.lookOf(f);
+    } catch (e) { notes.push(`Edit style: the look could not be matched (${String(e.message || e).slice(0, 120)}); the default grade is used.`); }
+  }
+  if (sty?.drops) {
+    try { sty._drops = await style.dropMaps(dir, ...SIZES[a.format]); }
+    catch (e) { notes.push(`Edit style: the drops on the lens could not be made (${String(e.message || e).slice(0, 120)}).`); }
+  }
   let synced = 0;
   if (sty?.beat_sync && opts.music_path && plan.length > 1) {
     // the music's onsets; each shot may end up to 8 frames (0.33 s) early to change on the strongest one near its end
@@ -389,13 +406,14 @@ async function build(a) {
       await storage.download(opts.music_path, src);
       if ((await fs.stat(src)).size > 30 * 1024 * 1024) throw new Error("the music file is over 30 MB");
       const r = style.snap(plan.map((x) => x.out), await style.onsets(src, dir, SAFE_AUDIO_IN), FPS);
-      r.lens.forEach((n, i) => { plan[i].out = n; });
+      // a shot made longer than its clip holds its last frame for the difference (part(): hold)
+      r.lens.forEach((n, i) => { plan[i].hold = Math.max(0, n - plan[i].out); plan[i].out = n; });
       synced = r.moved;
-      if (synced) notes.push(`Edit style: ${synced} shot change${synced > 1 ? "s" : ""} moved up to 0.33 s earlier to land on a beat of the music.`);
+      if (synced) notes.push(`Edit style: ${synced} shot change${synced > 1 ? "s" : ""} moved to land on a beat of the music (up to 0.33 s earlier${r.held ? `, or up to 0.25 s later with the last frame held` : ""}).`);
     } catch (e) { notes.push(`Edit style: the music's beats could not be found (${String(e.message || e).slice(0, 120)}); the shots change where they end.`); }
   }
   for (let i = 0; i < plan.length; i++) {
-    const { it, src, p, keep, from, speed, out } = plan[i];
+    const { it, src, p, keep, from, speed, out, hold = 0 } = plan[i];
     const first = i === 0, last = i === plan.length - 1;
     const fades = { in: opts.fade && first, out: opts.fade && last };
     const dest = path.join(dir, `p${String(i).padStart(3, "0")}.mp4`);
@@ -405,14 +423,18 @@ async function build(a) {
     const credit = !!opts.end_card && last ? await madeWithFor(a.owner) : false;
     await renew(a);                                                // slowed shots take minutes each: keep the lease
     const words = Array.isArray(it.words) ? it.words : [];
-    const look = sty ? { s: sty, kIn: first ? null : changes[i - 1], kOut: last ? null : changes[i] } : null;
+    const look = sty ? { s: sty, kIn: first ? null : changes[i - 1], kOut: last ? null : changes[i], hold } : null;
+    if (look && lookRef) {
+      try { look.curves = await style.matchCurves(lookRef, src, p.frames); }
+      catch (e) { notes.push(`Edit style: shot ${it.ord} keeps the default grade (${String(e.message || e).slice(0, 100)}).`); }
+    }
     try {
       await part(src, dest, a.format, out, fades, from, credit, speed, words, { w: p.w, h: p.h }, look);
     } catch (e) {
       if (!look) throw e;
       // the style is a finish: a shot it fails on goes in without it rather than failing the cut
       notes.push(`Edit style: shot ${it.ord} is in the cut without the style (${String(e.message || e).split("\n")[0].slice(0, 160)}).`);
-      await part(src, dest, a.format, out, fades, from, credit, speed, words, { w: p.w, h: p.h });
+      await part(src, dest, a.format, out, fades, from, credit, speed, words, { w: p.w, h: p.h }, hold ? { s: null, hold } : null);
     }
     if ((it.words || []).length) notes.push(`Shot ${it.ord}: ${it.words.length} word${it.words.length > 1 ? "s" : ""} drawn over it.`);
     if (fades.in) quiet.push([frames / FPS, frames / FPS + FADE_IN]);
@@ -475,7 +497,7 @@ async function build(a) {
                    music: !opts.music_path ? null : /\/audio\/music\//.test(opts.music_path) ? "score" : "track", fps: FPS, size: SIZES[a.format],
                    captions: cc,
                    style: sty ? { preset: sty.preset, changes: changes.reduce((m, k) => ({ ...m, [k]: (m[k] || 0) + 1 }), {}),
-                                  on_beat: synced, hits: sound.hits ? hitCount : 0, grade: sty.grade, rain: sty.rain } : null };
+                                  on_beat: synced, hits: sound.hits ? hitCount : 0, grade: sty.grade, rain: sty.rain, drops: !!sty._drops, look_matched: !!lookRef } : null };
   return { final, total, report, dir };
 }
 

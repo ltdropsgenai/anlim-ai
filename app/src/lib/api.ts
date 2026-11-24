@@ -84,7 +84,7 @@ export type FrameJob = {
   id: string; status: "queued" | "running" | "composing" | "ready" | "failed" | "approved" | "discarded";
   instruction: string; check_result: EndCheck | null; composed_url: string | null; error: string | null; created_at: string;
 };
-export type StartMode = "prompt" | "continue" | "reposition" | "new_setup";   // prompt: drawn from the description (2026-11-19)
+export type StartMode = "prompt" | "continue" | "reposition" | "new_setup" | "restyle";   // restyle: an uploaded picture redrawn (2026-11-24)   // prompt: drawn from the description (2026-11-19)
 export type StartSource = "prev_last" | "this_start" | "prev_start";
 export type StartJob = FrameJob & { mode: StartMode };
 export type ShotContext = {
@@ -151,9 +151,9 @@ export const QUALITY_HELP: Record<string, string> = trMap({
 // a scene cut (studio.assemblies, 2026-11-19)
 export type CutFormat = "16x9" | "9x16" | "4x5" | "1x1" | "4x3" | "3x4" | "21x9";
 // 2026-11-23: a cut's edit style (worker editstyle.js); null or absent is the plain cut
-export type EditTransition = "mixed" | "flash" | "whip" | "glitch" | "punch" | "cut";
+export type EditTransition = "mixed" | "flash" | "whip" | "zoom" | "spin" | "glitch" | "punch" | "cut";
 export type EditStyle = { preset: "story"; transitions: EditTransition; grade: boolean; push: boolean; rain: boolean; hits: boolean;
-                          beat_sync: boolean; title: string | null; handle: string | null };
+                          beat_sync: boolean; title: string | null; handle: string | null; drops?: boolean; look_ref?: string | null };
 export type Cut = {
   id: string; format: CutFormat; options: { fade: boolean; end_card: boolean; music_path: string | null; voice?: boolean; sfx?: boolean; style?: EditStyle | null };
   status: "queued" | "running" | "done" | "failed"; duration_s: string | null; error: string | null; skipped: number[]; shots: number;
@@ -320,7 +320,7 @@ export const api = {
   setStartFrame: (id: string, path: string, consent = false) => call<{ ok: boolean }>({ op: "shot_start_frame", shot_id: id, path, consent }),
   approveStartFrame: (id: string) => call<{ ok: boolean }>({ op: "shot_start_approve", shot_id: id }),
   deleteShot: (id: string) => call<{ ok: boolean }>({ op: "shot_delete", shot_id: id }),
-  requestStartFrame: (id: string, mode: StartMode, instruction?: string, source?: StartSource) =>
+  requestStartFrame: (id: string, mode: StartMode, instruction?: string, source?: StartSource | string) =>
     call<{ job_id: string }>({ op: "start_frame", shot_id: id, mode, instruction: instruction ?? null, source: source ?? null }),
   decideFrame: (job: string, decision: "approve" | "discard") => call<{ ok: boolean }>({ op: "frame_decide", job_id: job, decision }),
   requestPlate: (locationId: string, shotId: string) => call<{ job_id: string }>({ op: "plate", location_id: locationId, shot_id: shotId }),

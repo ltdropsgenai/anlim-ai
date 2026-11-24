@@ -9,6 +9,14 @@ import { c, font, pageBg } from "../lib/theme";
 import { StillPicker } from "../components/StillPicker";
 import { LikenessConsent } from "../components/LikenessConsent";
 import { ProjectDownload } from "../components/ProjectDownload";
+
+// Style presets for cartoon projects (2026-11-24). The words go to the image and video models as the project's style.
+const STYLE_PRESETS = [
+  { id: "3d", label: "3D animated",
+    text: "3D animated feature-film look: stylised proportions, expressive faces, soft rendered skin and fabric, cinematic lighting; clearly animated, not a photograph" },
+  { id: "2d", label: "2D cartoon", text: "2D cartoon: flat colours, clean outlines, simple shading" },
+  { id: "anime", label: "Anime", text: "Anime style: crisp line art, cel shading, vivid colours, detailed backgrounds" },
+];
 import { tr, trDeep, trp, tMsg } from "../lib/i18n";
 
 const MAKING = ["queued", "running", "composing"];
@@ -158,6 +166,17 @@ export default function LibraryScreen() {
             ))}
           </View>
           <Text style={s.sub}>{QUALITY_HELP[cur.quality ?? "balanced"]}</Text>
+          {/* 2026-11-24 (Londi: recreate scenes "in cartoon 3D (realistic looking)"): style presets for cartoon projects. They
+              fill the style text, which the creator can still edit; "3D animated" stays clearly animated (not photoreal). */}
+          {cur.look !== "photoreal" && (
+            <View style={s.row}>
+              {STYLE_PRESETS.map((p) => (
+                <Pressable key={p.id} disabled={busy} onPress={() => setStyle(p.text)} style={s.chip} accessibilityRole="button">
+                  <Text style={{ color: c.ink }}>{tr(p.label)}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
           <TextInput style={s.input} multiline value={style ?? cur.style_prompt ?? ""} onChangeText={setStyle} placeholderTextColor={c.muted}
             placeholder={cur.look === "photoreal" ? tr("Style, e.g. natural daylight, 35 mm film look, shallow depth of field")
               : tr("Style, e.g. 2D children's cartoon, flat colours, clean outlines")} />

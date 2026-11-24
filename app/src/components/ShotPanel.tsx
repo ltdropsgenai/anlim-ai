@@ -15,6 +15,7 @@ const MAKING = ["queued", "running", "composing"];
 const MODE_TEXT: Record<StartMode, string> = trMap({
   prompt: "From the shot's description",
   continue: "Continue from the previous clip", reposition: "Same room, new positions", new_setup: "New setup from the location",
+  restyle: "Redrawn from your picture",
 });
 const SOURCE_TEXT: Record<StartSource, string> = trMap({
   prev_last: "previous clip's last frame", this_start: "this shot's start frame", prev_start: "previous shot's start frame",
@@ -79,7 +80,7 @@ function StartMaker({ shot, busy, run }: { shot: Shot; busy: boolean; run: (fn: 
   const cast = ctx.characters.filter((x) => x.in_shot);
   const noRef = cast.filter((x) => !x.has_ref).map((x) => x.name);
   const why: Record<StartMode, string | null> = {
-    prompt: null,
+    prompt: null, restyle: null,
     continue: !ctx.prev_id ? tr("This is the first shot of the scene.") : !ctx.prev_clip_approved ? tr("Approve a clip of the previous shot first.") : null,
     reposition: !shot.start_url && !ctx.prev_clip_approved && !ctx.prev_start_approved ? tr("Needs a still to start from: upload one, or approve the previous shot's start frame or clip.") : null,
     new_setup: !ctx.location_id ? tr("Give the scene a location (Characters & locations).") : !ctx.has_plate ? tr("Make or upload the empty-room plate for {location_name}.", { location_name: ctx.location_name })
@@ -93,7 +94,7 @@ function StartMaker({ shot, busy, run }: { shot: Shot; busy: boolean; run: (fn: 
   return (
     <View style={s.panel}>
       <Text style={s.label}>{tr("Make a start frame")}</Text>
-      {(Object.keys(MODE_TEXT) as StartMode[]).map((m) => (
+      {(Object.keys(MODE_TEXT) as StartMode[]).filter((m) => m !== "restyle").map((m) => (
         <Pressable key={m} disabled={!!why[m] || busy} onPress={() => setMode(m)} accessibilityRole="radio" accessibilityState={{ checked: mode === m, disabled: !!why[m] }}
           style={[s.choice, mode === m && s.choiceOn, !!why[m] && { opacity: 0.55 }]}>
           <Text style={s.choiceTitle}>{MODE_TEXT[m]} · {m === "continue" ? tr("free") : tr("{n} credits", { n: startFrameCredits(m, shot.look, cast.length) })}</Text>
@@ -356,12 +357,13 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
       {startCandidate && (
         <View style={s.panel}>
           <Text style={s.sub}>{MODE_TEXT[startCandidate.mode]}{startCandidate.mode !== "continue" ? `: ${startCandidate.instruction}` : "."}</Text>
+          {startCandidate.mode === "restyle" && <Text style={s.sub}>{tr("Redrawn from your picture in this project's look. The check below only looks at staging; compare it with your picture and judge the faces and the poses yourself.")}</Text>}
           {startCandidate.mode === "prompt" && <Text style={s.sub}>{tr("Drawn from your description. The check below only looks at staging (floating, sitting on nothing); judge the faces and whether it shows the moment the shot starts yourself.")}</Text>}
-          {startCandidate.mode !== "continue" && startCandidate.mode !== "prompt" && (startCandidate.check_result?.verdict === "PASS"
+          {startCandidate.mode !== "continue" && startCandidate.mode !== "prompt" && startCandidate.mode !== "restyle" && (startCandidate.check_result?.verdict === "PASS"
             ? <Text style={[s.badge, { color: c.pass, borderColor: c.pass }]}>{startCandidate.check_result?.why?.startsWith("the room's layout")
                 ? tr("Check: the room's layout matches the location (lighting may differ slightly)") : tr("Check: the room is unchanged")}</Text>
             : <Text style={[s.badge, { color: c.flag, borderColor: c.flag }]}>{flagText(startCandidate.check_result, "something in the room changed (red boxes). Look closely.")}</Text>)}
-          {startCandidate.mode !== "continue" && startCandidate.mode !== "prompt" && <RevealedNote ch={startCandidate.check_result} />}
+          {startCandidate.mode !== "continue" && startCandidate.mode !== "prompt" && startCandidate.mode !== "restyle" && <RevealedNote ch={startCandidate.check_result} />}
           <HeightBadge h={startCandidate.check_result?.height} mode={startCandidate.mode} />
           <StagingBadge st={startCandidate.check_result?.staging} />
           {startCandidate.mode !== "continue" && <Text style={s.sub}>{tr("Look at each character's face and clothes: the checks cannot judge those.")}</Text>}
@@ -388,6 +390,17 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
               onPick={(f) => run(async () => {
                 await api.setStartFrame(shot.id, await uploadStill(shot.owner, shot.id, f, f.type), consent);
                 await api.requestHeightCheck(shot.id).catch(() => null);   // 2026-11-16: uploaded stills get the height check too
+              })} />
+            {/* 2026-11-24 "Recreate this frame": a picture (a frame of a video, a photo) redrawn in the project's look. A
+                cartoon project may redraw anyone; a photoreal one needs the likeness box (Londi: real people in
+                photoreal only when they are the creator or agreed). */}
+            <StillPicker label={tr("Recreate a picture in this project's look ({n} credits)", { n: FRAME_CREDITS })}
+              disabled={busy || !!inFlight || making || (shot.look === "photoreal" && !consent)}
+              style={{}} textStyle={s.link} onError={setError}
+              onPick={(f) => run(async () => {
+                const path = await uploadStill(shot.owner, shot.id, f, f.type);
+                if (consent) await api.likenessConsent([path], "start_still").catch(() => null);
+                await api.requestStartFrame(shot.id, "restyle", undefined, path);
               })} />
             {shot.start_url && !shot.start_frame_approved && (
               <Pressable style={[s.btn, { backgroundColor: c.pass }]} disabled={busy} accessibilityRole="button"

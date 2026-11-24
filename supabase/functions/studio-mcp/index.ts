@@ -297,10 +297,15 @@ const TOOLS = [
     description: "Makes the first frame of a shot (paid accounts; about 20 credits). Modes: 'new_setup' places the shot's characters " +
       "(their reference photos) in the scene's location background as the instruction says, the way to put a real person in a shot; " +
       "'prompt' draws it from words only; 'continue' starts from the last frame of the previous shot's kept clip (free); 'reposition' " +
-      "moves the characters of an existing frame. Then check it with get_creation and approve it (approve_start_image) or animate it.",
+      "moves the characters of an existing frame; 'restyle' (recreate this frame) redraws an uploaded picture (upload_id: a frame " +
+      "of a video, a photo) in the project's look, keeping its composition, camera and poses. In a cartoon project anyone may be " +
+      "redrawn; in a photoreal project the creator must confirm the people in it are them or agreed (likeness_consent). " +
+      "Then check it with get_creation and approve it (approve_start_image) or animate it.",
     inputSchema: { type: "object", properties: {
       shot_id: { type: "string" },
-      mode: { type: "string", enum: ["new_setup", "prompt", "continue", "reposition"] },
+      mode: { type: "string", enum: ["new_setup", "prompt", "continue", "reposition", "restyle"] },
+      upload_id: { type: "string", description: "restyle only: the picture to redraw, from list_uploads" },
+      likeness_consent: { type: "boolean", description: "restyle in a photoreal project: set true only after the creator said, in this chat, that any real person in the picture is them or agreed to it." },
       instruction: { type: "string", maxLength: 1000, description: "Where everyone is and what they are doing at the start" },
     }, required: ["shot_id", "mode"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
@@ -351,7 +356,7 @@ const TOOLS = [
     description: "Joins the kept clips of the project's latest scene, in shot order, into one video (free). Formats: 16x9, 9x16, 1x1, " +
       "4x5, 4x3, 3x4, 21x9 (default: the project's shape). end_card puts 'Made with anlim.ai' over the last 2 s of the final shot. " +
       "edit_style 'story' gives the cut the look of a moody voiceover edit: a darker teal grade, a slow push-in on every shot, " +
-      "transitions between shots (blur flash, whip, glitch, punch-in), a whoosh or hit under each change, the changes moved onto " +
+      "transitions between shots (blur flash, whip, zoom, spin, glitch, punch-in), a whoosh or hit under each change, the changes moved onto " +
       "the music's beats, serif captions (with captions on), an optional title over the first 3.5 s and a small handle tag. " +
       "Free like every cut. Follow it with get_cut.",
     inputSchema: { type: "object", properties: {
@@ -362,9 +367,11 @@ const TOOLS = [
       music: { type: "boolean", default: true, description: "The scene's score in the cut (from make_score), if there is one" },
       // 2026-11-23: the edit style (worker editstyle.js)
       edit_style: { type: "string", enum: ["plain", "story"], default: "plain", description: "plain: the cut as before. story: the moody voiceover-edit look (see above)." },
-      transitions: { type: "string", enum: ["mixed", "flash", "whip", "glitch", "punch", "cut"], default: "mixed",
+      transitions: { type: "string", enum: ["mixed", "flash", "whip", "zoom", "spin", "glitch", "punch", "cut"], default: "mixed",
         description: "story only: the change between shots. mixed rotates them; flash blurs to a bright haze and back; whip smears sideways; glitch splits the colours for 3 frames; punch starts the next shot zoomed in; cut is a plain cut." },
       rain: { type: "boolean", default: false, description: "story only: falling rain streaks over every shot" },
+      drops: { type: "boolean", default: false, description: "story only: water drops on the lens, bending the picture behind them" },
+      look_upload_id: { type: "string", description: "story only: an uploaded picture (list_uploads) whose colours every shot takes on, in place of the teal grade" },
       hits: { type: "boolean", default: true, description: "story only: a whoosh, impact or glitch sound under each change (only when the cut has music, voice or effects)" },
       beat_sync: { type: "boolean", default: true, description: "story only: with music, each shot may end up to 0.33 s early so the change lands on a beat" },
       grade: { type: "boolean", default: true, description: "story only: the darker teal grade and vignette" },
@@ -832,11 +839,24 @@ async function callTool(uid: string, name: string, a: Args) {
     case "make_start_image": {
       const sid = String(a.shot_id || "");
       if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
-      const mode = ["new_setup", "prompt", "continue", "reposition"].includes(String(a.mode)) ? String(a.mode) : "";
-      if (!mode) return text("mode must be new_setup, prompt, continue or reposition.", undefined, true);
+      const mode = ["new_setup", "prompt", "continue", "reposition", "restyle"].includes(String(a.mode)) ? String(a.mode) : "";
+      if (!mode) return text("mode must be new_setup, prompt, continue, reposition or restyle.", undefined, true);
       const gate = await spendGate(uid, "make_start_image");
       if (gate) return gate;
-      const [r] = await asUser(uid, (tx) => tx`select studio.request_start_frame(${sid}, ${mode}, ${a.instruction ? String(a.instruction) : null}, ${null}) as id`);
+      // restyle (2026-11-24): the uploaded picture is copied to the creator's stills and redrawn in the project's look
+      let src: string | null = null;
+      if (mode === "restyle") {
+        const up = await findUpload(uid, String(a.upload_id || ""));
+        if (!up || up.kind !== "image") return text("restyle needs upload_id: an image from list_uploads.", undefined, true);
+        src = await copyUpload(uid, up, "stills");
+        const okc = await asUser(uid, async (tx) => { await carryConsent(tx, uid, [up.path], [src!], "start_still", a.likeness_consent); return true; })
+          .catch((e) => { if (/likeness consent/.test(String(e?.message))) return false; throw e; });
+        if (!okc) return text(CONSENT_ASK, undefined, true);
+      }
+      const r0 = await asUser(uid, (tx) => tx`select studio.request_start_frame(${sid}, ${mode}, ${a.instruction ? String(a.instruction) : null}, ${src}) as id`)
+        .catch((e) => { if (mode === "restyle" && /likeness consent/.test(String(e?.message))) return null; throw e; });
+      if (!r0) return text(CONSENT_ASK, undefined, true);
+      const [r] = r0;
       // 2026-11-22 (promo shot 2): continuing from a frame the cast is not in left the video model nothing to draw their faces
       // from, and it invented a different man. The reply says so whenever a continued shot has a cast.
       const [cast] = mode === "continue" ? await asUser(uid, (tx) => tx`select coalesce(cardinality(cast_ids), 0) as n from studio.shots where id = ${sid}`) : [{ n: 0 }];
@@ -948,10 +968,18 @@ async function callTool(uid: string, name: string, a: Args) {
       // 2026-11-22: the scene's sound goes in too: the voiceovers and effects in the cut, and the score in the cut
       const [score] = a.music === false ? [] : await asUser(uid, (tx) => tx`select id from studio.audio_jobs where scene_id = ${scene}
                                                     and kind = 'music' and in_cut and status = 'done' order by created_at desc limit 1`);
+      // 2026-11-24: match this look: an uploaded picture, copied to the creator's stills
+      let lookRef: string | null = null;
+      if (a.edit_style === "story" && a.look_upload_id) {
+        const up = await findUpload(uid, String(a.look_upload_id));
+        if (!up || up.kind !== "image") return text("look_upload_id must be an image from list_uploads.", undefined, true);
+        lookRef = await copyUpload(uid, up, "stills");
+      }
       const opts = { fade: a.fade !== false, end_card: a.end_card !== false, voice: a.voiceover !== false, sfx: a.sound_effects !== false,
                      captions: a.captions === true,
                      music_path: score ? `${uid}/audio/music/${score.id}.mp3` : null,
                      style: a.edit_style === "story" ? { preset: "story", transitions: a.transitions ?? "mixed", rain: a.rain === true,
+                       drops: a.drops === true, look_ref: lookRef,
                        hits: a.hits !== false, beat_sync: a.beat_sync !== false, grade: a.grade !== false,
                        title: typeof a.title === "string" ? a.title.slice(0, 60) : null, handle: typeof a.handle === "string" ? a.handle.slice(0, 30) : null } : null };
       const [r] = await asUser(uid, (tx) => tx`select studio.request_assembly(${scene}, ${format}, ${tx.json(opts)}) as id`);

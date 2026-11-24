@@ -133,6 +133,23 @@ export function framePrompt(instruction, look, style = null, chars = [], aspect 
       : " No text, no captions, no logos, no watermark.");
 }
 
+// "Recreate this frame" (2026-11-24): an uploaded picture (a frame of a video, a photo) redrawn in the project's look.
+// The composition is the picture's: same camera, framing, poses, number of people and where they stand; only the look
+// changes (and, when the project has a cast, each person becomes the cast member the creator's words name).
+export function restylePrompt(instruction, look, style = null, chars = []) {
+  const cast = chars.map(castText).join("; ");
+  const looks = look === "photoreal"
+    ? "a real photograph: natural light, a real camera lens, not drawn, not 3D, not animated"
+    : "a cartoon (or the animated style below): drawn or rendered, clearly not a photograph";
+  return `Redraw this exact picture as ${looks}. Keep its composition exactly: the same camera angle, framing and lens, ` +
+    "the same number of people, each in the same place and the same pose, the same motion and the same setting. " +
+    "Change only the look of everything in it. Keep it the first frame of a video clip: no frame, border or caption." +
+    (style ? ` Style: ${style.trim().replace(/\.?$/, ".")}` : "") +
+    (cast ? ` The people become these characters, matched by the creator's words: ${cast}.` : "") +
+    (instruction ? ` The creator's notes: ${instruction.trim().replace(/\.?$/, ".")}` : "") +
+    " No logos, no brand marks, no text, no watermark.";
+}
+
 // Nano Banana 2 takes an aspect ratio, not a size: pick the supported ratio nearest the start still's.
 const RATIOS = ["21:9", "16:9", "3:2", "4:3", "5:4", "1:1", "4:5", "3:4", "2:3", "9:16"];
 export function nearestRatio(w, h) {
@@ -319,7 +336,8 @@ async function stepQueued(j) {
   // content check (2026-11-23): the instruction, the cast and every picture the image model would get. Plates (an empty
   // room made from a location) have no instruction of their own and are checked like any edit.
   await moderate.guard({ kind: "frame", ref: j.id, owner: j.owner, look,
-    text: moderate.shotWords({ ...shot, style_prompt: stylePrompt }, characters, j.kind === "plate" ? "The same place with nobody in it" : j.instruction),
+    text: moderate.shotWords({ ...shot, style_prompt: stylePrompt }, characters, j.kind === "plate" ? "The same place with nobody in it"
+      : j.mode === "restyle" ? `Redraw the uploaded picture as ${look === "photoreal" ? "a photograph" : "a cartoon"}, same composition. ${j.instruction || ""}` : j.instruction),
     paths: [j.source_path || shot?.start_frame_path, ...(j.mode === "new_setup" ? (j.ref_paths || []) : [])].filter(Boolean) });
   const size = await pngSize(base);
   let prompt, urls = [await storage.signedUrl(j.source_path || shot.start_frame_path)];
@@ -327,13 +345,15 @@ async function stepQueued(j) {
   else if (j.mode === "new_setup") {
     prompt = setupPrompt(j.instruction, j.ref_names || [], j.ref_heights || [], look, characters);
     for (const r of j.ref_paths || []) urls.push(await storage.signedUrl(r));
-  } else prompt = editPrompt(j.instruction, characters, look);
+  } else if (j.mode === "restyle") prompt = restylePrompt(j.instruction, look, stylePrompt, characters);
+  else prompt = editPrompt(j.instruction, characters, look);
   // GPT Image 2.6 (photoreal new setups since 2026-11-17) takes its size from the input images and a quality level;
   // Nano Banana 2 takes an aspect ratio and a resolution.
   const input = /^openai\/gpt-image/.test(j.endpoint)
     ? { prompt, image_urls: urls, quality: "medium", image_size: "auto", output_format: "png" }
     : { prompt, image_urls: urls, num_images: 1,
-        aspect_ratio: size ? nearestRatio(size.w, size.h) : "auto", resolution: "1K", output_format: "png" };
+        // a restyled picture takes the project's shape (a 16:9 video frame in a 9:16 project is recomposed), 2026-11-24
+        aspect_ratio: j.mode === "restyle" ? aspect : size ? nearestRatio(size.w, size.h) : "auto", resolution: "1K", output_format: "png" };
   const sub = await provider().submit(j.endpoint, input);
   await db.updateFrame(j.id, { status: "running", prompt, provider_request_id: sub.requestId, provider_status_url: sub.statusUrl,
     provider_response_url: sub.responseUrl, submitted_at: new Date(), next_poll_at: later(5000), tries: 0,
@@ -386,8 +406,9 @@ async function renderNow(j) {
 async function stepComposing(j) {
   const { shot, characters, platePaths, look } = await db.frameContext(j);
   const dir = path.join(config.workDir, "frames", j.id);
-  if (j.kind === "start" && j.mode === "prompt") {
-    // nothing to compose onto: the drawn still is the start frame; the creator approves or discards it
+  if (j.kind === "start" && (j.mode === "prompt" || j.mode === "restyle")) {
+    // nothing to compose onto: the drawn still is the start frame; the creator approves or discards it (a restyled
+    // picture is redrawn whole, so it is not composed onto the uploaded one either, 2026-11-24)
     const raw = path.join(dir, "raw.png");
     try { await fs.access(raw); } catch { await storage.download(j.raw_path, raw); }
     const composedPath = outPath(j);
@@ -396,7 +417,7 @@ async function stepComposing(j) {
     // no room or cast to compare against; the one check that applies is staging (anyone floating, sitting on
     // nothing, passing through furniture). Not a check of faces or of how well it matches the words.
     const staging = j.instruction ? await stagingCheck(j, characters, raw, look).catch((e) => ({ verdict: "NOT CHECKED", problems: [], error: e.message })) : null;
-    const check = { verdict: staging?.verdict === "OK" ? "PASS" : "FLAG", drift: [], why: "drawn from your description", staging };
+    const check = { verdict: staging?.verdict === "OK" ? "PASS" : "FLAG", drift: [], why: j.mode === "restyle" ? "redrawn from your picture" : "drawn from your description", staging };
     await db.updateFrame(j.id, { status: "ready", composed_path: composedPath, check_result: JSON.stringify(check),
       locked_by: null, locked_until: null });
     log(j, "start frame from the description ready");
