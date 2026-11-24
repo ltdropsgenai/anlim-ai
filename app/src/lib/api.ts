@@ -357,7 +357,7 @@ export const api = {
   deleteScene: (id: string) => call<{ ok: true; files: number }>({ op: "scene_delete", scene_id: id }),
   duplicateSeries: (id: string) => call<{ id: string }>({ op: "series_duplicate", series_id: id }).then((r) => r.id),
   duplicateScene: (id: string) => call<{ id: string }>({ op: "scene_duplicate", scene_id: id }).then((r) => r.id),
-  myReferral: () => call<{ code: string; credits: number; invited: number; rewarded: number }>({ op: "referral_me" }),
+  myReferral: () => call<{ code: string; credits: number; referred_credits?: number; invited: number; rewarded: number }>({ op: "referral_me" }),
   claimReferral: (code: string) => call<{ ok: boolean }>({ op: "referral_claim", code }),
   moveShot: (id: string, dir: -1 | 1) => call<{ ok: true }>({ op: "shot_move", shot_id: id, dir }),
   deleteAsset: (kind: AssetKind, id: string, path?: string) => call<{ ok: true; files: number }>({ op: "asset_delete", kind, id, path: path ?? null }),

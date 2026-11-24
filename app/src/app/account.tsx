@@ -15,7 +15,7 @@ export default function Account() {
   const [error, setError] = useState<string | null>(null);
   const [welcome, setWelcome] = useState<WelcomeStatus>(null);
   const [mail, setMail] = useState<boolean | null>(null);   // "ready" emails (2026-11-23)
-  const [ref, setRef] = useState<{ code: string; credits: number; invited: number; rewarded: number } | null>(null);
+  const [ref, setRef] = useState<{ code: string; credits: number; referred_credits?: number; invited: number; rewarded: number } | null>(null);
   const [copied, setCopied] = useState(false);
   useEffect(() => { api.myReferral().then(setRef).catch(() => null); }, []);
   const loadMe = () => api.me().then((m) => { setWelcome(m.welcome_status); setMail(m.email_ready !== false); }).catch(() => null);
@@ -44,7 +44,7 @@ export default function Account() {
       {ref && ref.credits > 0 && (
         <View style={s.card}>
           <Text style={s.label}>Invite a creator</Text>
-          <Text style={{ color: c.ink }}>When someone signs up from your link and buys credits or a plan, you both get {ref.credits.toLocaleString("en-US")} credits.</Text>
+          <Text style={{ color: c.ink }}>When someone signs up from your link and buys credits or a plan, you get {ref.credits.toLocaleString("en-US")} credits{ref.referred_credits ? ` and they get ${ref.referred_credits.toLocaleString("en-US")} on top of their welcome credits` : ""}.</Text>
           <Pressable onPress={async () => { try { await navigator.clipboard.writeText(`https://anlim.ai/welcome?ref=${ref.code}`); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* shown anyway */ } }}
             accessibilityRole="button" style={s.ghost}>
             <Text style={s.ghostText} selectable>{copied ? "Copied" : `anlim.ai/welcome?ref=${ref.code}`}</Text>
