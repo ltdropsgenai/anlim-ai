@@ -277,7 +277,13 @@ async function stepRunning(g) {
       return fail(g, `provider timeout after ${limit} min`);
     return db.unlock(g.id, { next_poll_at: later(config.pollMs) });
   }
-  if (p.state === "failed") return fail(g, `provider: ${p.error}`);
+  if (p.state === "failed") {
+    // 2026-11-23 (live test): Kling LipSync found no face in a two-shot on a sofa and the creator saw fal's raw JSON
+    if (isLipsync(g) && /face_detection_error|no face detected/i.test(String(p.error)))
+      return fail(g, "Lip sync needs a face that is clearly visible and large enough in the clip (a close or medium shot, " +
+        "facing the camera). None was found in this clip. Nothing was charged.");
+    return fail(g, `provider: ${p.error}`);
+  }
   const dir = path.join(config.workDir, g.id);
   const raw = path.join(dir, "raw.mp4"), clip = path.join(dir, "clip.mp4");
   await fetchTo(p.videoUrl, raw);
