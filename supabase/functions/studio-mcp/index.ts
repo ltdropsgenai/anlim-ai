@@ -349,13 +349,27 @@ const TOOLS = [
     annotations: { readOnlyHint: true, openWorldHint: false } },
   { name: "make_cut", title: "Make the scene's cut",
     description: "Joins the kept clips of the project's latest scene, in shot order, into one video (free). Formats: 16x9, 9x16, 1x1, " +
-      "4x5, 4x3, 3x4, 21x9 (default: the project's shape). end_card puts 'Made with anlim.ai' over the last 2 s of the final shot. Follow it with get_cut.",
+      "4x5, 4x3, 3x4, 21x9 (default: the project's shape). end_card puts 'Made with anlim.ai' over the last 2 s of the final shot. " +
+      "edit_style 'story' gives the cut the look of a moody voiceover edit: a darker teal grade, a slow push-in on every shot, " +
+      "transitions between shots (blur flash, whip, glitch, punch-in), a whoosh or hit under each change, the changes moved onto " +
+      "the music's beats, serif captions (with captions on), an optional title over the first 3.5 s and a small handle tag. " +
+      "Free like every cut. Follow it with get_cut.",
     inputSchema: { type: "object", properties: {
       project_id: { type: "string" }, format: { type: "string", enum: ["16x9", "9x16", "1x1", "4x5", "4x3", "3x4", "21x9"] },
       end_card: { type: "boolean", default: true }, fade: { type: "boolean", default: true },
       voiceover: { type: "boolean", default: true }, sound_effects: { type: "boolean", default: true },
       captions: { type: "boolean", default: false, description: "Draw the voiceovers' and narration's words over the picture, timed to the speech; also a .srt file (get_cut). Uses the creator's ElevenLabs account to time the words." },
       music: { type: "boolean", default: true, description: "The scene's score in the cut (from make_score), if there is one" },
+      // 2026-11-23: the edit style (worker editstyle.js)
+      edit_style: { type: "string", enum: ["plain", "story"], default: "plain", description: "plain: the cut as before. story: the moody voiceover-edit look (see above)." },
+      transitions: { type: "string", enum: ["mixed", "flash", "whip", "glitch", "punch", "cut"], default: "mixed",
+        description: "story only: the change between shots. mixed rotates them; flash blurs to a bright haze and back; whip smears sideways; glitch splits the colours for 3 frames; punch starts the next shot zoomed in; cut is a plain cut." },
+      rain: { type: "boolean", default: false, description: "story only: falling rain streaks over every shot" },
+      hits: { type: "boolean", default: true, description: "story only: a whoosh, impact or glitch sound under each change (only when the cut has music, voice or effects)" },
+      beat_sync: { type: "boolean", default: true, description: "story only: with music, each shot may end up to 0.33 s early so the change lands on a beat" },
+      grade: { type: "boolean", default: true, description: "story only: the darker teal grade and vignette" },
+      title: { type: "string", maxLength: 60, description: "story only: words shown large over the first 3.5 s (Latin letters)" },
+      handle: { type: "string", maxLength: 30, description: "story only: a small tag above the middle for the whole cut, e.g. the creator's @name" },
     }, required: ["project_id"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
   { name: "get_cut", title: "Get the scene's cut",
@@ -936,9 +950,13 @@ async function callTool(uid: string, name: string, a: Args) {
                                                     and kind = 'music' and in_cut and status = 'done' order by created_at desc limit 1`);
       const opts = { fade: a.fade !== false, end_card: a.end_card !== false, voice: a.voiceover !== false, sfx: a.sound_effects !== false,
                      captions: a.captions === true,
-                     music_path: score ? `${uid}/audio/music/${score.id}.mp3` : null };
+                     music_path: score ? `${uid}/audio/music/${score.id}.mp3` : null,
+                     style: a.edit_style === "story" ? { preset: "story", transitions: a.transitions ?? "mixed", rain: a.rain === true,
+                       hits: a.hits !== false, beat_sync: a.beat_sync !== false, grade: a.grade !== false,
+                       title: typeof a.title === "string" ? a.title.slice(0, 60) : null, handle: typeof a.handle === "string" ? a.handle.slice(0, 30) : null } : null };
       const [r] = await asUser(uid, (tx) => tx`select studio.request_assembly(${scene}, ${format}, ${tx.json(opts)}) as id`);
-      return text(`The cut is being made (${format}${opts.end_card ? ", with Made with anlim.ai on the last shot" : ""}); usually under a minute (longer with slowed shots). ` +
+      return text(`The cut is being made (${format}${opts.style ? ", story edit style" : ""}${opts.end_card ? ", with Made with anlim.ai on the last shot" : ""}); ` +
+        `usually under a minute (longer with slowed shots${opts.style ? " or the story style" : ""}). ` +
         "Get it with get_cut.", { cut_id: r.id });
     }
     case "get_cut": {

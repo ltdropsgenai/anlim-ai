@@ -149,11 +149,16 @@ export const QUALITY_HELP: Record<string, string> = {
 };
 // a scene cut (studio.assemblies, 2026-11-19)
 export type CutFormat = "16x9" | "9x16" | "4x5" | "1x1" | "4x3" | "3x4" | "21x9";
+// 2026-11-23: a cut's edit style (worker editstyle.js); null or absent is the plain cut
+export type EditTransition = "mixed" | "flash" | "whip" | "glitch" | "punch" | "cut";
+export type EditStyle = { preset: "story"; transitions: EditTransition; grade: boolean; push: boolean; rain: boolean; hits: boolean;
+                          beat_sync: boolean; title: string | null; handle: string | null };
 export type Cut = {
-  id: string; format: CutFormat; options: { fade: boolean; end_card: boolean; music_path: string | null; voice?: boolean; sfx?: boolean };
+  id: string; format: CutFormat; options: { fade: boolean; end_card: boolean; music_path: string | null; voice?: boolean; sfx?: boolean; style?: EditStyle | null };
   status: "queued" | "running" | "done" | "failed"; duration_s: string | null; error: string | null; skipped: number[]; shots: number;
   report: { checks: { name: string; ok: boolean; detail: string }[]; notes: string[]; voiceovers?: number; narration?: boolean; effects?: number;
-            captions?: { lines: number; srt: string } | null } | null;
+            captions?: { lines: number; srt: string } | null;
+            style?: { preset: string; changes: Record<string, number>; on_beat: number; hits: number } | null } | null;
   watermarked: boolean; url: string | null; srt_url?: string | null; created_at: string;
 };
 export type Series = {
@@ -375,7 +380,8 @@ export const api = {
   narrationStart: (id: string, atS: number) => call<{ ok: true }>({ op: "narration_start", id, at_s: atS }),
   audio: (sceneId: string) => call<{ items: AudioJob[] }>({ op: "audio_list", scene_id: sceneId }).then((r) => r.items),
   useAudio: (id: string, on: boolean) => call<{ ok: true }>({ op: "audio_use", id, on }),
-  makeCut: (sceneId: string, format: CutFormat, opts: { fade: boolean; end_card: boolean; music_path: string | null; voice?: boolean; sfx?: boolean; captions?: boolean }) =>
+  makeCut: (sceneId: string, format: CutFormat, opts: { fade: boolean; end_card: boolean; music_path: string | null; voice?: boolean; sfx?: boolean; captions?: boolean;
+                                                         style?: EditStyle | null }) =>
     call<{ id: string }>({ op: "assembly_create", scene_id: sceneId, format, ...opts }),
   cuts: (sceneId: string) => call<{ items: Cut[] }>({ op: "assemblies", scene_id: sceneId }).then((r) => r.items),
   updateSeries: (seriesId: string, look?: Look, style?: string) =>
