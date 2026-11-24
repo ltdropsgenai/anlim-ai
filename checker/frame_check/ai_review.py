@@ -122,6 +122,9 @@ def shot_context(d):
 # 2026-11-24 (crowd test, Londi): on a market clip the review failed ~6 frames for shoppers the tracking camera
 # brought into view and for stalls it revealed, which buried the one real defect (a woman vanishing in open view
 # at 0.33 s). Crowd shots get their own head-count reading.
+CROWD_VERIFY = ("\nThis is a crowd shot: background extras are expected and may differ from the start frame; extras or stalls "
+                "that enter through a frame edge or are revealed by the camera are NOT defects (REJECT those). Confirm only an "
+                "extra who appears or vanishes in open view, splits, merges or changes clothes.")
 CROWD = """- Crowd shot: the extras the action calls for (shoppers, fans, students, passers-by...) are expected and are NOT
   the cast. HEAD COUNT counts the cast only. Extras who walk in through a frame edge, step out from behind someone,
   or come into view as the camera moves are NOT HEAD COUNT, SET LAYOUT or NO MATERIALISING failures, and neither are
@@ -405,11 +408,14 @@ def verify_fail(d, model="claude-sonnet-5-5", per_rule=3, log=print, force=False
     log = log or (lambda *x: None)
     key = os.environ.get("ANTHROPIC_API_KEY")       # None = offline: saved decisions only, never a call
     man = load(d); ver = read_verdicts(d); cam = code_camera_ok(d)
+    crowd_edges(d, ver)                       # 2026-11-24: the verdict shot_qc uses comes from here, not from cmd_apply
     cv, rf, rg = clip_verdict(man, ver, cam, spec_text_forbidden(d))
     # Not a FAIL: nothing to verify. Return the FLAG reasons too (bug S1, 2026-11-10: they were returned as
     # [], so shot_qc showed an AI FLAG with no reason).
     if cv != "FAIL": return cv, rf, rg, 0.0
     _, crefs = shot_context(d); start = next((r for r in crefs if "start frame" in r["label"]), None)
+    try: crowd = bool(json.load(open(os.path.join(d, "shot_spec.json"), encoding="utf-8")).get("crowd"))
+    except Exception: crowd = False
     outs = {f["key"]: f["out"] for f in man["frames"]}
     pi, pw, pr, po = PRICES.get(model, (2.0, 2.5, 0.1, 10.0)); usd = 0.0; kept, dropped = [], []
     cache = {}; calls = 0
@@ -446,7 +452,7 @@ def verify_fail(d, model="claude-sonnet-5-5", per_rule=3, log=print, force=False
             if start and os.path.exists(start["src"]):
                 content += [{"type": "text", "text": "Approved start frame:"}, img_block(start["src"], 1280)[0]]
             content += [{"type": "text", "text": "Frame to check:"}, img_block(os.path.join(d, outs[k]))[0],
-                        {"type": "text", "text": f"Claimed defect ({rule}): {claim}"}]
+                        {"type": "text", "text": f"Claimed defect ({rule}): {claim}" + (CROWD_VERIFY if crowd else "")}]
             calls += 1
             r, us = _verify_call(model, key, content)
             for u in us: usd += (int(u.get("input_tokens") or 0) * pi + int(u.get("output_tokens") or 0) * po) / 1e6
@@ -493,6 +499,8 @@ def cmd_apply(a):
                     "note": "PASS given but not checked: " + ", ".join(unchecked)})
     low = verify_against_start(a.dir, man, ver)
     if low: print(f"  start-frame check: {low} FAIL frame(s) lowered to UNSURE - their flagged regions match the approved start frame")
+    ce = crowd_edges(a.dir, ver)
+    if ce: print(f"  crowd shot: {ce} head-count/materialising/set failure(s) at the frame edge lowered to notes")
     for f in man["frames"]:
         if f["key"] in ver: f["ai"] = ver[f["key"]]
     write_viewer(man, a.dir)
@@ -587,6 +595,48 @@ def verify_against_start(d, man, ver):
                     if norm(x) == "FAIL" and r.upper() in (i.get("rule") or "").upper(): v["checks"][r] = "UNSURE"
             v.setdefault("issues", []).append({"rule": "START CHECK", "region": "-",
                 "note": "every region flagged here matches the approved start frame; lowered from FAIL - look if in doubt"})
+    return lowered
+
+# 2026-11-24 (crowd re-test): with the CROWD wording in the review, the market clip still failed 8 frames of NO
+# MATERIALISING for an old man walking in at the left edge, and HEAD COUNT for vendors at the top corners. The issue
+# boxes say where: in a crowd shot, a head-count, materialising or set flag whose box touches the frame edge is a
+# person or stall entering view, which the crowd rules allow. It stays as a note, not a failure.
+CROWD_EDGE_RULES = ("HEAD COUNT", "NO MATERIALISING", "SET LAYOUT")
+EDGE = 0.06
+
+# Only something ENTERING at the edge is forgiven: a box over half the frame (a whole set redrawn, or a jump to
+# another shot) and a person missing or vanishing (the cast leaving, a pop) stay failures. First version lowered
+# "the fox is missing" (box touching the top edge) and full-frame "the market is rebuilt" boxes (2026-11-24).
+GONE = re.compile(r"\b(missing|vanish\w*|disappear\w*|gone|absent|no longer|removed|lost)\b", re.I)
+
+def _edge(b):
+    return ((b[2] - b[0]) * (b[3] - b[1]) < 0.5
+            and (b[0] <= EDGE or b[1] <= EDGE or b[2] >= 1 - EDGE or b[3] >= 1 - EDGE))
+
+def crowd_edges(d, ver):
+    """Crowd shots only (shot_spec.json "crowd"): lower CROWD_EDGE_RULES failures whose every boxed issue touches
+    the frame edge. Returns the number of rule failures lowered."""
+    sp = os.path.join(d, "shot_spec.json")
+    if not os.path.exists(sp) or not json.load(open(sp, encoding="utf-8")).get("crowd"): return 0
+    lowered = 0
+    for v in ver.values():
+        checks = v.get("checks") or {}
+        for rule in CROWD_EDGE_RULES:
+            key = next((r for r, x in checks.items() if r.upper() == rule and norm(x) == "FAIL"), None)
+            if not key: continue
+            iss = [i for i in v.get("issues", []) if rule in (i.get("rule") or "").upper()]
+            boxes = []
+            for i in iss:
+                b = i.get("box")
+                try: b = [max(0.0, min(1.0, float(x))) for x in b] if isinstance(b, list) and len(b) == 4 else None
+                except (TypeError, ValueError): b = None
+                boxes.append(b)
+            if not boxes or any(b is None or not _edge(b) for b in boxes): continue
+            if any(GONE.search(i.get("note") or "") for i in iss): continue
+            checks[key] = "UNSURE"; lowered += 1
+            for i in iss: i["rule"] = f"CROWD EDGE ({rule}, note)"
+        if (v.get("verdict") or "").upper() == "FAIL" and not any(norm(x) == "FAIL" for x in checks.values()):
+            v["verdict_given"] = v.get("verdict_given") or "FAIL"; v["verdict"] = "UNSURE"
     return lowered
 
 # Clip verdict policy, from the 55-clip benchmark (2026-11-10; tuned on those clips, so check it on new ones).
