@@ -108,6 +108,14 @@ const oneTake = (shot) => CUT_WORDS.test(`${shot.action || ""} ${shot.camera || 
 const MOUTHS = "[MOUTHS] Nobody speaks or mouths words: lips stay closed and still. Faces stay alive through the eyes, brows " +
   "and small head movements. The voice and its lip movements are added afterwards.";
 
+// 2026-11-24 (crowd test, Londi): 2 of 3 crowd clips came out with a frozen crowd (a stadium painted on, a class that
+// never moved) and the market's shoppers popped in and out. Crowd shots say the crowd stays alive and stable.
+const CROWD = "[CROWD] The background people stay alive the whole time: they keep doing what the action gives them " +
+  "(cheering, walking, browsing, or small natural movements while they watch or listen); nobody freezes like a painted backdrop. " +
+  "They stay the same people in the same clothes: each one walks in or out through a frame edge or behind something, " +
+  "never appears, vanishes or splits in the open. Their mouths stay closed unless the action has them cheer, shout, sing or talk.";
+export const crowdLine = (action) => wantsExtras(action) ? CROWD : null;
+
 export function prompt(shot, chars) {
   const moving = MOVES.test(shot.action);
   const minimax = /^minimax\//.test(shot.endpoint || "");
@@ -122,6 +130,7 @@ export function prompt(shot, chars) {
     shot.location_name ? `[SET] ${shot.location_name}${shot.location_description ? ` - ${shot.location_description}` : ""}` : null,
     `[ACTION] ${shot.action}`,
     shot.has_voiceover && chars.some((c) => (c.kind || "person") === "person") ? MOUTHS : null,
+    crowdLine(shot.action),
     moving ? PATH_RULE : null,
     moving && chars.filter((c) => c.kind !== "object").length > 1 ? WATCH_RULE : null,
     WALKING.test(shot.action) ? WALK_END : null,
@@ -198,6 +207,7 @@ export function checkerSpec(shot, chars, clip, out, startFrameLocal, fps = 24) {
               (wantsText(shot.action) ? " Text the action asks for is expected." : " No text or letters.")]
       .filter(Boolean).join(" "),
     people: peopleCount(chars, shot.action),
+    crowd: wantsExtras(shot.action) || undefined,       // 2026-11-24: the checker's crowd rules (ai_review CROWD)
     subjects: subjects(chars),
     start_frame: startFrameLocal,
     camera: isLocked(shot) ? "locked" : undefined,     // a camera the action describes is not checked as locked

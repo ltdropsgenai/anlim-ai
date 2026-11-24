@@ -24,9 +24,13 @@ what the clip is meant to show. Describe only what you can see happen, as a sequ
 who is in it (by appearance), what each person does with their hands, body and any object, in which ORDER,
 in which DIRECTION (who gives to whom, who takes from whom, who enters or leaves, toward or away from camera),
 and how it ends. Say "not visible" rather than guessing. Note any camera move.
-Answer with ONE JSON object: {"people": "...", "sequence": ["t=..: ...", ...], "ends_with": "...", "camera": "..."}"""
+If there are background people or a crowd, say what they do across the frames: whether they visibly move at all
+(compare the same people from frame to frame; a crowd that does not change between frames is "frozen") and whether
+anyone appears or vanishes away from the frame edges.
+Answer with ONE JSON object: {"people": "...", "sequence": ["t=..: ...", ...], "ends_with": "...", "camera": "...",
+"crowd": "<what the background people do, or 'frozen', or 'none'>"}"""
 
-COMPARE_VERSION = 2
+COMPARE_VERSION = 3                # 3: crowd (2026-11-24)
 COMPARE = """You compare a blind description of a generated video clip with the action the shot was written for.
 The description was made WITHOUT knowing the action, so trust it over assumptions.
 The clip STARTS on a still image that a person already approved. Whatever the first frame (t=0) shows - who is
@@ -42,6 +46,11 @@ Verdict:
 - PASS: the described events match the action, in order and direction. Small details the description could not
   see (a nod, a look) are not failures - say they are unconfirmed.
 Ignore camera moves (checked elsewhere) unless the action itself is a camera move.
+Crowds (2026-11-24): when the action gives a crowd or background people something to do (cheer, wave, walk, browse,
+dance, clap) and the description says they are frozen or never do it, that is a FLAG ("the crowd never moves").
+A quiet crowd (watching, listening, sitting) that is completely frozen is also a FLAG ("the crowd stays frozen like a
+picture"): real people shift, blink and turn their heads. Background people who appear or vanish away from the frame
+edges are a FLAG. None of these is a FAIL on its own.
 "matches" and "differs" are shown to the creator, who never sees the description: write them about the clip ("the
 clip shows...", "the hedgehog never..."), never "the description" (2026-11-23 tutorial test).
 Answer with ONE JSON object: {"verdict": "PASS|FLAG|FAIL", "matches": "...", "differs": "...", "confidence": "high|medium|low"}"""

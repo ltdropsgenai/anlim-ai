@@ -109,6 +109,7 @@ def shot_context(d):
     if sp.get("cast"): t.append("- Cast: " + "; ".join(f"{k}: {v}" for k, v in sp["cast"].items()))
     if sp.get("people") is not None: t.append(f"- People in frame: {sp['people']} (head count, including extras)")
     if sp.get("camera"): t.append(f"- Camera: {sp['camera']}")
+    if sp.get("crowd"): t.append(CROWD)
     for k in ("wardrobe", "props", "blocking", "notes"):
         if sp.get(k): t.append(f"- {k.capitalize()}: {sp[k]}")
     refs = []
@@ -117,6 +118,17 @@ def shot_context(d):
         for q in (paths if isinstance(paths, list) else [paths])[:1]:
             refs.append({"label": f"character reference: {name}", "src": q})
     return "\n".join(t) + "\n", refs[:3]
+
+# 2026-11-24 (crowd test, Londi): on a market clip the review failed ~6 frames for shoppers the tracking camera
+# brought into view and for stalls it revealed, which buried the one real defect (a woman vanishing in open view
+# at 0.33 s). Crowd shots get their own head-count reading.
+CROWD = """- Crowd shot: the extras the action calls for (shoppers, fans, students, passers-by...) are expected and are NOT
+  the cast. HEAD COUNT counts the cast only. Extras who walk in through a frame edge, step out from behind someone,
+  or come into view as the camera moves are NOT HEAD COUNT, SET LAYOUT or NO MATERIALISING failures, and neither are
+  stalls, seats or buildings the camera reveals; extras may stand or move differently from the approved start frame.
+  FAIL HEAD COUNT for an extra only when they appear or vanish in open view (away from a frame edge, not hidden
+  behind someone or something), split into two, merge with another person, or change clothes or hair. Background
+  mouths that chatter while the action has the crowd quiet fail MOUTHS."""
 
 QUIET = """Write an issue ONLY for something you see that is wrong or doubtful in THIS frame. Do not write
 issues saying references or a spec are missing: mark those rules NOT CHECKED in `checks` and move on.
