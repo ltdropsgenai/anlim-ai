@@ -23,6 +23,8 @@ export const lookWords = (look) => look === "photoreal"
 // exact count. The test was built on Londi's own shots, which never had extras.
 const EXTRAS = /\b(crowds?|crowded|busy|bustling|passers?-?by|pedestrians|audience|spectators|fans|onlookers|strangers|people|others|everyone|team(mates)?|players|class(mates|room)?|students|guests|customers|shoppers|commuters|dancers|band|choir|army|soldiers|party|wedding|market|stadium|concert|festival|parade|protest|queue)\b/i;
 export const wantsExtras = (action) => EXTRAS.test(action || "");
+// someone with a face in the shot (for the gaze line): a person word or a crowd word
+const PEOPLE = /\b(man|men|woman|women|boy|girl|kid|child|children|person|people|player|players|goalkeeper|keeper|striker|teacher|students?|crowd|fans?|he|she|they|her|his)\b/i;
 export const peopleCount = (chars, action = "") =>
   !chars.length || wantsExtras(action) || chars.some((c) => c.kind === "animal") ? undefined
     : chars.filter((c) => (c.kind || "person") === "person").length;
@@ -42,7 +44,7 @@ function heightOrder(chars) {
 
 // Bump on every prompt change; the worker prints it at start and saves it with each job (2026-11-12: a worker started
 // before a prompt change rendered 3 clips with the old prompt and nothing showed it).
-export const COMPILER_VERSION = "2026-11-22.1";
+export const COMPILER_VERSION = "2026-11-24.1";   // crowd, slow motion, gaze, action camera
 
 // Actions that move a character across the floor (same idea as frame_check/passthrough_check.MOVES).
 const MOVES = /\b(walk|walks|walking|step|steps|run|runs|running|cross|crosses|goes|go to|moves? to|dances?)\b/i;
@@ -116,11 +118,27 @@ const CROWD = "[CROWD] The background people stay alive the whole time: they kee
   "never appears, vanishes or splits in the open. Their mouths stay closed unless the action has them cheer, shout, sing or talk.";
 export const crowdLine = (action) => wantsExtras(action) ? CROWD : null;
 
+// 2026-11-24 (Londi, first end-to-end story cut): three things the reference edit had and our shots did not.
+// 1. Slow motion: the cut's speed setting stops at 50% and smears there; a strike slowed to 60% still read as real time.
+//    When the shot asks for slow motion, the video model is asked to film it that way (a high-speed camera look).
+const SLOW = /\b(slow[ -]?motion|slow[ -]?mo|slowmo|in slow mo)\b/i;
+export const slowLine = (action) => SLOW.test(action || "")
+  ? "[SPEED] Filmed in true slow motion, like a high-speed camera: every movement, the ball, the rain and any spray move " +
+    "about four times slower than real time, smooth and continuous, with no stutter and no freeze." : null;
+// 2. Gaze: the goalkeeper faced the camera instead of the play. People look at what they are doing, not into the lens.
+export const GAZE = "People look at what they are doing or watching (the ball, the play, the person speaking, the " +
+  "thing in their hands), never into the camera, unless the description asks for it.";
+// 3. Camera: fast action with no camera words was often filmed from a still camera; the reference's shots move.
+//    Only when the creator wrote no camera words and the action is energetic; a camera they name always wins.
+const ENERGETIC = /\b(sprints?|sprinting|dribbles?|dribbling|strikes?|kicks?|kicking|shoots?|shooting|scores?|dives?|diving|chases?|chasing|races?|racing|leaps?|jumps?|tackles?|slides?|fights?|punch(es)?|swings?|spins?|charges?|celebrates?)\b/i;
+export const actionCameraLine = (shot) => !shot.camera && !describesCamera(shot.action) && ENERGETIC.test(shot.action || "")
+  ? "[CAMERA] A moving, cinematic camera that follows the action (tracking alongside, or a fast push-in); not a static view." : null;
+
 export function prompt(shot, chars) {
   const moving = MOVES.test(shot.action);
   const minimax = /^minimax\//.test(shot.endpoint || "");
   const camera = minimax && isLocked(shot) ? MINIMAX_STATIC : shot.camera ? `[CAMERA] ${shot.camera}`
-    : cameraFree(shot) ? "[CAMERA] As the action describes." : null;
+    : cameraFree(shot) ? "[CAMERA] As the action describes." : actionCameraLine(shot);
   return [
     minimax && isLocked(shot) ? "[Static shot]" : null,
     shot.style_prompt ? `[STYLE] ${shot.style_prompt}`
@@ -131,6 +149,8 @@ export function prompt(shot, chars) {
     `[ACTION] ${shot.action}`,
     shot.has_voiceover && chars.some((c) => (c.kind || "person") === "person") ? MOUTHS : null,
     crowdLine(shot.action),
+    slowLine(shot.action),
+    chars.length || PEOPLE.test(shot.action || "") ? `[GAZE] ${GAZE}` : null,
     moving ? PATH_RULE : null,
     moving && chars.filter((c) => c.kind !== "object").length > 1 ? WATCH_RULE : null,
     WALKING.test(shot.action) ? WALK_END : null,

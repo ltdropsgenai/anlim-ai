@@ -20,8 +20,11 @@ show the bodies doing what the instruction says, the way they would in the real 
   the seat sitting on nothing, NOT floating above it, NOT merged into it;
 - standing or walking: feet on the floor, not floating, not sunk into the floor or furniture;
 - holding or touching: the hand really holds or touches the thing; nothing hangs in the air;
-- nobody passes through furniture or another body; limbs are not missing or duplicated.
-Ignore faces, clothes, heights, colours, lighting and the room's decor: other checks cover those.
+- nobody passes through furniture or another body; limbs are not missing or duplicated;
+- gaze: each person looks at what they are doing or watching (the ball, the play, the person they talk to, the thing
+  in their hands), NOT into the camera, unless the instruction asks them to look at the camera or the viewer
+  (2026-11-24: a goalkeeper drawn facing the lens instead of the attacker; nothing flagged it).
+Ignore the faces' identity, clothes, heights, colours, lighting and the room's decor: other checks cover those.
 Answer with ONE JSON object:
 {"people": [{"name": "<name or position>", "doing": "<what they actually do, at most 12 words>",
              "ok": true|false, "problem": "<if not ok: at most 20 words>", "confidence": "high|medium|low"}],

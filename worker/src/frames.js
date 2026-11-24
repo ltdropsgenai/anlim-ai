@@ -26,7 +26,7 @@ import * as storage from "./storage.js";
 import * as moderate from "./moderate.js";
 import * as fal from "./providers/fal.js";
 import * as mock from "./providers/mock.js";
-import { lookWords, subjects, wantsExtras, wantsText } from "./compile.js";
+import { GAZE, lookWords, subjects, wantsExtras, wantsText } from "./compile.js";
 
 const providers = { fal, mock };
 const provider = () => providers[process.env.IMAGE_PROVIDER || "fal"];
@@ -106,7 +106,7 @@ export function setupPrompt(instruction, names, heights = [], look, chars = []) 
     `Place ${names.length > 1 ? "them" : "the character"} in the setting of image 1: ${instruction.trim().replace(/\.?$/, ".")} ` +
     (sizes.length ? sizes.join(" ") + " " : "") +
     `Keep the setting of image 1 exactly as it is: same layout, props, colors, lighting, ${lookWords(look)} and camera ` +
-    `framing. ${wantsExtras(instruction) ? "Add only the extras the instruction asks for." : "Nobody else."} ${wantsText(instruction) ? "Only the text the instruction asks for." : "No new text."}`;
+    `framing. ${GAZE} ${wantsExtras(instruction) ? "Add only the extras the instruction asks for." : "Nobody else."} ${wantsText(instruction) ? "Only the text the instruction asks for." : "No new text."}`;
 }
 
 // Start frame from the description (mode "prompt", 2026-11-19): a new project's first shot has no room, cast or
@@ -126,7 +126,7 @@ export function framePrompt(instruction, look, style = null, chars = [], aspect 
     "Draw only the moment the clip starts, before the action happens. Show exactly the subjects the description names " +
     "and no other people, animals or characters: if it names one subject, show only that one (background extras only " +
     "if the description asks for a crowd or a busy place). Keep the main subject fully inside the frame. Use the framing " +
-    `the description asks for (close-up, wide shot...); if it asks for none, a medium shot of the subject. ${looks}` +
+    `the description asks for (close-up, wide shot...); if it asks for none, a medium shot of the subject. ${GAZE} ${looks}` +
     (style ? ` Style: ${style.trim().replace(/\.?$/, ".")}` : "") +
     (cast ? ` Characters: ${cast}.` : "") +
     (wantsText(instruction) ? " Only the text the description asks for, spelled correctly; no captions, no logos, no watermark."

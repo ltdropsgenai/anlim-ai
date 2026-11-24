@@ -28,7 +28,9 @@ const ff = (args) => exec("ffmpeg", ["-nostdin", "-y", "-v", "error", ...args], 
 export const TRANSITIONS = ["mixed", "flash", "whip", "zoom", "spin", "glitch", "punch", "cut"];
 // the reference's 16 shot changes: 3 flashes, 3 whips (one sideways, one zooming, one spinning), 1 glitch, 1 punch, 6-8
 // straight cuts; "mixed" keeps that feel. 2026-11-24: "zoom" and "spin" added (the reference's whips at 23 s and 26.6 s).
-const MIXED = ["flash", "whip", "cut", "flash", "punch", "zoom", "glitch", "cut", "spin", "cut"];
+// 2026-11-24 (Londi, first end-to-end story cut): "I didn't see the camera swings". A 5-shot cut has 4 changes and the
+// old order (flash, whip, cut, flash...) never reached zoom or spin, so the swings come first now.
+const MIXED = ["zoom", "whip", "flash", "spin", "cut", "punch", "whip", "glitch", "flash", "cut"];
 const EDGE = 5;            // frames each side of a shot change for flash and whip (0.21 s at 24 fps)
 
 /** The cut's style from its options, checked again here (request_assembly checks it first); null when plain. */
@@ -125,11 +127,16 @@ export function shotGraph(inLabel, W, H, frames, s, kIn, kOut, tag = "s", curves
     chain.push(`rgbashift=rh=-${px}:bh=${px}:gv=${Math.round(px / 2)}:edge=wrap:enable='${on}'`, `noise=alls=35:allf=t:enable='${on}'`);
   }
   // whip: a sideways smear, the picture sliding out to the left and the next one sliding in from the right
-  const step = 0.08;                                              // of the width per frame: 40% over the EDGE frames
+  // 2026-11-24: 0.08 a frame (40% of the width) under a W/14 blur read as a still smear, not a swing (Londi). Now 80% of
+  // the width each side (out, then in from where the slide left off) under a lighter blur, so the movement shows.
+  const step = 0.16;                                              // of the width per frame: 80% over the EDGE frames
   if (kOut === "whip") chain.push(`scroll=h=${step}:enable='gte(n,${frames - EDGE})'`);
   if (kIn === "whip") chain.push(`scroll=h=${step}:hpos=${(1 - EDGE * step).toFixed(2)}:enable='lt(n,${EDGE})'`);
   const wh = [kIn === "whip" ? `lt(n,${EDGE})` : null, kOut === "whip" ? `gte(n,${frames - EDGE})` : null].filter(Boolean);
-  if (wh.length) chain.push(`avgblur=sizeX=${Math.round(W / 14)}:sizeY=1:enable='${wh.length > 1 ? `bitor(${wh.join(",")})` : wh[0]}'`);
+  if (wh.length) chain.push(`avgblur=sizeX=${Math.round(W / 30)}:sizeY=1:enable='${wh.length > 1 ? `bitor(${wh.join(",")})` : wh[0]}'`);
+  // the 2 frames each side of the change move fastest: a heavy smear there, which also hides the wrap seam of the slide
+  const wh2 = [kIn === "whip" ? "lt(n,2)" : null, kOut === "whip" ? `gte(n,${frames - 2})` : null].filter(Boolean);
+  if (wh2.length) chain.push(`avgblur=sizeX=${Math.round(W / 10)}:sizeY=1:enable='${wh2.length > 1 ? `bitor(${wh2.join(",")})` : wh2[0]}'`);
   // flash: mixes towards a blurred, brighter copy: fully at the change, nothing EDGE frames from it
   const fIn = kIn === "flash", fOut = kOut === "flash";
   if (fIn || fOut) {
