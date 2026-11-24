@@ -65,6 +65,8 @@ def _real(v):
 
 TOKEN = _real(os.environ.get("CHECKER_TOKEN", "")) or _real(_env_file_token())
 SLOTS = threading.BoundedSemaphore(int(os.environ.get("CHECKER_MAX_JOBS", "2")))
+# 2026-11-23 (review): lip sync checks one at a time, apart from the clip checks (they are short and need no API)
+LIPSYNC_SLOTS = threading.BoundedSemaphore(1)
 # 2026-11-18: the key lived only in the PowerShell window it was typed into; after a reboot the checker started
 # without it, the frame checks quietly said "not checked (no API key)" and every clip check died (ai_review exits
 # with SystemExit, which killed the request: the worker saw "fetch failed" 5 times). Now: also read from worker\.env.
@@ -244,8 +246,9 @@ def run_lipsync(body):
         return {"verdict": body.get("fake_verdict", "OK" if mode == "face" else "PASS"), "reasons": [], "why": None, "drift": []}
     if FC not in sys.path: sys.path.insert(0, FC)
     import lipsync_check
-    r = (lipsync_check.check_face(body["video"], body["voice"], float(body.get("from_s") or 0)) if mode == "face"
-         else lipsync_check.check_sync(body["video"], body["voice"]))
+    with LIPSYNC_SLOTS:
+      r = (lipsync_check.check_face(body["video"], body["voice"], float(body.get("from_s") or 0)) if mode == "face"
+           else lipsync_check.check_sync(body["video"], body["voice"]))
     r["drift"] = []
     return r
 

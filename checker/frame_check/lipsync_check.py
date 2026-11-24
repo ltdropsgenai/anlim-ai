@@ -119,9 +119,12 @@ def _shift(a, lag):
 def _measure(video, voice, start_s=0.0):
     m = Mouths()
     mouth, faceh = [], []
-    for f in _frames(video, start_s):
-        g, fh = m.measure(f)
-        mouth.append(g); faceh.append(fh)
+    try:
+        for f in _frames(video, start_s):
+            g, fh = m.measure(f)
+            mouth.append(g); faceh.append(fh)
+    finally:
+        m.lm.close()   # the checker runs for days: free the landmarker's graph and threads after every check (2026-11-23 review)
     mouth, faceh = np.array(mouth), np.array(faceh)
     rms = _voice_rms(voice, len(mouth)) if len(mouth) else np.array([])
     speech = rms > 0.15 * rms.max() if len(rms) and rms.max() > 0 else np.zeros(len(mouth), bool)
