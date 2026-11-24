@@ -1,3 +1,4 @@
+import { tr } from "./i18n";
 import { Platform } from "react-native";
 // anlim.ai Pro studio theme (2026-11-19, Londi: direction D's look with B's plain wording). @anlim
 // Near-black studio surfaces, one tungsten-orange accent (no competitor uses it: Higgsfield is lime, OpenArt magenta),
@@ -24,4 +25,4 @@ export const verdictColor = (v: string | null) =>
   v === "PASS" ? c.pass : v === "FAIL" ? c.fail : v === "FLAG" || v === "NOT_REVIEWED" ? c.flag : c.muted;
 // plain words (direction B): what the check means for the creator, not the checker's term
 export const verdictLabel = (v: string | null) =>
-  v === "NOT_REVIEWED" ? "Take a look" : v === "FLAG" ? "Your call" : v === "PASS" ? "Checked ✓" : v === "FAIL" ? "Problem found" : "Not checked";
+  tr(v === "NOT_REVIEWED" ? "Take a look" : v === "FLAG" ? "Your call" : v === "PASS" ? "Checked ✓" : v === "FAIL" ? "Problem found" : "Not checked");

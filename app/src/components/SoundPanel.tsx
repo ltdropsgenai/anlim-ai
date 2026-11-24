@@ -155,7 +155,7 @@ function LipSync({ shotId, voKey, setError }: { shotId: string; voKey: string; s
           </Pressable>
           <Text style={s.small}>{tr("Moves the mouths in the kept clip to this voiceover. fal bills {seconds} s for this {v1} s clip.", { seconds: q.seconds, v1: Number(q.clip_s).toFixed(1) })}</Text>
         </View>
-      ) : <Text style={s.small}>{q.why}</Text>)}
+      ) : <Text style={s.small}>{tMsg(q.why)}</Text>)}
     </View>
   );
 }

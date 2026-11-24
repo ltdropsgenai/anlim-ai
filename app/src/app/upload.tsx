@@ -9,7 +9,7 @@ import { api } from "../lib/api";
 import { supabase } from "../lib/supabase";
 import { c, font, pageBg } from "../lib/theme";
 import { LikenessConsent } from "../components/LikenessConsent";
-import { tr, trp } from "../lib/i18n";
+import { tr, trp, tMsg } from "../lib/i18n";
 
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
@@ -101,7 +101,7 @@ export default function Upload() {
           <View key={i} style={s.row}>
             <Text style={[s.name, { flex: 1 }]} numberOfLines={1}>{r.name}{r.seconds ? ` · ${r.seconds.toFixed(1)} s` : ""}</Text>
             {r.state === "uploading" ? <Text style={s.small}>{tr("Uploading…")}</Text>
-              : r.state === "failed" ? <Text style={[s.small, { color: c.fail }]}>{r.note}</Text>
+              : r.state === "failed" ? <Text style={[s.small, { color: c.fail }]}>{tMsg(r.note)}</Text>
               : <Pressable onPress={() => copy(r.id!)} accessibilityRole="button" style={s.idChip}>
                   <Text style={[{ color: c.ink, fontSize: 13 }, font.mono]}>{copied === r.id ? tr("Copied") : r.id}</Text>
                 </Pressable>}

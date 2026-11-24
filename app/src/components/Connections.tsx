@@ -37,7 +37,7 @@ export function Connections() {
       {conn && !editing && (<>
         <Text style={s.line}>{tr("Key ")}<Text style={font.mono}>{conn.key_hint}</Text>{acc?.tier ? tr(" · {tier} plan", { tier: acc.tier }) : ""}
           {acc?.character_limit ? tr(" · {v0} of {v1} credits used", { v0: (acc.character_count ?? 0).toLocaleString(locale()), v1: acc.character_limit.toLocaleString(locale()) }) : ""}</Text>
-        {acc?.note && <Text style={s.sub}>{acc.note}</Text>}
+        {acc?.note && <Text style={s.sub}>{tMsg(acc.note)}</Text>}
         {conn.status === "invalid" && <Text style={{ color: c.fail }}>{tr("ElevenLabs refused this key the last time it was used. Paste a new one.")}</Text>}
         <View style={s.row}>
           <Pressable style={s.ghost} disabled={busy} onPress={() => run(api.checkConnection)} accessibilityRole="button"><Text style={s.ghostText}>{tr("Check it")}</Text></Pressable>

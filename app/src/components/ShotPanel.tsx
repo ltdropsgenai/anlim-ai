@@ -476,7 +476,7 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
               {tr("Auto picks ")}{shot.route.label ?? MODEL_NAMES[shot.route.model_id] ?? shot.route.model_id}{tr(" for ")}{KIND_NAMES[shot.route.kind] ?? shot.route.kind}
               <Text style={{ color: c.sub, fontWeight: "400" }}> {tr("· series set to {v0}", { v0: QUALITY_NAMES[shot.quality] ?? "Balanced" })}</Text>
             </Text>
-            <Text style={s.sub}>{shot.route.reason}</Text>
+            <Text style={s.sub}>{tMsg(shot.route.reason)}</Text>
             <Pressable onPress={() => setShowWhy(!showWhy)} accessibilityRole="button" accessibilityState={{ expanded: showWhy }}>
               <Text style={{ color: c.accent, fontSize: 13 }}>{showWhy ? tr("Hide the test results") : tr("Why? See the test results")}</Text>
             </Pressable>

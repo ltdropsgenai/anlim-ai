@@ -234,7 +234,7 @@ export default function Review() {
             <Text style={{ color: c.ink, fontSize: 14 }}>
               {MODEL_NAMES[clip.model_id] ?? clip.model_id}{clip.route_kind ? tr(", Auto's pick for {kind}", { kind: KIND_NAMES[clip.route_kind] ?? clip.route_kind }) : tr(", chosen by you")}
             </Text>
-            {clip.route_reason ? <Text style={[s.sub, { marginTop: 4 }]}>{clip.route_reason}</Text> : null}
+            {clip.route_reason ? <Text style={[s.sub, { marginTop: 4 }]}>{tMsg(clip.route_reason)}</Text> : null}
             {clip.start_url && <Image source={{ uri: clip.start_url }} style={s.still} resizeMode="contain" accessibilityLabel={tr("Approved start frame")} />}
             <Pressable onPress={() => router.push({ pathname: "/shot/[id]", params: { id: clip.shot_id } })} accessibilityRole="link">
               <Text style={s.link}>{tr("Open the shot (end frame, render again)")}</Text>

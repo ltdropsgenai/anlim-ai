@@ -214,7 +214,7 @@ export default function SceneCut() {
           {x.report && (
             <View style={{ marginTop: 8 }}>
               {x.report.checks.map((k) => (
-                <Text key={k.name} style={[s.sub, { color: k.ok ? c.pass : c.fail }]}>{k.ok ? "✓" : "!"} {k.name}: {k.detail}</Text>
+                <Text key={k.name} style={[s.sub, { color: k.ok ? c.pass : c.fail }]}>{k.ok ? "✓" : "!"} {tMsg(k.name)}: {tMsg(k.detail)}</Text>
               ))}
               {x.report.notes.map((n) => <Text key={n} style={s.sub}>{tMsg(n)}</Text>)}
             </View>
