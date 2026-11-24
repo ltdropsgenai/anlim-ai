@@ -7,6 +7,7 @@ import { Logo } from "./Logo";
 import { OPERATOR } from "../lib/legal";
 import { tr } from "../lib/i18n";
 import { LanguagePicker } from "./LanguagePicker";
+import { LanguageMenu } from "./LanguageMenu";
 
 export function PublicFrame({ children, signedIn }: { children: ReactNode; signedIn?: boolean }) {
   const { width } = useWindowDimensions();
@@ -20,6 +21,7 @@ export function PublicFrame({ children, signedIn }: { children: ReactNode; signe
         </Pressable>
         <View style={{ flex: 1 }} />
         {!narrow && <Pressable onPress={() => router.navigate({ pathname: "/welcome", params: { at: "pricing" } })} accessibilityRole="link"><Text style={s.nav}>{tr("Pricing")}</Text></Pressable>}
+        <LanguageMenu signedIn={!!signedIn} />
         {signedIn ? (
           <Pressable style={({ pressed }) => [s.cta, pressed && s.pressed]} onPress={() => router.navigate("/")} accessibilityRole="link"><Text style={s.ctaText}>{tr("Open the studio")}</Text></Pressable>
         ) : (<>
@@ -59,7 +61,7 @@ export const Li = ({ children }: { children: ReactNode }) => <Text style={{ colo
 
 const s = StyleSheet.create({
   // 2026-11-20: no hairlines and no pill: the bar and the footer separate by space and value; the call to action is squared off
-  bar: { flexDirection: "row", alignItems: "center", gap: 22, paddingHorizontal: 28, paddingVertical: 18 },
+  bar: { flexDirection: "row", alignItems: "center", gap: 22, paddingHorizontal: 28, paddingVertical: 18, position: "relative", zIndex: 100 },
   row: { flexDirection: "row", alignItems: "center", gap: 10 },
   nav: { color: c.sub, fontSize: 14, fontWeight: "600" },
   cta: { backgroundColor: c.accent, borderRadius: 8, paddingHorizontal: 16, paddingVertical: 9,

@@ -3,6 +3,7 @@
 // a bottom tab bar on phones. Londi's rules hold throughout: no outlined boxes, no pills; the current page is a
 // tungsten tally light (the logo's recording dot) plus a warm wash and the glyph's orange accent; hover is light,
 // not a shape. Pages render inside it. @anlim
+import { LanguageMenu } from "./LanguageMenu";
 import { ReactNode, useEffect, useRef, useState } from "react";
 import { Animated, Platform, Pressable, Text, useWindowDimensions, View } from "react-native";
 import { Notices } from "./Notices";
@@ -262,7 +263,7 @@ export function Shell({ children }: { children: ReactNode }) {
   // light on hover. Upgrade is the one filled control (accent, squared corners). The balance lives in the sidebar on wide screens.
   const top = (
     <View style={{ flexDirection: "row", alignItems: "center", gap: narrow ? 10 : 18, paddingHorizontal: narrow ? 14 : 28,
-                   paddingVertical: narrow ? 10 : 14, backgroundColor: pageBg }}>
+                   paddingVertical: narrow ? 10 : 14, backgroundColor: pageBg, position: "relative", zIndex: 100 }}>
       {deep && (
         <Pressable onPress={() => (router.canGoBack() ? router.back() : router.navigate("/workspace"))} accessibilityRole="button"
           accessibilityLabel={tr("Back")} {...hoverProps("back")}
@@ -274,6 +275,7 @@ export function Shell({ children }: { children: ReactNode }) {
       {narrow && !deep && <Logo size={28} />}
       <Text style={[{ color: c.ink, fontSize: narrow ? 17 : 19, textTransform: "uppercase", letterSpacing: 0.4 }, font.display]} numberOfLines={1}>{title}</Text>
       <View style={{ flex: 1 }} />
+      <LanguageMenu signedIn={!!me} />
       {me?.is_admin && !expanded && (
         <Pressable onPress={() => router.navigate("/refunds" as never)} accessibilityRole="link" accessibilityLabel={tr("Refund requests")} {...hoverProps("refunds")}>
           <Text style={[{ color: hv("refunds") ? c.ink : c.muted, fontSize: 11, letterSpacing: 0.8, textTransform: "uppercase" }, font.mono]}>{tr("Refunds")}</Text>
