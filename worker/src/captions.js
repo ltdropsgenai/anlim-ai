@@ -62,13 +62,25 @@ const stamp = (s) => {
 };
 export const srt = (list) => list.map((c, i) => `${i + 1}\n${stamp(c.start)} --> ${stamp(c.end)}\n${c.text}\n`).join("\n");
 
-/** drawtext filters for the lines, bottom centre, white with a dark outline. Text goes through files, expansion off. */
-export async function filters(list, dir, font, W, H) {
-  const size = Math.round(Math.min(W, H) * 0.052), y = Math.round(H * (H > W ? 0.78 : 0.86));
+/** drawtext filters for the lines, bottom centre, white with a dark outline. Text goes through files, expansion off.
+ *  look "story" (2026-11-23, the edit style): the reference edit's captions, a serif with small capitals (font: Cinzel),
+ *  4.8% of the short side (smaller for long lines), a soft shadow instead of an outline, at 74% of the height. */
+export async function filters(list, dir, font, W, H, look = "plain") {
+  const story = look === "story", m = Math.min(W, H);
+  const y = Math.round(H * (story ? (H > W ? 0.74 : 0.84) : (H > W ? 0.78 : 0.86)));
   const out = [];
   for (const [i, c] of list.entries()) {
     const file = path.join(dir, `cc_${i}.txt`);
     await fs.writeFile(file, c.text);
+    if (story) {
+      // the font file holds the regular weight; a thin white border gives the reference's heavier strokes
+      const size = Math.round(Math.min(m * 0.048, (W * 0.9) / (c.text.length * 0.62)));
+      out.push(`drawtext=fontfile=${font}:textfile=${file}:expansion=none:fontsize=${size}:fontcolor=white:borderw=${Math.max(1, Math.round(size / 36))}:bordercolor=white` +
+               `:shadowcolor=black@0.7:shadowx=0:shadowy=${Math.max(1, Math.round(size / 14))}:x=(w-tw)/2:y=${y}-th/2` +
+               `:enable='between(t,${c.start.toFixed(3)},${c.end.toFixed(3)})'`);
+      continue;
+    }
+    const size = Math.round(m * 0.052);
     out.push(`drawtext=fontfile=${font}:textfile=${file}:expansion=none:fontsize=${size}:fontcolor=white:borderw=${Math.max(2, Math.round(size / 14))}` +
              `:bordercolor=black@0.85:x=(w-tw)/2:y=${y}-th/2:enable='between(t,${c.start.toFixed(3)},${c.end.toFixed(3)})'`);
   }

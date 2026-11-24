@@ -1,9 +1,9 @@
 // Scene cut: the scene's approved clips joined in shot order into one finished video, with music (the creator's track or a
-// generated score), voiceover and sound effects (worker assemble.js, 2026-11-19). @anlim
+// generated score), voiceover and sound effects (worker assemble.js, 2026-11-19). 2026-11-23: an edit style (editstyle.js). @anlim
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Link, useFocusEffect, useLocalSearchParams } from "expo-router";
-import { api, Cut, CutFormat } from "../../lib/api";
+import { api, Cut, CutFormat, EditTransition } from "../../lib/api";
 import { c, font, pageBg } from "../../lib/theme";
 import { Music, SoundPanel } from "../../components/SoundPanel";
 import { downloadFile } from "../../lib/download";
@@ -22,6 +22,15 @@ const FORMATS: { id: CutFormat; title: string; sub: string }[] = [
 ];
 // 2026-11-21: clips can be any project shape now. A clip in a different shape than the cut is shown whole, in the middle,
 // over a blurred fill (never cropped). The cut starts on the project's own shape.
+// 2026-11-23: the edit style's transitions, in the words the creator sees
+const TRANSITIONS: { id: EditTransition; title: string; sub: string }[] = [
+  { id: "mixed", title: "Mixed", sub: "A mix of the ones below, mostly flashes, whips and plain cuts" },
+  { id: "flash", title: "Flash", sub: "The picture blurs into a bright haze and the next shot comes out of it" },
+  { id: "whip", title: "Whip", sub: "A fast sideways smear from one shot into the next" },
+  { id: "glitch", title: "Glitch", sub: "Three frames of split colours and grain" },
+  { id: "punch", title: "Punch-in", sub: "The next shot starts zoomed in and snaps back" },
+  { id: "cut", title: "Plain cut", sub: "No transition; the grade, push-in and the rest still apply" },
+];
 const STATUS: Record<string, string> = { queued: "Waiting to start", running: "Cutting…", done: "Ready", failed: "Failed" };
 
 export default function SceneCut() {
@@ -36,6 +45,14 @@ export default function SceneCut() {
   const [voiceOn, setVoiceOn] = useState(true);
   const [sfxOn, setSfxOn] = useState(true);
   const [captionsOn, setCaptionsOn] = useState(false);   // 2026-11-23: captions from the voiceovers and narration
+  // 2026-11-23: the edit style (the look of the reference voiceover edit Londi sent)
+  const [story, setStory] = useState(false);
+  const [trans, setTrans] = useState<EditTransition>("mixed");
+  const [rain, setRain] = useState(false);
+  const [hits, setHits] = useState(true);
+  const [beats, setBeats] = useState(true);
+  const [styleTitle, setStyleTitle] = useState("");
+  const [handle, setHandle] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aspect, setAspect] = useState("16:9");
@@ -67,7 +84,9 @@ export default function SceneCut() {
 
   async function make() {
     setBusy(true); setError(null);
-    try { await api.makeCut(scene, format, { fade, end_card: card, music_path: music?.path ?? null, voice: voiceOn, sfx: sfxOn, captions: captionsOn }); await load(); }
+    const style = story ? { preset: "story" as const, transitions: trans, grade: true, push: true, rain, hits, beat_sync: beats,
+                            title: styleTitle.trim() || null, handle: handle.trim() || null } : null;
+    try { await api.makeCut(scene, format, { fade, end_card: card, music_path: music?.path ?? null, voice: voiceOn, sfx: sfxOn, captions: captionsOn, style }); await load(); }
     catch (e) { setError((e as Error).message); }
     setBusy(false);
   }
@@ -105,6 +124,43 @@ export default function SceneCut() {
         {captionsOn && <Text style={s.sub}>The words of the voiceovers and the narration appear at the bottom as they are spoken, and you also get a .srt file
           to upload to YouTube or TikTok. ElevenLabs times the words (once per take, on your ElevenLabs account).</Text>}
 
+        <Text style={[s.h, font.display]}>Edit style</Text>
+        <View style={s.row}>
+          {[{ on: false, t: "Plain" }, { on: true, t: "Story edit" }].map((o) => (
+            <Pressable key={o.t} onPress={() => setStory(o.on)} style={[s.chip, story === o.on && s.chipOn]} accessibilityRole="radio"
+              accessibilityState={{ checked: story === o.on }}>
+              <Text style={story === o.on ? { color: c.onAccent } : { color: c.ink }}>{o.t}</Text>
+            </Pressable>
+          ))}
+        </View>
+        {!story && <Text style={s.sub}>Your shots joined as they are.</Text>}
+        {story && <>
+          <Text style={s.sub}>A moody voiceover-edit look: a darker teal grade, a slow push-in on every shot, a transition at every change
+            with a whoosh or hit under it, and with music the changes moved onto its beats. With captions on, they use a serif in
+            small capitals, low in the frame. Free, like every cut; it takes a little longer to make.</Text>
+          <View style={s.row}>
+            {TRANSITIONS.map((x) => (
+              <Pressable key={x.id} onPress={() => setTrans(x.id)} style={[s.chip, trans === x.id && s.chipOn]} accessibilityRole="radio"
+                accessibilityState={{ checked: trans === x.id }}>
+                <Text style={trans === x.id ? { color: c.onAccent } : { color: c.ink }}>{x.title}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={s.sub}>{TRANSITIONS.find((x) => x.id === trans)?.sub}</Text>
+          <View style={s.row}>
+            {[{ v: rain, set: setRain, t: "Rain" }, { v: hits, set: setHits, t: "Hits under the changes" }, { v: beats, set: setBeats, t: "Changes on the beat" }].map((o) => (
+              <Pressable key={o.t} onPress={() => o.set(!o.v)} style={[s.chip, o.v && s.chipOn]} accessibilityRole="checkbox" accessibilityState={{ checked: o.v }}>
+                <Text style={o.v ? { color: c.onAccent } : { color: c.ink }}>{o.t}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={s.sub}>Hits need music, a voiceover or an effect in the cut. Changes on the beat need music: a shot may end up to a third of a second early.</Text>
+          <TextInput style={s.input} value={styleTitle} onChangeText={setStyleTitle} maxLength={60} placeholderTextColor={c.muted}
+            placeholder="Title over the first 3.5 s (optional)" accessibilityLabel="Title over the first seconds" />
+          <TextInput style={[s.input, { marginTop: 8 }]} value={handle} onChangeText={setHandle} maxLength={30} placeholderTextColor={c.muted}
+            placeholder="Your handle, small, above the middle (optional)" accessibilityLabel="Handle" autoCapitalize="none" />
+        </>}
+
         <Text style={[s.h, font.display]}>Shots in the cut</Text>
         <Text style={s.sub}>Speed, trims and words drawn over each kept shot. Save a shot, then make the cut.</Text>
         <CutShots sceneId={scene} aspect={aspect} onChanged={() => setShotsVersion((v) => v + 1)} />
@@ -134,7 +190,8 @@ export default function SceneCut() {
             x.report?.narration ? "narration" : null,   // 2026-11-23 (ep16): a cut with only the narration read "silent"
             x.report?.voiceovers ? `${x.report.voiceovers} voiceover${x.report.voiceovers > 1 ? "s" : ""}` : null,
             x.report?.effects ? `${x.report.effects} sound effect${x.report.effects > 1 ? "s" : ""}` : null,
-            x.report?.captions ? "captions" : null].filter(Boolean).map((t) => ` · ${t}`).join("") || " · silent"}</Text>
+            x.report?.captions ? "captions" : null,
+            x.report?.style ? "story edit" : null].filter(Boolean).map((t) => ` · ${t}`).join("") || " · silent"}</Text>
           {(x.status === "queued" || x.status === "running") && <ActivityIndicator style={{ alignSelf: "flex-start", marginVertical: 6 }} />}
           {x.status === "failed" && <Text style={s.err}>{x.error}</Text>}
           {x.url && <View style={{ maxWidth: ["16x9", "21x9", "4x3"].includes(x.format) ? 900 : x.format === "1x1" ? 520 : 380, marginVertical: 8 }}>
@@ -187,4 +244,5 @@ const s = StyleSheet.create({
   btnText: { color: c.onAccent, fontWeight: "600" },
   ghost: { borderWidth: 1, borderColor: c.line, borderRadius: 8, padding: 10, alignItems: "center", alignSelf: "flex-start" },
   err: { color: c.fail, marginTop: 8 },
+  input: { borderWidth: 1, borderColor: c.line, borderRadius: 8, padding: 10, color: c.ink, backgroundColor: c.field },
 });

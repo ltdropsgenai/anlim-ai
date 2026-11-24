@@ -524,7 +524,10 @@ async function handle(req: Request): Promise<Response> {
       // ---- scene cuts (studio.assemblies, worker assemble.js, 2026-11-19)
       case "assembly_create": {
         const opts = { fade: body.fade !== false, end_card: !!body.end_card, music_path: body.music_path ? String(body.music_path) : null,
-                       voice: body.voice !== false, sfx: body.sfx !== false, captions: body.captions === true };
+                       voice: body.voice !== false, sfx: body.sfx !== false, captions: body.captions === true,
+                       // 2026-11-23: the edit style ({ preset: "story", transitions, grade, push, rain, hits, beat_sync, title,
+                       // handle }); request_assembly keeps only the known fields and the worker checks them again
+                       style: body.style && typeof body.style === "object" && !Array.isArray(body.style) ? body.style : null };
         const [r] = await asUser(uid, (tx) => tx`select studio.request_assembly(${String(body.scene_id || "")}, ${String(body.format || "16x9")},
           ${tx.json(opts)}) as id`);   // tx.json: a JSON object (a stringified one arrives as one jsonb string and every option is lost)
         return json({ ok: true, id: r.id });

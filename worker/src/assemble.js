@@ -15,6 +15,8 @@
 //   - after the render: the parts add up to the whole, no unplanned black, size / frame rate / length as asked
 //     (Drive Safe FINAL.md QC, frame_check deliver_check.py)
 // Unpaid accounts get a watermarked copy; the clean cut goes to the vault (watermark.js, studio.has_paid).
+// 2026-11-23: an edit style (options.style, editstyle.js): grade, transitions, push-in, rain, hits under the changes,
+// shot changes on the music's beats, serif captions, a title and a handle. Plain ffmpeg, no AI, free like the rest.
 import fs from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -24,6 +26,7 @@ import * as db from "./db.js";
 import * as storage from "./storage.js";
 import { watermark, VAULT, MARK } from "./watermark.js";
 import * as captions from "./captions.js";
+import * as style from "./editstyle.js";
 
 // A shot's voiceover starts this long after the shot does in a cut (worker.js lip-syncs to the same offset)
 export const SPEECH_LEAD = 0.15;
@@ -78,13 +81,16 @@ function conform(format) {
 // speed: below 1 slows the shot down with motion interpolation (2026-11-22, Londi chose it over frame blending for the
 // promo: the voiceover needed more time than the dissolve took); above 1 speeds it up by dropping frames. frames is the
 // count after the speed change.
-async function part(src, dest, format, frames, fades, skip = 0, credit = false, speed = 1, words = [], srcSize = null) {
+// sty (2026-11-23): the cut's edit style and the changes into and out of this shot ({ s, kIn, kOut }), or null. Its
+// filters come after the picture is in place and before the words, so the words stay sharp through a transition.
+async function part(src, dest, format, frames, fades, skip = 0, credit = false, speed = 1, words = [], srcSize = null, sty = null) {
   const t = frames / FPS;
   const fx = [];
   if (words.length) fx.push(...await wordFilters(words, path.dirname(dest), path.basename(dest, ".mp4"), ...SIZES[format], picRect(format, srcSize)));
   if (fades.in) fx.push(`fade=t=in:st=0:d=${FADE_IN}`);
   if (fades.out) fx.push(`fade=t=out:st=${(t - FADE_OUT).toFixed(3)}:d=${FADE_OUT}`);
-  let fc = conform(format) + (fx.length ? "," + fx.join(",") : "");
+  let fc = (sty ? conform(format) + "[sty0];" + style.shotGraph("sty0", ...SIZES[format], frames, sty.s, sty.kIn, sty.kOut) : conform(format)) +
+           (fx.length ? "," + fx.join(",") : "");
   if (credit) {
     const [W, H] = SIZES[format], mw = Math.round(Math.min(W, H) * 0.5 / 2) * 2, st = Math.max(0, t - CREDIT_S);
     fc += `[pic];[1:v]scale=${mw}:-1,format=rgba,fade=t=in:st=${st.toFixed(3)}:d=0.6:alpha=1[m];` +
@@ -103,6 +109,7 @@ async function part(src, dest, format, frames, fades, skip = 0, credit = false, 
 // "Made with anlim.ai" end card: the words and the anlim mark on black, fading in. 2026-11-22 (Londi: "Video should end
 // with a clear Made with Anlim.ai"): the card said only "anlim.ai"; it now says "Made with", is larger and stays 3 s.
 const MADE_WITH = path.join(path.dirname(MARK), "made_with.png");
+const ASSETS = path.dirname(MARK);
 
 // 2026-11-23 (Londi's promo: "actual words falling from him as the VO delivers them"): words drawn over a shot, each
 // appearing at a point in the frame at a moment of the shot (cut time, after the speed change), then falling with
@@ -227,7 +234,7 @@ async function stem(src, dest, target, maxS) {
 
 // The cut's sound: the music bed plus each shot's voiceover and sound effect, placed where the shot starts, and the
 // scene's narration from its start time.
-async function mix(dir, a, opts, starts, lens, total, notes) {
+async function mix(dir, a, opts, starts, lens, total, notes, hits = null) {
   const vo = opts.voice !== false ? a.items.map((it, i) => it.vo ? { i, path: it.vo } : null).filter(Boolean) : [];
   const fx = opts.sfx !== false ? a.items.map((it, i) => it.sfx ? { i, path: it.sfx } : null).filter(Boolean) : [];
   // 2026-11-23: the scene's narration, one take over the whole cut from its start time (options.narration, set by
@@ -237,7 +244,12 @@ async function mix(dir, a, opts, starts, lens, total, notes) {
     notes.push(`The narration starts at ${nar.at.toFixed(1)} s, after the end of the video (${total.toFixed(1)} s): it is not heard.`);
     nar = null;
   }
-  if (!vo.length && !fx.length && !nar) return { ...(await soundtrack(dir, opts.music_path, total, notes)), voiceovers: 0, effects: 0, speech: [] };
+  // the style's hits sit under music or speech; alone they would be raised to -14 LUFS and be the whole soundtrack
+  if (hits && !vo.length && !fx.length && !nar && !opts.music_path) {
+    notes.push("Edit style: the hits under the shot changes are left out because the cut has no music, voice or effects.");
+    hits = null;
+  }
+  if (!vo.length && !fx.length && !nar && !hits) return { ...(await soundtrack(dir, opts.music_path, total, notes)), voiceovers: 0, effects: 0, speech: [] };
   const speech = [];                                             // each voice take and where it starts (captions)
   const bedTarget = vo.length || nar ? -27 : -20;                // under speech, or under effects only
   const bed = await soundtrack(dir, opts.music_path, total, notes, bedTarget, "bed_level.wav");
@@ -279,6 +291,12 @@ async function mix(dir, a, opts, starts, lens, total, notes) {
     await stem(src, dest, -22, lens[v.i]);                        // an effect belongs to its shot: it ends with it
     inputs.push(dest); filters.push(`[${inputs.length - 1}:a]adelay=${Math.round(starts[v.i] * 1000)}:all=1[s${inputs.length - 1}]`);
   }
+  // 2026-11-23: the edit style's hits under the shot changes, one track the length of the cut, at the effects' level
+  if (hits) {
+    const dest = path.join(dir, "hits_level.wav");
+    await stem(hits, dest, -20, null);
+    inputs.push(dest); filters.push(`[${inputs.length - 1}:a]anull[s${inputs.length - 1}]`);
+  }
   const labels = ["[0:a]", ...inputs.slice(1).map((_, k) => `[s${k + 1}]`)].join("");
   const summed = path.join(dir, "summed.wav");
   await ff([...inputs.flatMap((p) => ["-i", p]), "-filter_complex",
@@ -291,10 +309,10 @@ async function mix(dir, a, opts, starts, lens, total, notes) {
   if (!isFinite(I) || I < -70) {
     notes.push("The sound measured silent, so it was left as it is.");
     await ff(["-i", summed, "-c:a", "pcm_s16le", out]);
-    return { out, lufs: null, gain_db: 0, limiter: false, lufs_out: null, voiceovers: vo.length, narration: !!nar, effects: fx.length, music_lufs_before: bed.lufs, speech };
+    return { out, lufs: null, gain_db: 0, limiter: false, lufs_out: null, voiceovers: vo.length, narration: !!nar, effects: fx.length, music_lufs_before: bed.lufs, speech, hits: !!hits };
   }
   const lv = await levelTo(summed, out, I, tp, LUFS, [`atrim=0:${total.toFixed(3)}`]);
-  return { out, lufs: I, ...lv, voiceovers: vo.length, narration: !!nar, effects: fx.length, music_lufs_before: bed.lufs, speech };
+  return { out, lufs: I, ...lv, voiceovers: vo.length, narration: !!nar, effects: fx.length, music_lufs_before: bed.lufs, speech, hits: !!hits };
 }
 
 async function checks(file, format, expectFrames, quiet, hasMusic) {
@@ -337,29 +355,59 @@ async function build(a) {
   if ((a.skipped || []).length) notes.push(`Left out shot${a.skipped.length > 1 ? "s" : ""} ${a.skipped.join(", ")}: no approved clip.`);
   const parts = [], quiet = [], starts = [], lens = [];
   let frames = 0;
+  // 2026-11-23: every shot's plan first (clip, trims, speed, length), so the edit style can move the shot changes onto
+  // the music's beats before anything is rendered
+  const plan = [];
   for (let i = 0; i < a.items.length; i++) {
     const it = a.items[i];
     let src = path.join(config.workDir, it.generation_id, "clip.mp4");    // the worker's own copy, when it has one
     try { await fs.access(src); } catch { src = path.join(dir, `src_${i}.mp4`); await storage.download(it.path, src); }
     const p = await probe(src);
     if (!p.frames) throw new Error(`shot ${it.ord}: the clip has no frames`);
-    const first = i === 0, last = i === a.items.length - 1;
-    const fades = { in: opts.fade && first, out: opts.fade && last };
-    const dest = path.join(dir, `p${String(i).padStart(3, "0")}.mp4`);
     // 2026-11-22: the shot's trims (seconds off the start and the end of its clip); at least 1 s is always kept
     const skip = Math.max(0, Math.round(Number(it.trim_start || 0) * FPS));
     const cut = Math.max(0, Math.round(Number(it.trim_end || 0) * FPS));
     const keep = Math.max(Math.min(FPS, p.frames), p.frames - skip - cut);
     const from = Math.min(skip, p.frames - keep);
-    if (from || keep < p.frames) notes.push(`Shot ${it.ord}: trimmed to ${(keep / FPS).toFixed(2)} s (from ${(from / FPS).toFixed(2)} s).`);
     // 2026-11-22: the shot's speed (0.5 to 2); the trims are in the clip's own seconds, before the speed change
     const speed = Math.min(2, Math.max(0.5, Number(it.speed) || 1));
-    const out = Math.max(1, Math.round(keep / speed));
-    if (out !== keep) notes.push(`Shot ${it.ord}: at ${Math.round(speed * 100)}% speed, ${(out / FPS).toFixed(2)} s in the cut.`);
+    plan.push({ it, src, p, keep, from, speed, out: Math.max(1, Math.round(keep / speed)) });
+  }
+  const sty = style.normalize(opts.style);
+  const changes = sty ? style.kinds(plan.length, sty.transitions) : [];
+  let synced = 0;
+  if (sty?.beat_sync && opts.music_path && plan.length > 1) {
+    // the music's onsets; each shot may end up to 8 frames (0.33 s) early to change on the strongest one near its end
+    try {
+      const src = path.join(dir, "music_beats" + (path.extname(opts.music_path) || ".mp3"));
+      await storage.download(opts.music_path, src);
+      if ((await fs.stat(src)).size > 30 * 1024 * 1024) throw new Error("the music file is over 30 MB");
+      const r = style.snap(plan.map((x) => x.out), await style.onsets(src, dir, SAFE_AUDIO_IN), FPS);
+      r.lens.forEach((n, i) => { plan[i].out = n; });
+      synced = r.moved;
+      if (synced) notes.push(`Edit style: ${synced} shot change${synced > 1 ? "s" : ""} moved up to 0.33 s earlier to land on a beat of the music.`);
+    } catch (e) { notes.push(`Edit style: the music's beats could not be found (${String(e.message || e).slice(0, 120)}); the shots change where they end.`); }
+  }
+  for (let i = 0; i < plan.length; i++) {
+    const { it, src, p, keep, from, speed, out } = plan[i];
+    const first = i === 0, last = i === plan.length - 1;
+    const fades = { in: opts.fade && first, out: opts.fade && last };
+    const dest = path.join(dir, `p${String(i).padStart(3, "0")}.mp4`);
+    if (from || keep < p.frames) notes.push(`Shot ${it.ord}: trimmed to ${(keep / FPS).toFixed(2)} s (from ${(from / FPS).toFixed(2)} s).`);
+    if (out !== Math.max(1, Math.round(keep / speed)) || out !== keep) notes.push(`Shot ${it.ord}: ${speed !== 1 ? `at ${Math.round(speed * 100)}% speed, ` : ""}${(out / FPS).toFixed(2)} s in the cut.`);
     // 2026-11-22: end_card puts the credit over the last 2 s of the last shot
     const credit = !!opts.end_card && last;
     await renew(a);                                                // slowed shots take minutes each: keep the lease
-    await part(src, dest, a.format, out, fades, from, credit, speed, Array.isArray(it.words) ? it.words : [], { w: p.w, h: p.h });
+    const words = Array.isArray(it.words) ? it.words : [];
+    const look = sty ? { s: sty, kIn: first ? null : changes[i - 1], kOut: last ? null : changes[i] } : null;
+    try {
+      await part(src, dest, a.format, out, fades, from, credit, speed, words, { w: p.w, h: p.h }, look);
+    } catch (e) {
+      if (!look) throw e;
+      // the style is a finish: a shot it fails on goes in without it rather than failing the cut
+      notes.push(`Edit style: shot ${it.ord} is in the cut without the style (${String(e.message || e).split("\n")[0].slice(0, 160)}).`);
+      await part(src, dest, a.format, out, fades, from, credit, speed, words, { w: p.w, h: p.h });
+    }
     if ((it.words || []).length) notes.push(`Shot ${it.ord}: ${it.words.length} word${it.words.length > 1 ? "s" : ""} drawn over it.`);
     if (fades.in) quiet.push([frames / FPS, frames / FPS + FADE_IN]);
     starts.push(frames / FPS); lens.push(out / FPS);
@@ -373,10 +421,19 @@ async function build(a) {
   await ff(["-f", "concat", "-safe", "0", "-i", list, "-c", "copy", picture]);
   const total = frames / FPS;
   await renew(a);
-  const sound = await mix(dir, a, opts, starts, lens, total, notes);
+  // 2026-11-23: the edit style's hits, one under each shot change that is not a straight cut
+  let hits = null, hitCount = 0;
+  if (sty?.hits && changes.length) {
+    const at = changes.map((kind, i) => ({ t: starts[i + 1], kind }));
+    hits = await style.hitsTrack(dir, at, total);
+    hitCount = at.filter((c) => c.kind !== "cut").length;
+  }
+  const sound = await mix(dir, a, opts, starts, lens, total, notes, hits);
   const audio = sound.out;
-  // 2026-11-23: captions from the voiceovers and the narration (options.captions), drawn over the picture, and a .srt
+  // 2026-11-23: captions from the voiceovers and the narration (options.captions), drawn over the picture, and a .srt;
+  // with an edit style, its title and handle are drawn in the same pass
   let shown = picture, cc = null;
+  const [W, H] = SIZES[a.format], over = [];
   if (opts.captions) {
     const words = [];
     for (const sp of sound.speech || []) {
@@ -387,12 +444,7 @@ async function build(a) {
     if (!(sound.speech || []).length) notes.push("Captions: this cut has no voiceover or narration to caption.");
     else if (!list.length) notes.push("Captions: no words could be timed, so the cut has none.");
     else {
-      const [W, H] = SIZES[a.format];
-      const fx = await captions.filters(list, dir, WORD_FONT, W, H);
-      shown = path.join(dir, "picture_cc.mp4");
-      await renew(a);
-      await ff(["-i", picture, "-vf", fx.join(","), "-frames:v", String(frames), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-                "-pix_fmt", "yuv420p", "-r", String(FPS), shown]);
+      over.push(...await captions.filters(list, dir, sty ? style.SERIF(ASSETS) : WORD_FONT, W, H, sty ? "story" : "plain"));
       const srtFile = path.join(dir, "captions.srt");
       await fs.writeFile(srtFile, captions.srt(list));
       cc = { lines: list.length, srt: `${a.owner}/cuts/${a.id}.srt` };
@@ -400,15 +452,24 @@ async function build(a) {
       notes.push(`Captions: ${list.length} line${list.length > 1 ? "s" : ""}, also as a .srt file.`);
     }
   }
+  if (sty) over.push(...await style.overlays(sty, dir, ASSETS, W, H, total, notes));
+  if (over.length) {
+    shown = path.join(dir, "picture_cc.mp4");
+    await renew(a);
+    await ff(["-i", picture, "-vf", over.join(","), "-frames:v", String(frames), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+              "-pix_fmt", "yuv420p", "-r", String(FPS), shown]);
+  }
   const final = path.join(dir, "cut.mp4");
   await ff(["-i", shown, "-i", audio, "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
             "-t", total.toFixed(3), "-movflags", "+faststart", final]);
-  const hasSound = !!opts.music_path || sound.voiceovers > 0 || !!sound.narration || sound.effects > 0;
+  const hasSound = !!opts.music_path || sound.voiceovers > 0 || !!sound.narration || sound.effects > 0 || !!sound.hits;
   const report = { checks: await checks(final, a.format, frames, quiet, hasSound), notes,
                    shots: a.items.length, music_lufs_before: sound.music_lufs_before ?? sound.lufs, music_gain_db: sound.gain_db ?? null,
                    music_limiter: sound.limiter ?? false, voiceovers: sound.voiceovers, narration: !!sound.narration, effects: sound.effects,
                    music: !opts.music_path ? null : /\/audio\/music\//.test(opts.music_path) ? "score" : "track", fps: FPS, size: SIZES[a.format],
-                   captions: cc };
+                   captions: cc,
+                   style: sty ? { preset: sty.preset, changes: changes.reduce((m, k) => ({ ...m, [k]: (m[k] || 0) + 1 }), {}),
+                                  on_beat: synced, hits: sound.hits ? hitCount : 0, grade: sty.grade, rain: sty.rain } : null };
   return { final, total, report, dir };
 }
 
