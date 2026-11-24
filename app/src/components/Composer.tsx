@@ -8,6 +8,7 @@ import { FloatCard } from "./FloatCard";
 import { router } from "expo-router";
 import { api, Aspect, ASPECTS, Look, Output, PromptModel, Series } from "../lib/api";
 import { autoNote, MODEL_NOTES } from "../lib/modelNotes";
+import { CROWD_TIP, wantsCrowd } from "../lib/shotStatus";
 import { CreationCard } from "./CreationCard";
 import { c, font } from "../lib/theme";
 import { clearDraft, peekDraft, saveDraft } from "../lib/draft";
@@ -222,6 +223,7 @@ export function Composer({ narrow, guest = false, afterBanner = false }: { narro
 
       {!effLook && text.trim().length >= 8 && <Text style={{ color: c.link, marginTop: 12, textAlign: "center" }}>{tr("Choose Cartoon or Photoreal for the new project.")}</Text>}
       {busy && <Text style={{ color: c.link, marginTop: 12, textAlign: "center" }}>{tr("Starting…")}</Text>}
+      {output === "video" && wantsCrowd(text) ? <Text style={{ color: c.sub, fontSize: 12, marginTop: 10, textAlign: "center" }}>{tr(CROWD_TIP)}</Text> : null}
       {error && <Text style={{ color: c.fail, marginTop: 12, textAlign: "center" }}>{tMsg(error)}</Text>}
 
       {made && <CreationCard key={made.shot} shotId={made.shot} output={made.output} onAgain={() => { setMade(null); setText(""); input.current?.focus(); }} />}

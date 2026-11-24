@@ -7,6 +7,7 @@ import { Link, router, useFocusEffect } from "expo-router";
 import { api, CutoutJob, END_FRAME_CREDITS, FRAME_CREDITS, EndCheck, HeightCheck, KIND_NAMES, StagingCheck, MODEL_NAMES, QUALITY_NAMES, ratioOf, Shot, StartMode, StartSource, startFrameCredits, uploadStill } from "../lib/api";
 import { c, font, pageBg } from "../lib/theme";
 import { autoNote, MODEL_NOTES } from "../lib/modelNotes";
+import { CROWD_TIP, wantsCrowd } from "../lib/shotStatus";
 import { StillPicker } from "./StillPicker";
 import { LikenessConsent } from "./LikenessConsent";
 import { tr, trMap, tMsg, shotText } from "../lib/i18n";
@@ -300,6 +301,7 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
         <View style={s.panel}>
           <Text style={s.label}>{tr("What happens in the shot")}</Text>
           <TextInput style={s.input} multiline value={draft.action} onChangeText={(v) => setDraft({ ...draft, action: v })} />
+          {wantsCrowd(draft.action) ? <Text style={[s.label, { fontSize: 12 }]}>{tr(CROWD_TIP)}</Text> : null}
           <View style={s.row}>
             <Text style={s.label}>{tr("Camera")}</Text>
             <TextInput style={[s.input, { minHeight: 0, flex: 1 }]} value={draft.camera} onChangeText={(v) => setDraft({ ...draft, camera: v })}

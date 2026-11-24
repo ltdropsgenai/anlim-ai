@@ -34,4 +34,13 @@ export const pad2 = (n: number) => String(n).padStart(2, "0");
 // ended frozen mid-stride ("ready to sprint") were 5 s clips; none of the 9 at 7 s did. Walks default to 7 s.
 export const WALKING = /\b(walks?|walking|runs?|running|cross(es|ing)?|goes to|go to|moves? to|dances?|dancing|skips?|hops?|chases?|crawls?)\b/i;
 export const suggestedSeconds = (action: string) => (WALKING.test(action) ? 7 : 5);
+// 2026-11-24 (crowd tests): crowd shots came out frozen or with people popping in and out. Words for a crowd in
+// English, Spanish and French (the app's languages), matched without accents so "público" and "élèves" match too.
+const CROWD = /\b(crowds?|crowded|busy|bustling|passers?-?by|pedestrians|audience|spectators|fans|onlookers|students|classmates|guests|customers|shoppers|commuters|dancers|choir|soldiers|market|stadium|concert|festival|parade|protest|queue|multitud|muchedumbre|publico|gente|aficionados|hinchas|espectadores|transeuntes|estudiantes|alumnos|invitados|clientes|compradores|mercado|estadio|concierto|desfile|abarrotad[oa]s?|concurrid[oa]s?|foule|spectateurs|supporters|passants|eleves|etudiants|stade)\b/i;
+// French words that only mean a crowd WITH their accents ("marche" = walks, "invites" is English, "defile" too)
+const CROWD_ACCENTED = /(^|[^a-z\u00e0-\u00ff])(march\u00e9s?|d\u00e9fil\u00e9s?|invit\u00e9s?|bond\u00e9e?s?)(?=[^a-z\u00e0-\u00ff]|$)/i;
+const plain = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+export const wantsCrowd = (action: string) => CROWD.test(plain(action || "")) || CROWD_ACCENTED.test((action || "").normalize("NFC"));
+export const CROWD_TIP = "Crowd tip: say what the crowd does (cheers, browses, listens), keep it in the middle or far distance, " +
+  "and use a still or slow camera: people stay steadier that way.";
 

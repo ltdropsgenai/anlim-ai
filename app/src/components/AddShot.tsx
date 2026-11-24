@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
 import { api } from "../lib/api";
 import { c, font } from "../lib/theme";
-import { suggestedSeconds, WALKING } from "../lib/shotStatus";
+import { CROWD_TIP, suggestedSeconds, WALKING, wantsCrowd } from "../lib/shotStatus";
 import { tr } from "../lib/i18n";
 
 export function AddShot({ sceneId, onDone, onCreated }: { sceneId: string; onDone: (err?: string) => void; onCreated?: (id: string) => void }) {
@@ -45,6 +45,7 @@ export function AddShot({ sceneId, onDone, onCreated }: { sceneId: string; onDon
       {WALKING.test(action) && n < 7 ? (
         <Text style={s.meta}>{tr("Walks need about 7 seconds: shorter clips tend to end with the character frozen mid-step.")}</Text>
       ) : null}
+      {wantsCrowd(action) ? <Text style={s.meta}>{tr(CROWD_TIP)}</Text> : null}
     </View>
   );
 }

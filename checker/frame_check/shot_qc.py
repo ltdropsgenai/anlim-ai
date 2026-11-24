@@ -236,6 +236,17 @@ def run(spec, log=print):
             flags += [f"FACE: {x}" for x in ri.get("drift", [])]
             notes += [f"identity: {x}" for x in ri.get("unchecked", [])]
             log(f"identity: {ri.get('people')}")
+    # 2026-11-24: a crowd shot's background frozen like a backdrop (crowd_still.py; still camera only). A flag for a
+    # person, never a failure: calibrated on two classroom clips.
+    if spec.get("crowd"):
+        try:
+            import crowd_still
+            cs = crowd_still.analyze(clip); ran.append("crowd_still")
+            if cs.get("frozen"): flags.append(cs["why"])
+            elif not cs.get("measured"): notes.append(f"crowd still: not measured ({cs.get('why')})")
+            log(f"crowd still: {({k: v for k, v in cs.items() if k != 'regions'})}")
+        except Exception as e:
+            notes.append(f"crowd still failed: {type(e).__name__}: {str(e)[:150]}")
     if spec.get("people") is not None or spec.get("track_objects"):
         import objects_check
         r = objects_check.analyze(clip, spec.get("people"), spec.get("allow_objects", []), spec.get("track_objects", []),
