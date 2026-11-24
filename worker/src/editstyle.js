@@ -89,9 +89,14 @@ export function shotGraph(inLabel, W, H, frames, s, kIn, kOut, tag = "s") {
     const k = [fIn ? `max(0,1-${T}/${d.toFixed(4)})` : "0", fOut ? `max(0,(${T}-${(t - d).toFixed(4)})/${d.toFixed(4)})` : "0"];
     const sig = Math.max(8, Math.round(Math.min(W, H) * 0.035));
     f.push(`${cur}${chain.length ? chain.join(",") + "," : ""}split[${L("a")}][${L("b")}]`);
-    f.push(`[${L("b")}]gblur=sigma=${sig},eq=brightness=0.24:saturation=0.65[${L("haze")}]`);
+    // 2026-11-23 (first story cut on the worker): blend's expression runs per pixel and gblur on every frame, so a shot
+    // with a flash took 5.7 min on ffmpeg 5.1. Both now run only in the EDGE frames around the change (timeline
+    // 'enable'); outside it k is 0, blend passes its first input through and the haze branch is never shown.
+    const win = [fIn ? `lt(t,${d.toFixed(4)})` : null, fOut ? `gte(t,${(t - d - 1 / 24).toFixed(4)})` : null].filter(Boolean);
+    const en = `:enable='${win.length > 1 ? `gt(${win.join("+")},0)` : win[0]}'`;
+    f.push(`[${L("b")}]gblur=sigma=${sig}${en},eq=brightness=0.24:saturation=0.65${en}[${L("haze")}]`);
     // ease the mix (k^0.7) so the haze holds a little at the change, as the reference's does
-    f.push(`[${L("a")}][${L("haze")}]blend=all_expr='A+(B-A)*pow(min(1,max(${k[0]},${k[1]})),0.7)'`);
+    f.push(`[${L("a")}][${L("haze")}]blend=all_expr='A+(B-A)*pow(min(1,max(${k[0]},${k[1]})),0.7)'${en}`);
     return f.join(";");
   }
   f.push(`${cur}${chain.length ? chain.join(",") : "null"}`);
