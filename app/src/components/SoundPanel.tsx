@@ -121,7 +121,7 @@ function Narration({ sceneId, voice, jobs, connected, cutLen, onMade, onUse, set
   );
 }
 
-// Lip sync (2026-11-23, Kling LipSync): a copy of the shot's kept clip with the mouths moved to its voiceover. It goes to
+// Lip sync (2026-11-23; VEED Lipsync since the evening of 2026-11-23, Kling LipSync before): a copy of the shot's kept clip with the mouths moved to its voiceover. It goes to
 // Review; keeping it puts it in the cut (the old clip stays until then). Shown once the shot has a voiceover.
 const LS_BUSY = ["queued", "running", "checking"];
 function LipSync({ shotId, voKey, setError }: { shotId: string; voKey: string; setError: (e: string | null) => void }) {

@@ -29,6 +29,9 @@ Python standard library only (no installs beyond what frame_check already needs)
   POST /moderate {"text", "images"?: [local paths], "look"?, "kind"?: clip | frame | audio} -> frame_check/moderate.check:
                 {"verdict": "ALLOW"|"BLOCK", "category", "reason", "usd", "model"}. One AI question (about $0.001 for words,
                 about $0.01 with pictures) before a paid model is called (2026-11-23).
+  POST /lipsync {"mode": "face" | "sync", "video", "voice", "from_s"?} -> frame_check/lipsync_check: before paying, is a
+                face big enough to sync ("OK" | "TOO_SMALL" | "NOT_CHECKED"); after, does the mouth follow the voice
+                ("PASS" | "FLAG" | "NOT_CHECKED"). Free, no API (2026-11-23).
   GET  /health  -> {"ok": true, "mode": "real"|"fake", "frame_check": "<dir>"}
 
 Environment:
@@ -230,6 +233,22 @@ def run_moderate(body):
     r["drift"] = []
     return r
 
+def run_lipsync(body):
+    """POST /lipsync: frame_check/lipsync_check.py (2026-11-23). Free. In fake mode the verdict is body["fake_verdict"]."""
+    for k in ("video", "voice"):
+        if not body.get(k): raise ValueError(f"{k} is required")
+        if not os.path.exists(body[k]): raise FileNotFoundError(body[k])
+    mode = body.get("mode") or "sync"
+    if mode not in ("face", "sync"): raise ValueError("mode must be face or sync")
+    if MODE == "fake":
+        return {"verdict": body.get("fake_verdict", "OK" if mode == "face" else "PASS"), "reasons": [], "why": None, "drift": []}
+    if FC not in sys.path: sys.path.insert(0, FC)
+    import lipsync_check
+    r = (lipsync_check.check_face(body["video"], body["voice"], float(body.get("from_s") or 0)) if mode == "face"
+         else lipsync_check.check_sync(body["video"], body["voice"]))
+    r["drift"] = []
+    return r
+
 def run_last_frame(body):
     """POST /last_frame {"video", "out_png"}: the clip's last decodable frame as a PNG. The frame count in the header
     can be off by a frame or two, so the last few frames are read through and the last one that decodes is kept."""
@@ -271,17 +290,17 @@ class H(BaseHTTPRequestHandler):
         self._send(404, {"error": "not found"})
 
     def do_POST(self):
-        if self.path not in ("/check", "/motion_check", "/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate"): return self._send(404, {"error": "not found"})
+        if self.path not in ("/check", "/motion_check", "/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate", "/lipsync"): return self._send(404, {"error": "not found"})
         if not self._authed(): return self._send(401, {"error": "unauthorized"})
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
         except json.JSONDecodeError:
             return self._send(400, {"error": "bad json"})
-        if self.path in ("/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate"):
+        if self.path in ("/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate", "/lipsync"):
             try:
                 r = {"/end_frame": run_end_frame, "/compose": run_compose, "/last_frame": run_last_frame,
                      "/cutouts": run_cutouts, "/height": run_height, "/reposition_fit": run_reposition_fit, "/still_check": run_still_check,
-                     "/moderate": run_moderate}[self.path](body)
+                     "/moderate": run_moderate, "/lipsync": run_lipsync}[self.path](body)
                 name = body.get("end") or body.get("edited") or body.get("video") or body.get("image") or body.get("still") or ""
                 print(f"[{self.path[1:]}] {os.path.basename(name)}: {r['verdict']} ({len(r.get('drift', []))} drift)", flush=True)
                 return self._send(200, r)

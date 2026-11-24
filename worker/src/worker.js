@@ -122,12 +122,14 @@ async function endFrameGate(g, shot, characters = []) {
 const fromText = (g) => g.route_kind === "text";
 // Motion transfer (2026-11-20): the creator's source clip recast with their reference images (studio.motion_create).
 const isMotion = (g) => g.route_kind === "motion";
-// Lip sync (2026-11-23, studio.lipsync_create): the shot's kept clip with the mouths moved to its voiceover (Kling
-// LipSync on fal). The kept clip stays in the cut until the creator keeps the lip-synced one.
+// Lip sync (2026-11-23, studio.lipsync_create): the shot's kept clip with the mouths moved to its voiceover (on fal;
+// the model is the generation's model_id: VEED Lipsync v2 since 2026-11-23, after Kling LipSync's mouths "do not match
+// the words"). The kept clip stays in the cut until the creator keeps the lip-synced one.
 function isLipsync(g) { return g.route_kind === "lipsync"; }
 
 // Kling LipSync takes a 2-10 s video whose width and height are both 720 to 1920 px, and 2-60 s of audio up to 5 MB
-// (fal.ai/models/fal-ai/kling-video/lipsync/audio-to-video, read 2026-11-23). The voiceover starts where the shot starts
+// (fal.ai/models/fal-ai/kling-video/lipsync/audio-to-video, read 2026-11-23). VEED's page gives no limits; the same
+// 720-1920 px input is what the VEED test take of 2026-11-23 was made from, so both models get it. The voiceover starts where the shot starts
 // in the cut, which is trim_start_s into the clip at normal speed (studio.lipsync_quote refuses other speeds), so the
 // audio sent is that much silence, then the voice, cut or padded to the clip's length.
 async function submitLipsync(g, shot) {
@@ -158,6 +160,19 @@ async function submitLipsync(g, shot) {
   const lead = Math.max(0, Number(shot.trim_start_s) || 0) + assemble.SPEECH_LEAD;
   await run("ffmpeg", ["-y", "-v", "error", "-i", voIn, "-af", `adelay=${Math.round(lead * 1000)}:all=1,apad`, "-t", secs.toFixed(3),
                        "-ac", "1", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "128k", voice]);
+  // 2026-11-23 (Londi's push-in take: the face was too small to sync): free check before paying. A face too small or
+  // missing while the voice plays is refused with nothing charged. When the check cannot run or cannot tell (a cartoon
+  // face, say), the lip sync goes ahead and the check after it says what it could not judge.
+  try {
+    const r = await postChecker("/lipsync", { mode: "face", video, voice });
+    const fc = r.json || {};
+    log(g, `lip sync face check: ${fc.verdict || `HTTP ${r.status}`} (face found ${fc.face_found_pct ?? "?"}%, ${fc.face_px ?? "?"} px)`);
+    if (r.ok && fc.verdict === "TOO_SMALL")
+      throw Object.assign(new Error(`${fc.why} Nothing was charged.`), { permanent: true });
+  } catch (e) {
+    if (e.permanent) throw e;
+    log(g, `lip sync face check could not run (${e.message}); going ahead`);
+  }
   const vPath = `${g.owner}/lipsync/${g.id}-in.mp4`, aPath = `${g.owner}/lipsync/${g.id}-voice.mp3`;
   await storage.upload(video, vPath, "video/mp4");
   await storage.upload(voice, aPath, "audio/mpeg");
@@ -171,15 +186,34 @@ async function submitLipsync(g, shot) {
   log(g, `lip sync submitted (${sub.requestId}): ${secs.toFixed(2)} s at ${W}x${H}${W !== w ? ` (from ${w}x${h})` : ""}, voice from ${lead} s`);
 }
 
-// No clip check on a lip-synced copy: the clip was checked when it was made, and only the mouths change. It is charged
-// when made, like any clip, and goes to Review: keeping it puts it in the cut.
+// The clip was checked when it was made and only the mouths change, so the lip-synced copy gets one check: does the
+// mouth follow the voice (checker /lipsync, frame_check/lipsync_check.py, free; 2026-11-23). It only flags: the take is
+// charged when made, like any clip, and goes to Review either way, with what the check found; keeping it puts it in
+// the cut. A flagged take can be rejected for a refund like any clip.
 async function checkLipsync(g) {
-  await db.recordQc(g.id, { verdict: "NOT_REVIEWED", reasons: ["lip sync: a copy of the kept clip with the mouths moved to the voiceover; compare it with the kept clip"],
-                            review_usd: 0, models: { lipsync: "kling-lipsync" } });
+  const dir = path.join(config.workDir, g.id);
+  const clip = path.join(dir, "clip.mp4"), voice = path.join(dir, "voice.mp3");
+  let res;
+  try {
+    try { await fs.access(clip); } catch { await storage.download(g.output_path, clip); }   // another worker host
+    const req = typeof g.request === "string" ? JSON.parse(g.request) : g.request;
+    try { await fs.access(voice); } catch { await storage.download(req.audio_url, voice); }
+    const r = await postChecker("/lipsync", { mode: "sync", video: clip, voice });
+    res = r.json || {};
+    if (!r.ok || !["PASS", "FLAG", "NOT_CHECKED"].includes(res.verdict)) throw new Error(res.error || `HTTP ${r.status}`);
+  } catch (e) {
+    res = { verdict: "NOT_CHECKED", reasons: [`the lip sync check could not run (${String(e.message).slice(0, 120)})`] };
+  }
+  const verdict = res.verdict === "PASS" ? "PASS" : res.verdict === "FLAG" ? "FLAG" : "NOT_REVIEWED";
+  await db.recordQc(g.id, { ...res, verdict, review_usd: 0, models: { lipsync: g.model_id, lipsync_check: "lipsync_check.py" } });
+  const reasons = (res.reasons || []).slice(0, 3).join("; ");
+  const error = verdict === "PASS" ? null
+    : verdict === "FLAG" ? `lip sync check: ${reasons}. Watch it with the sound on before keeping it.`.slice(0, 1000)
+    : `lip sync not checked: ${reasons || "the check could not judge this clip"}. Watch it with the sound on.`.slice(0, 1000);
   await db.settle(g.id, "charge");
-  await db.unlock(g.id, { status: "review", finished_at: new Date(), error: null });
+  await db.unlock(g.id, { status: "review", finished_at: new Date(), error });
   await db.q("update studio.shots set status = case when approved_generation_id is not null then 'approved' else 'review' end where id = $1", [g.shot_id]);
-  log(g, "lip sync made; waiting for the creator in Review");
+  log(g, `lip sync made; check ${verdict}${reasons ? ` (${reasons})` : ""}; waiting for the creator in Review`);
 }
 
 // The billed length is what the app measured in the browser (motion_create p_seconds), so the server must not trust
@@ -326,7 +360,7 @@ async function stepRunning(g) {
     await db.q("update studio.shots set start_frame_path = $2, start_frame_approved = true where id = $1", [g.shot_id, framePath]);
     log(g, `first frame stored as the shot's start frame (${framePath})`);
   }
-  const usd = shot.usd_per_second * (isLipsync(g) ? (g.lipsync_s || 5) : shot.duration_s);   // fal bills lip sync in 5 s steps
+  const usd = shot.usd_per_second * (isLipsync(g) ? (g.lipsync_s || 5) : shot.duration_s);   // lipsync_s: the seconds fal bills
   // 2026-11-23 (review): the clip's real length, so trims and the score's sections use it rather than the asked length
   let clipS = null;
   try {

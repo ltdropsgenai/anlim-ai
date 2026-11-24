@@ -11,6 +11,9 @@ RUN apt-get update \
 RUN python3 -m venv /opt/py \
  && /opt/py/bin/pip install --no-cache-dir \
       numpy==2.2.6 opencv-python-headless==5.0.0.93 pillow==12.3.0 onnxruntime==1.23.2 rembg==2.0.69
+# Face landmarks for the lip sync check (frame_check/lipsync_check.py, 2026-11-23). 0.10.30 needs no OpenCV of its own;
+# its sounddevice dependency is only loaded for audio tasks, so PortAudio is not needed.
+RUN /opt/py/bin/pip install --no-cache-dir mediapipe==0.10.30
 ENV PATH=/opt/py/bin:$PATH \
     U2NET_HOME=/opt/u2net
 # rembg downloads its matting model on first use; fetch it at build time instead.

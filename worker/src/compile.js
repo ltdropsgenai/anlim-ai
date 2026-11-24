@@ -101,6 +101,13 @@ const CUT_WORDS = /\b(cuts? to|smash cut|jump cut|montage|split screen|several s
 const oneTake = (shot) => CUT_WORDS.test(`${shot.action || ""} ${shot.camera || ""}`) ? ""
   : "One continuous take: no cuts, no jump to another framing or angle; the framing changes only by the camera move described. ";
 
+// 2026-11-23 (Londi's lip sync test): a clip whose people already talk fights the lip sync; the mouths move to the
+// video model's own made-up speech, and the synced take followed the voice no better than the unsynced one. When the
+// shot's voiceover exists before the clip is made, the people keep their mouths closed and the lip sync adds the
+// speech. The one test clip made this way synced well (VEED; frame_check/lipsync_check.py r 0.46).
+const MOUTHS = "[MOUTHS] Nobody speaks or mouths words: lips stay closed and still. Faces stay alive through the eyes, brows " +
+  "and small head movements. The voice and its lip movements are added afterwards.";
+
 export function prompt(shot, chars) {
   const moving = MOVES.test(shot.action);
   const minimax = /^minimax\//.test(shot.endpoint || "");
@@ -114,6 +121,7 @@ export function prompt(shot, chars) {
     chars.length ? `[CAST] ${chars.map(castLine).join(" | ")}. ${heightOrder(chars)}`.trim() : null,
     shot.location_name ? `[SET] ${shot.location_name}${shot.location_description ? ` - ${shot.location_description}` : ""}` : null,
     `[ACTION] ${shot.action}`,
+    shot.has_voiceover && chars.some((c) => (c.kind || "person") === "person") ? MOUTHS : null,
     moving ? PATH_RULE : null,
     moving && chars.filter((c) => c.kind !== "object").length > 1 ? WATCH_RULE : null,
     WALKING.test(shot.action) ? WALK_END : null,

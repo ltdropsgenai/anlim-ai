@@ -249,10 +249,12 @@ const TOOLS = [
     }, required: ["text", "voice_id"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } },
   { name: "lip_sync", title: "Lip-sync a shot to its voiceover",
-    description: "Makes a copy of the shot's kept clip with the mouths moved to the shot's voiceover (Kling LipSync). Needs a kept " +
-      "clip of 2 to 10 s at normal speed and the shot's voiceover in the cut (make_voiceover first). Paid accounts; about 20 credits " +
-      "for a clip up to 5 s, 40 up to 10 s (call without confirm to see the price and whether it can be made). The new clip goes to " +
-      "Review: keep it with review_clip to use it in the cut; until then the cut keeps the old clip.",
+    description: "Makes a copy of the shot's kept clip with the mouths moved to the shot's voiceover (VEED Lipsync). Needs a kept " +
+      "clip of 2 to 10 s at normal speed and the shot's voiceover in the cut. Best results: make the voiceover BEFORE animate, so " +
+      "the clip is made with closed mouths, and use a close or medium shot facing the camera (a face too small is refused before " +
+      "anything is charged). Paid accounts; 18 credits a second, rounded up (90 for 5 s; call without confirm to see the price and " +
+      "whether it can be made). The new clip goes to Review with a check of whether the mouth follows the voice: keep it with " +
+      "review_clip to use it in the cut; until then the cut keeps the old clip.",
     inputSchema: { type: "object", properties: { shot_id: { type: "string" },
       confirm: { type: "boolean", description: "true to start it and spend the credits; leave out to only see the price" } },
       required: ["shot_id"], additionalProperties: false },

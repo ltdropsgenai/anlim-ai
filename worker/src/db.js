@@ -33,7 +33,10 @@ export async function shotContext(gen) {
   const [row] = await q(
     `select sh.*, sc.blocking, sc.title as scene_title, se.name as series_name, se.style_prompt, se.look, se.aspect,
             l.name as location_name, l.description as location_description, m.endpoint, m.t2v_endpoint, m.provider,
-            m.resolution, m.usd_per_second
+            m.resolution, m.usd_per_second,
+            -- 2026-11-23: the shot already has its voiceover, so the clip is made for a lip sync (compile.prompt MOUTHS)
+            exists (select 1 from studio.audio_jobs a where a.shot_id = sh.id and a.kind = 'voiceover' and a.status = 'done'
+                     and a.in_cut) as has_voiceover
        from studio.shots sh join studio.scenes sc on sc.id = sh.scene_id join studio.series se on se.id = sc.series_id
        left join studio.locations l on l.id = sc.location_id join studio.models m on m.id = $2
       where sh.id = $1`, [gen.shot_id, gen.model_id]);

@@ -215,7 +215,7 @@ export const startFrameCredits = (mode: string, look?: string | null, people = 2
 
 // Display names for the video models (studio.models ids).
 export const MODEL_NAMES: Record<string, string> = {
-  "kling-v4-i2v-720p": "Kling 4.0", "minimax-h3-i2v-768p": "MiniMax H3", "mock-i2v": "Test model", "kling-lipsync": "Kling LipSync", "seedance-2-0-i2v-720p": "Seedance 2.0",
+  "kling-v4-i2v-720p": "Kling 4.0", "minimax-h3-i2v-768p": "MiniMax H3", "mock-i2v": "Test model", "kling-lipsync": "Kling LipSync", "veed-lipsync": "VEED Lipsync", "seedance-2-0-i2v-720p": "Seedance 2.0",
 };
 export const KIND_NAMES: Record<string, string> = {
   walking: "walking shots", sit_stand: "sitting and standing", handling: "handling props", talking: "talking shots", other: "this kind of shot",
