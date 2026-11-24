@@ -859,9 +859,11 @@ async function callTool(uid: string, name: string, a: Args) {
       const model = a.model ? String(a.model) : null;
       const r = await asUser(uid, async (tx) => {
         const [j] = await tx`select f.id, f.check_result ->> 'verdict' as verdict from studio.frame_jobs f join studio.shots sh on sh.id = f.shot_id
-                               where f.shot_id = ${sid} and f.kind = 'start' and f.status = 'ready' and not sh.start_frame_approved
+                               where f.shot_id = ${sid} and f.kind = 'start' and f.status = 'ready'
                                order by f.created_at desc limit 1`;
-        // a flagged start image is approved only by the creator's explicit decision (approve_start_image), never in passing
+        // 2026-11-23 (redo of the lip sync shot): this used to require that the shot had no approved start image, so on a
+        // shot that already had one a newer image was left waiting and the OLD image was rendered. A waiting image is now
+        // always the one animated. A flagged one is approved only by the creator's explicit decision (approve_start_image).
         if (j?.verdict === "FLAG") return null;
         if (j) await tx`select studio.decide_frame(${j.id}, 'approve')`;
         const [g] = await tx`select studio.enqueue_generation(${sid}, ${model}) as id`;
