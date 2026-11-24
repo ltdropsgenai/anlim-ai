@@ -11,7 +11,7 @@ import { chip, GEN, pad2, TONE } from "../lib/shotStatus";
 import { AddShot } from "../components/AddShot";
 import { ShotPanel } from "../components/ShotPanel";
 import { Icon } from "../components/Icon";
-import { tr, locale, trp, tMsg } from "../lib/i18n";
+import { tr, locale, trp, tMsg, shotText } from "../lib/i18n";
 
 const BUSY_GEN = ["queued", "running", "checking"], BUSY_FRAME = ["queued", "running", "composing"];
 const isBusy = (r: ShotRow) => (!!r.gen_status && BUSY_GEN.includes(r.gen_status)) || (!!r.frame_status && BUSY_FRAME.includes(r.frame_status));
@@ -141,7 +141,7 @@ function ShotRowItem({ r, on, onPress, onMove, first, last }: { r: ShotRow; on: 
         <Text style={[s.slate, font.mono]}>{tr("SH {v0}", { v0: pad2(r.ord) })}</Text>
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={{ color: c.ink, fontSize: 13, lineHeight: 18 }} numberOfLines={2}>{r.action}</Text>
+        <Text style={{ color: c.ink, fontSize: 13, lineHeight: 18 }} numberOfLines={2}>{shotText(r.action)}</Text>
         <View style={[s.row, { marginTop: 6, gap: 6 }]}>
           <Text style={[s.status, { backgroundColor: t.bg, color: t.fg, borderColor: t.line }]}>{st.text}</Text>
           <Text style={[s.meta, font.mono]}>{r.duration_s} S</Text>

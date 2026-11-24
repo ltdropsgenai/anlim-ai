@@ -9,7 +9,7 @@ import { c, font, pageBg } from "../lib/theme";
 import { autoNote, MODEL_NOTES } from "../lib/modelNotes";
 import { StillPicker } from "./StillPicker";
 import { LikenessConsent } from "./LikenessConsent";
-import { tr, trMap, tMsg } from "../lib/i18n";
+import { tr, trMap, tMsg, shotText } from "../lib/i18n";
 
 const MAKING = ["queued", "running", "composing"];
 const MODE_TEXT: Record<StartMode, string> = trMap({
@@ -114,7 +114,7 @@ function StartMaker({ shot, busy, run }: { shot: Shot; busy: boolean; run: (fn: 
       )}
       <Link href={{ pathname: "/library", params: { series: ctx.series_id } }} style={s.link}>{tr("Characters & locations")}</Link>
       {(mode === "reposition" || mode === "new_setup") && (<>
-        <Text style={s.sub}>{tr("What happens in the clip (the shot's action): ")}<Text style={{ fontStyle: "italic" }}>{shot.action}</Text></Text>
+        <Text style={s.sub}>{tr("What happens in the clip (the shot's action): ")}<Text style={{ fontStyle: "italic" }}>{shotText(shot.action)}</Text></Text>
         <Text style={s.label}>{tr("Starting pose: where everyone is at the first moment, before anything happens")}</Text>
         <TextInput style={s.input} multiline value={text} onChangeText={(v) => { setText(v); setSameOk(false); }} placeholderTextColor={c.muted}
           placeholder={tr("e.g. Sam stands by the door, looking at Ana; Ana sits at the table. Describe the start, not what happens next.")} />
@@ -281,7 +281,7 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
       <Text style={s.crumb}>{tr("{series_name} · {scene_title} · shot {ord} · {duration_s} s · camera: {v4}", { series_name: shot.series_name, scene_title: shot.scene_title, ord: shot.ord, duration_s: shot.duration_s, v4: shot.camera || tr("the model's choice") })}</Text>
       {!editing ? (
         <>
-          <Text style={s.title}>{shot.action}</Text>
+          <Text style={s.title}>{shotText(shot.action)}</Text>
           <View style={s.row}>
             <Pressable disabled={busy || !!inFlight || anyMaking} accessibilityRole="button"
               onPress={() => { setDraft({ action: shot.action, camera: shot.camera ?? "", dur: String(shot.duration_s) }); setEditing(true); }}>

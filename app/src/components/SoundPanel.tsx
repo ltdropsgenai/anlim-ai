@@ -12,7 +12,7 @@ import { c, font } from "../lib/theme";
 import { pad2 } from "../lib/shotStatus";
 import { StillPicker } from "./StillPicker";
 import { AudioPlayer } from "./AudioPlayer";
-import { tr, trp, tMsg } from "../lib/i18n";
+import { tr, trp, tMsg, shotText } from "../lib/i18n";
 
 const AUDIO = ["audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/wave", "audio/mp4", "audio/x-m4a", "audio/aac"];
 export type Music = { path: string; name: string; source: "upload" | "score" } | null;
@@ -181,7 +181,7 @@ function ShotSound({ r, sceneId, voice, jobs, connected, onMade, onUse, setError
   return (
     <View style={s.shot}>
       <Text style={[s.small, font.mono, { color: c.sub }]}>{tr("SH {v0} · {duration_s} S", { v0: pad2(r.ord), duration_s: r.duration_s })}</Text>
-      <Text style={{ color: c.ink, fontSize: 14, marginBottom: 6 }} numberOfLines={2}>{r.action}</Text>
+      <Text style={{ color: c.ink, fontSize: 14, marginBottom: 6 }} numberOfLines={2}>{shotText(r.action)}</Text>
       <Text style={s.label}>{tr("Voiceover")}</Text>
       <TextInput value={line} onChangeText={setLine} multiline editable={connected} placeholderTextColor={c.muted} style={s.input}
         placeholder={tr("What is said over this shot. Tags like [whispers], [sighs] or [laughs] set the delivery.")} />
@@ -324,7 +324,7 @@ export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, 
                 return (
                   <View key={r.id} style={s.shot}>
                     <Text style={[s.small, font.mono, { color: c.sub }]}>{tr("SH {n} · {s} S", { n: pad2(r.ord), s: sec.toFixed(1) })}{joins === "before" ? tr(" · JOINS THE SECTION BEFORE") : joins === "after" ? tr(" · JOINS THE NEXT SECTION") : ""}</Text>
-                    <Text style={{ color: c.ink, fontSize: 13, marginBottom: 4 }} numberOfLines={1}>{r.action}</Text>
+                    <Text style={{ color: c.ink, fontSize: 13, marginBottom: 4 }} numberOfLines={1}>{shotText(r.action)}</Text>
                     <TextInput value={moods[r.id] ?? ""} onChangeText={(t) => setMoods((m) => ({ ...m, [r.id]: t }))} placeholderTextColor={c.muted}
                       style={[s.input, { minHeight: 0 }]} placeholder={tr("The mood here, e.g. somber, sparse, minor key")} />
                     <View style={[s.row, { marginTop: 4 }]}>

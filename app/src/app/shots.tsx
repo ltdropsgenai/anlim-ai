@@ -8,7 +8,7 @@ import { c, font, pageBg } from "../lib/theme";
 import { Grid } from "../components/Grid";
 import { AddShot } from "../components/AddShot";
 import { chip, pad2, TONE } from "../lib/shotStatus";
-import { tr, trp, tMsg } from "../lib/i18n";
+import { tr, trp, tMsg, shotText } from "../lib/i18n";
 
 function ShotCard({ r }: { r: ShotRow }) {
   const st = chip(r), t = TONE[st.tone];
@@ -23,7 +23,7 @@ function ShotCard({ r }: { r: ShotRow }) {
           <Text style={[s.status, { backgroundColor: t.bg, color: t.fg, borderColor: t.line }]}>{st.text}</Text>
         </View>
         <View style={{ padding: 12 }}>
-          <Text style={s.action} numberOfLines={2}>{r.action}</Text>
+          <Text style={s.action} numberOfLines={2}>{shotText(r.action)}</Text>
           <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 10 }}>
             <Text style={[s.meta, font.mono]}>{r.duration_s} S{r.gen_model ? ` · ${(MODEL_NAMES[r.gen_model] ?? r.gen_model).toUpperCase()}` : ""}</Text>
             {r.has_end_frame && <Text style={[s.meta, font.mono]}>{tr("END FRAME")}</Text>}

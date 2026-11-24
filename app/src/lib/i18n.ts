@@ -184,3 +184,6 @@ export function trDeep<T extends object>(x: T, fields: string[]): T {
   };
   return wrap(x) as T;
 }
+
+// A motion-transfer shot without a description is stored as "Motion transfer" (the worker reads it); shown translated.
+export const shotText = (s: string | null | undefined) => (s === "Motion transfer" ? t("Motion transfer") : s ?? "");

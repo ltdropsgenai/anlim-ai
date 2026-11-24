@@ -11,7 +11,7 @@ import { Grid } from "../components/Grid";
 import { Icon, IconName } from "../components/Icon";
 import { MediaView } from "../components/MediaView";
 import { downloadFile } from "../lib/download";
-import { tr, locale, trMap, tMsg } from "../lib/i18n";
+import { tr, locale, trMap, tMsg, shotText } from "../lib/i18n";
 
 const KINDS: (AssetKind | null)[] = [null, "clip", "cut", "still", "character", "place", "voice", "sfx", "music"];
 const KIND_ICON: Record<AssetKind, IconName> = { clip: "play", cut: "cut", still: "image", character: "cast", place: "image", voice: "music", sfx: "music", music: "music" };
@@ -50,7 +50,7 @@ function Card({ a, onPress }: { a: Asset; onPress: () => void }) {
         )}
       </View>
       <View style={{ padding: 12, gap: 3 }}>
-        <Text style={{ color: c.ink, fontSize: 14, lineHeight: 19 }} numberOfLines={2}>{a.kind === "still" ? tMsg(a.title) : a.title}</Text>
+        <Text style={{ color: c.ink, fontSize: 14, lineHeight: 19 }} numberOfLines={2}>{a.kind === "still" ? tMsg(a.title) : shotText(a.title)}</Text>
         <Text style={{ color: c.sub, fontSize: 12 }} numberOfLines={1}>
           {[a.series_name, a.scene_title].filter(Boolean).join(" · ") || tMsg(a.subtitle)}</Text>
         <Text style={[s.meta, font.mono]} numberOfLines={1}>
@@ -79,7 +79,7 @@ function Preview({ a, onClose, onDeleted }: { a: Asset; onClose: () => void; onD
             <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel={tr("Close")}><Text style={{ color: c.sub, fontSize: 22 }}>×</Text></Pressable>
           </View>
           {a.url ? <MediaView kind={a.kind} url={a.url} poster={a.thumb_url} /> : <Text style={s.sub}>{tr("This file could not be opened.")}</Text>}
-          <Text style={[{ color: c.ink, fontSize: 20 }, font.display]}>{a.kind === "still" ? tMsg(a.title) : a.title}</Text>
+          <Text style={[{ color: c.ink, fontSize: 20 }, font.display]}>{a.kind === "still" ? tMsg(a.title) : shotText(a.title)}</Text>
           {a.subtitle && a.subtitle !== a.title && a.subtitle !== a.model && <Text style={s.sub}>{tMsg(a.subtitle)}</Text>}
           <View style={s.facts}>
             {([
