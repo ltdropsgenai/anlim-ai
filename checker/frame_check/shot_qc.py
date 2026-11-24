@@ -238,10 +238,15 @@ def run(spec, log=print):
             log(f"identity: {ri.get('people')}")
     # 2026-11-24: a crowd shot's background frozen like a backdrop (crowd_still.py; still camera only). A flag for a
     # person, never a failure: calibrated on two classroom clips.
+    crowd_moves = None                 # handed to the action check: a measurement outranks "frozen" seen in small frames
     if spec.get("crowd"):
         try:
             import crowd_still
             cs = crowd_still.analyze(clip); ran.append("crowd_still")
+            if cs.get("measured") and not cs.get("frozen"):
+                crowd_moves = (f"{round((1 - cs['still_share']) * 100)}% of the picture keeps changing over the clip (still camera, "
+                               "measured on every part of the full-size frames), so a crowd in it is most likely moving; rain or "
+                               "the main subject can add to this number")
             if cs.get("frozen"): flags.append(cs["why"])
             elif not cs.get("measured"): notes.append(f"crowd still: not measured ({cs.get('why')})")
             log(f"crowd still: {({k: v for k, v in cs.items() if k != 'regions'})}")
@@ -357,7 +362,7 @@ def run(spec, log=print):
                 import action_check
                 act = re.sub(r"\s*\(wording from the shot manifest, unedited\)\s*$", "", spec["action"])
                 try:
-                    ar = action_check.analyze(clip, act, out, m_act, use=spec.get("use"), log=log)
+                    ar = action_check.analyze(clip, act, out, m_act, use=spec.get("use"), log=log, measured=crowd_moves)
                     ran.append(f"action_check (${ar.get('usd', 0):.2f})")
                     newv, why_ = action_check.apply("PASS", ar)
                     if newv.startswith("FAIL"): code["E"].append(why_)

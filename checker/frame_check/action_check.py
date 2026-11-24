@@ -30,7 +30,7 @@ anyone appears or vanishes away from the frame edges.
 Answer with ONE JSON object: {"people": "...", "sequence": ["t=..: ...", ...], "ends_with": "...", "camera": "...",
 "crowd": "<what the background people do, or 'frozen', or 'none'>"}"""
 
-COMPARE_VERSION = 3                # 3: crowd (2026-11-24)
+COMPARE_VERSION = 4                # 3: crowd; 4: measured crowd motion outranks "frozen" (2026-11-24)
 COMPARE = """You compare a blind description of a generated video clip with the action the shot was written for.
 The description was made WITHOUT knowing the action, so trust it over assumptions.
 The clip STARTS on a still image that a person already approved. Whatever the first frame (t=0) shows - who is
@@ -51,6 +51,12 @@ dance, clap) and the description says they are frozen or never do it, that is a 
 A quiet crowd (watching, listening, sitting) that is completely frozen is also a FLAG ("the crowd stays frozen like a
 picture"): real people shift, blink and turn their heads. Background people who appear or vanish away from the frame
 edges are a FLAG. None of these is a FAIL on its own.
+The frames you were described from are small: a crowd far in the background is a few pixels per person, so scarves,
+clapping or small movements may not show. Call a small or distant crowd "frozen" only when it is clearly a still
+picture; otherwise say its movement is unconfirmed, which is not a FLAG. When a "Measured crowd motion" line is given,
+it comes from comparing every part of the full-size picture over the whole clip and it outranks the description:
+if it says most of the picture keeps changing, do not FLAG the crowd as frozen (Londi, 2026-11-24: a stadium crowd waving scarves far in
+the background was flagged "essentially frozen"; the measurement and a person watching both saw it move).
 "matches" and "differs" are shown to the creator, who never sees the description: write them about the clip ("the
 clip shows...", "the hedgehog never..."), never "the description" (2026-11-23 tutorial test).
 Answer with ONE JSON object: {"verdict": "PASS|FLAG|FAIL", "matches": "...", "differs": "...", "confidence": "high|medium|low"}"""
@@ -81,7 +87,7 @@ def frames_at(clip, times, out_dir, width=768, fps=24.0):
         paths.append(p)
     return paths
 
-def analyze(clip, action, out_dir, model="claude-sonnet-5-5", n=8, use=None, force=False, log=print):
+def analyze(clip, action, out_dir, model="claude-sonnet-5-5", n=8, use=None, force=False, log=print, measured=None):
     log = log or (lambda *a: None)
     import ai_review as A
     from fc_common import probe
@@ -99,7 +105,7 @@ def analyze(clip, action, out_dir, model="claude-sonnet-5-5", n=8, use=None, for
     pi, pw, pr, po = A.PRICES.get(model, (2.0, 2.5, 0.1, 10.0)); usd = 0.0
     if saved_desc:
         desc, times = saved_desc["description"], saved_desc.get("times", [])
-        return _compare(desc, times, action, model, key, cp, usd, pi, po, log, reused=True)
+        return _compare(desc, times, action, model, key, cp, usd, pi, po, log, reused=True, measured=measured)
     w, h, fps, dur = probe(clip)
     t0, t1 = (use[0], min(use[1], dur)) if use else (0.0, dur)
     t1 = max(t0, t1 - 2.0 / fps)
@@ -112,12 +118,13 @@ def analyze(clip, action, out_dir, model="claude-sonnet-5-5", n=8, use=None, for
     desc, us = _json_call(A, model, key, BLIND, content, 2000)
     usd += sum((int(u.get("input_tokens") or 0) * pi + int(u.get("output_tokens") or 0) * po) / 1e6 for u in us)
     import shutil; shutil.rmtree(tmp, ignore_errors=True)
-    return _compare(desc, times, action, model, key, cp, usd, pi, po, log)
+    return _compare(desc, times, action, model, key, cp, usd, pi, po, log, measured=measured)
 
-def _compare(desc, times, action, model, key, cp, usd, pi, po, log, reused=False):
+def _compare(desc, times, action, model, key, cp, usd, pi, po, log, reused=False, measured=None):
     import ai_review as A
     cmp_, us = _json_call(A, model, key, COMPARE, [{"type": "text", "text": "Blind description:\n" + json.dumps(desc, indent=1)
-                                              + "\n\nThe shot's action:\n" + action}], 1200)
+                                              + "\n\nThe shot's action:\n" + action
+                                              + (f"\n\nMeasured crowd motion: {measured}" if measured else "")}], 1200)
     usd += sum((int(u.get("input_tokens") or 0) * pi + int(u.get("output_tokens") or 0) * po) / 1e6 for u in us)
     v = (cmp_.get("verdict") or "FLAG").upper()
     res = {"verdict": v if v in ("PASS", "FLAG", "FAIL") else "FLAG", "action": action, "times": times, "description": desc,
