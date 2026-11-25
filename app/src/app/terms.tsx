@@ -10,7 +10,7 @@ export function DraftNote() {
   if (LEGAL_REVIEWED && getLang() === "en") return null;
   return (
     <View style={{ backgroundColor: c.flagBg, borderColor: c.flagLine, borderWidth: 1, borderRadius: 10, padding: 12 }}>
-      {!LEGAL_REVIEWED && <Text style={{ color: c.flag, fontSize: 13 }}>{tr("Draft: this page has not yet been reviewed by a lawyer and may change before anlim.ai launches.")}</Text>}
+      {!LEGAL_REVIEWED && <Text style={{ color: c.flag, fontSize: 13 }}>{tr("Draft: this page has not yet been reviewed by a lawyer and may change; the date below shows the version in force.")}</Text>}
       {getLang() !== "en" && <Text style={{ color: c.flag, fontSize: 13 }}>{tr("This translation is for convenience. If it differs from the English version, the English version applies.")}</Text>}
     </View>
   );
