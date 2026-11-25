@@ -6,10 +6,11 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { api, Insights } from "../lib/api";
 import { c, font, pageBg } from "../lib/theme";
 import { tr, locale, trp, tMsg } from "../lib/i18n";
+import { AdminGate } from "../components/AdminGate";
 
 const RANGES = [7, 30, 90];
 
-export default function InsightsPage() {
+function InsightsPageInner() {
   const [days, setDays] = useState(30);
   const [d, setD] = useState<Insights | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,3 +89,8 @@ const s = StyleSheet.create({
   fill: { height: 10, backgroundColor: c.accent },
   err: { borderTopWidth: 1, borderTopColor: c.line, paddingTop: 8, marginTop: 4 },
 });
+
+// two-step code first (admin console, 2026-11-25): studio-api refuses admin calls without it
+export default function InsightsPage() {
+  return <AdminGate><InsightsPageInner /></AdminGate>;
+}

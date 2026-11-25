@@ -288,10 +288,50 @@ export type AdminRefund = { id: string; generation_id: string; owner: string; em
   decided_at: string | null; decision_note: string | null; action: string; model_id: string; qc_reasons: string[] | null;
   owner_requests: number; owner_reversed: number; clip_url: string | null; start_url: string | null };
 
+// Admin console (2026-11-25, migration studio_admin_console). Every call needs the two-step code (aal2).
+export type AdminRole = "owner" | "admin";
+export type AdminOverview = { role: AdminRole; users: number; new_7d: number; active_7d: number; paying: number; blocked: number; admins: number;
+  refunds_pending: number; failed_24h: number; errors_24h: number; in_flight: number };
+export type AdminUserRow = { id: string; email: string | null; created_at: string | null; last_sign_in_at: string | null; confirmed: boolean;
+  balance: number | null; reserved: number | null; plan_id: string | null; plan_status: string | null; last_seen_at: string | null;
+  role: AdminRole | null; blocked: boolean; block_reason: string | null; block_until: string | null; paid_cents: number; clips: number; failed: number };
+export type AdminUser = { id: string; email: string | null; created_at: string | null; last_sign_in_at: string | null; confirmed: boolean;
+  banned_until: string | null; phone: string | null; mfa: number; role: AdminRole | null;
+  account: (Record<string, unknown> & { balance?: number; reserved?: number; plan_id?: string | null; plan_status?: string | null; debt?: number;
+    last_seen_at?: string | null; language?: string | null; welcome_status?: string | null; has_stripe?: boolean; subscription?: boolean }) | null;
+  block: { reason: string; until: string | null; blocked_at: string; by_email: string | null } | null;
+  counts: { projects: number; clips: number; clips_failed: number; images: number; in_flight: number; mcp_calls_7d: number };
+  payments: { at: string; plan_id: string | null; amount_cents: number; credits: number; refunded_cents: number | null }[];
+  ledger: { created_at: string; kind: string; credits: number; note: string | null }[];
+  jobs: { kind: string; id: string; status: string; detail: string | null; error: string | null; created_at: string; credits: number | null }[];
+  refunds: { id: string; status: string; credits: number; created_at: string; reasons: string[] }[];
+  errors: { at: string; source: string; place: string | null; message: string }[];
+  log: { at: string; admin_email: string | null; action: string; detail: Record<string, unknown> }[] };
+export type AdminIssues = {
+  waiting: { kind: string; id: string; owner: string; email: string | null; status: string; since: string; error: string | null }[];
+  failed: { kind: string; id: string; owner: string; email: string | null; detail: string | null; error: string | null; at: string }[];
+  errors: { source: string; place: string | null; message: string; n: number; accounts: number; last: string }[];
+  refunds_pending: number };
+export type AdminEntry = { user_id: string; email: string | null; role: AdminRole; added_at: string; added_by: string | null; mfa: boolean };
+export type AdminLogEntry = { id: number; at: string; admin_id: string | null; admin_email: string | null; action: string; target: string | null;
+  target_email: string | null; detail: Record<string, unknown> };
+
 export const api = {
+  adminOverview: () => call<AdminOverview>({ op: "admin_overview" }),
+  adminUsers: (q: string, filter: string, offset = 0) => call<{ total: number; items: AdminUserRow[] }>({ op: "admin_users", q, filter, offset, limit: 50 }),
+  adminUser: (userId: string) => call<AdminUser>({ op: "admin_user", user_id: userId }),
+  adminIssues: () => call<AdminIssues>({ op: "admin_issues" }),
+  adminAdmins: () => call<{ items: AdminEntry[] }>({ op: "admin_admins" }).then((r) => r.items),
+  adminLog: (before?: number) => call<{ items: AdminLogEntry[] }>({ op: "admin_log", before: before ?? null }).then((r) => r.items),
+  adminBlock: (userId: string, reason: string, hours: number | null) =>
+    call<{ ok: boolean; until: string | null; warning?: string }>({ op: "admin_block", user_id: userId, reason, hours }),
+  adminUnblock: (userId: string, note: string) => call<{ ok: boolean; warning?: string }>({ op: "admin_unblock", user_id: userId, note }),
+  adminGrant: (userId: string, credits: number, note: string) => call<{ ok: boolean; balance: number }>({ op: "admin_grant", user_id: userId, credits, note }),
+  adminAdd: (email: string) => call<{ ok: boolean; user_id: string }>({ op: "admin_add", email }),
+  adminRemove: (userId: string) => call<{ ok: boolean }>({ op: "admin_remove", user_id: userId }),
   me: () => call<{ user_id: string; email: string; balance: number; reserved: number; plan_credits: number; is_admin?: boolean; debt?: number; paid?: boolean; email_ready?: boolean; language?: "en" | "es" | "fr" | null;
                    plan_id: string | null; plan_status: string | null;
-                   welcome_status: WelcomeStatus }>({ op: "me" }),
+                   welcome_status: WelcomeStatus; blocked?: { until: string | null } | null }>({ op: "me" }),
   // billing (studio-billing Edge Function: Stripe Checkout and billing portal)
   billing: () => call<Billing>({ op: "plans" }, "studio-billing"),
   checkout: (planId: string, returnUrl: string) => call<{ url: string }>({ op: "checkout", plan_id: planId, return_url: returnUrl }, "studio-billing"),

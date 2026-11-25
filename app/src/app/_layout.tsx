@@ -162,6 +162,8 @@ export default function RootLayout() {
       <Stack.Screen name="oauth/consent" options={{ title: tr("Connect an AI tool · anlim.ai") }} />
       <Stack.Screen name="refunds" options={{ title: tr("Refund requests") }} />
       <Stack.Screen name="insights" options={{ title: tr("Insights") }} />
+      <Stack.Screen name="admin/index" options={{ title: tr("Admin console") }} />
+      <Stack.Screen name="admin/user/[id]" options={{ title: tr("Account details") }} />
     </Stack>
   );
   // 2026-11-20 (Londi): the sun light sits behind every page. Studio pages get it from the Shell (behind the page,

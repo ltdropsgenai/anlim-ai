@@ -9,10 +9,11 @@ import { c, font, pageBg } from "../lib/theme";
 import { MediaView } from "../components/MediaView";
 import { tr, locale, trp, tMsg } from "../lib/i18n";
 import { usePageTitle } from "../lib/pageTitle";
+import { AdminGate } from "../components/AdminGate";
 
 type Tab = "pending" | "upheld" | "reversed";
 
-export default function Refunds() {
+function RefundsInner() {
   usePageTitle(tr("Refunds"));
   const [tab, setTab] = useState<Tab>("pending");
   const [items, setItems] = useState<AdminRefund[] | null>(null);
@@ -99,3 +100,8 @@ const s = StyleSheet.create({
   input: { borderWidth: 1, borderColor: c.line, borderRadius: 10, color: c.ink, padding: 10, minHeight: 60, marginTop: 8, backgroundColor: c.field },
   btn: { borderWidth: 1, borderColor: c.line, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9, marginTop: 8 },
 });
+
+// two-step code first (admin console, 2026-11-25): studio-api refuses admin calls without it
+export default function Refunds() {
+  return <AdminGate><RefundsInner /></AdminGate>;
+}

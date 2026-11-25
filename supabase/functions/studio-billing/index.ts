@@ -173,6 +173,11 @@ async function handle(req: Request): Promise<Response> {
   const uid = who.user.id;
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
+  // a blocked account (admin console, 2026-11-25) cannot buy; it can still open the billing portal to cancel a plan
+  if (body.op === "checkout") {
+    const [blk] = await sql`select 1 from studio.block_of(${uid}::uuid)`;
+    if (blk) return json({ error: "This account is blocked. Contact support@anlim.ai." }, 403);
+  }
 
   try {
     switch (body.op) {

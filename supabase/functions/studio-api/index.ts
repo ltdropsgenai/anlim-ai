@@ -56,6 +56,29 @@ function asUser<T>(uid: string, fn: (tx: postgres.TransactionSql) => Promise<T>)
   });
 }
 
+// Admin console (2026-11-25, migration studio_admin_console): admin calls carry the session's assurance level (aal2 =
+// signed in with the two-step code) into the claims, and studio.admin_guard() refuses anything less. getUser has
+// already verified the token, so reading its payload here is safe.
+function jwtClaims(jwt: string): Record<string, unknown> {
+  try { return JSON.parse(atob(jwt.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))); } catch { return {}; }
+}
+function asAdmin<T>(uid: string, aal: string, fn: (tx: postgres.TransactionSql) => Promise<T>) {
+  return sql.begin(async (tx) => {
+    await tx`select set_config('request.jwt.claims', ${JSON.stringify({ sub: uid, role: "authenticated", aal })}, true),
+                    set_config('request.jwt.claim.sub', ${uid}, true)`;
+    await tx`set local role authenticated`;
+    return fn(tx);
+  });
+}
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Supabase Auth: a blocked account cannot sign in or refresh, and its sessions end (refresh tokens go with them).
+// Its current access token runs out within the hour; studio-api, studio-mcp, checkout and uploads refuse it meanwhile.
+async function authBan(target: string, hours: number | null) {
+  const { error } = await admin.auth.admin.updateUserById(target, { ban_duration: hours == null ? "876000h" : `${hours}h` });
+  if (error) throw new Error(`auth ban: ${error.message}`);
+  await sql`delete from auth.sessions where user_id = ${target}::uuid`;
+}
+
 // Signing is batched and throttled (2026-11-19): the Assets list asked Storage for 100+ links at once, one request
 // each, and Storage answered 429 (rate limited), leaving blank cards. Plain links now go out as one
 // createSignedUrls call per expiry per tick. (Resized previews used Storage transforms until 2026-11-25; see thumb().)
@@ -153,6 +176,11 @@ async function handle(req: Request): Promise<Response> {
   const uid = who.user.id;
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
+  // a blocked account (studio.user_blocks) gets only "me", which tells the app to show the blocked page
+  const [blk] = await sql`select reason, until from studio.block_of(${uid}::uuid)`;
+  if (blk && body.op !== "me") return json({ error: "This account is blocked. Contact support@anlim.ai.", blocked: true }, 403);
+  const aal = String(jwtClaims(jwt).aal || "aal1");
+  if (typeof body.op === "string" && body.op.startsWith("admin_") && aal !== "aal2") return json({ error: "enter your two-step code first", need_mfa: true }, 403);
 
   try {
     switch (body.op) {
@@ -168,7 +196,7 @@ async function handle(req: Request): Promise<Response> {
         return json({ user_id: uid, email: who.user.email, balance: acc?.balance ?? 0, reserved: acc?.reserved ?? 0, paid: !!paid,
           plan_credits: acc?.plan_credits ?? 0, plan_id: acc?.plan_id ?? null, plan_status: acc?.plan_status ?? null,
           welcome_status: acc?.welcome_status ?? null, debt: acc?.debt ?? 0, is_admin: !!acc?.is_admin, email_ready: acc?.email_ready !== false,
-          language: acc?.language ?? null });
+          language: acc?.language ?? null, blocked: blk ? { until: blk.until } : null });
       }
       case "translate": {
         const lang = String(body.lang || "");
@@ -913,6 +941,71 @@ async function handle(req: Request): Promise<Response> {
       }
       case "track": {
         await asUser(uid, (tx) => tx`select studio.track(${String(body.name || "view")}, ${String(body.route || "").slice(0, 200)})`);
+        return json({ ok: true });
+      }
+      // ---- admin console (2026-11-25): every studio.admin_* function checks studio.admin_guard() itself ----
+      case "admin_overview": {
+        const [r] = await asAdmin(uid, aal, (tx) => tx`select studio.admin_overview() as r`);
+        return json(r.r);
+      }
+      case "admin_users": {
+        const [r] = await asAdmin(uid, aal, (tx) => tx`select studio.admin_users(${body.q ? String(body.q).slice(0, 200) : null},
+          ${String(body.filter || "all")}, ${Number(body.limit) || 50}::int, ${Number(body.offset) || 0}::int) as r`);
+        return json(r.r);
+      }
+      case "admin_user": {
+        const target = String(body.user_id || "");
+        if (!UUID.test(target)) return json({ error: "bad user id" }, 400);
+        const [r] = await asAdmin(uid, aal, (tx) => tx`select studio.admin_user(${target}::uuid) as r`);
+        return json(r.r);
+      }
+      case "admin_issues": {
+        const [r] = await asAdmin(uid, aal, (tx) => tx`select studio.admin_issues() as r`);
+        return json(r.r);
+      }
+      case "admin_admins": {
+        const [r] = await asAdmin(uid, aal, (tx) => tx`select studio.admin_admins() as r`);
+        return json({ items: r.r });
+      }
+      case "admin_log": {
+        const before = body.before == null ? null : Number(body.before);
+        const [r] = await asAdmin(uid, aal, (tx) => tx`select studio.admin_log_list(${Number(body.limit) || 100}::int, ${before}::bigint) as r`);
+        return json({ items: r.r });
+      }
+      case "admin_block": {
+        const target = String(body.user_id || "");
+        if (!UUID.test(target)) return json({ error: "bad user id" }, 400);
+        const hours = body.hours == null ? null : Math.round(Number(body.hours));
+        const [r] = await asAdmin(uid, aal, (tx) => tx`select studio.admin_block(${target}::uuid, ${String(body.reason || "")}, ${hours}::int) as until`);
+        try { await authBan(target, hours); }
+        catch (e) {   // the block stands (every function checks it); say the sign-in ban did not take
+          console.error("admin_block:", (e as Error).message);
+          return json({ ok: true, until: r.until, auth_ban: false, warning: "Blocked in anlim, but the sign-in ban failed: try Block again." });
+        }
+        return json({ ok: true, until: r.until, auth_ban: true });
+      }
+      case "admin_unblock": {
+        const target = String(body.user_id || "");
+        if (!UUID.test(target)) return json({ error: "bad user id" }, 400);
+        await asAdmin(uid, aal, (tx) => tx`select studio.admin_unblock(${target}::uuid, ${body.note ? String(body.note) : null})`);
+        const { error } = await admin.auth.admin.updateUserById(target, { ban_duration: "none" });
+        if (error) return json({ ok: true, warning: `Unblocked in anlim, but lifting the sign-in ban failed (${error.message}): try again.` });
+        return json({ ok: true });
+      }
+      case "admin_grant": {
+        const target = String(body.user_id || "");
+        if (!UUID.test(target)) return json({ error: "bad user id" }, 400);
+        const [r] = await asAdmin(uid, aal, (tx) => tx`select studio.admin_grant(${target}::uuid, ${Math.round(Number(body.credits) || 0)}::int, ${String(body.note || "")}) as balance`);
+        return json({ ok: true, balance: r.balance });
+      }
+      case "admin_add": {
+        const [r] = await asAdmin(uid, aal, (tx) => tx`select studio.admin_add(${String(body.email || "")}) as id`);
+        return json({ ok: true, user_id: r.id });
+      }
+      case "admin_remove": {
+        const target = String(body.user_id || "");
+        if (!UUID.test(target)) return json({ error: "bad user id" }, 400);
+        await asAdmin(uid, aal, (tx) => tx`select studio.admin_remove(${target}::uuid)`);
         return json({ ok: true });
       }
       case "admin_insights": {

@@ -9,6 +9,7 @@ import { Animated, Platform, Pressable, Text, useWindowDimensions, View } from "
 import { Notices } from "./Notices";
 import { router, usePathname } from "expo-router";
 import { api, HomeData } from "../lib/api";
+import { supabase } from "../lib/supabase";
 import { c, font, pageBg } from "../lib/theme";
 import { SunStage } from "./SunLight";
 import { Icon, IconName } from "./Icon";
@@ -41,11 +42,30 @@ const TITLES: [RegExp, string][] = [
   [/^\/$/, "Home"], [/^\/workspace/, "Workspace"], [/^\/storage/, "Assets"], [/^\/review/, "Review"],
   [/^\/clip\//, "Review a clip"], [/^\/shots/, "Scene board"], [/^\/shot\//, "Shot"], [/^\/cut\//, "Scene cut"],
   [/^\/library/, "Cast & places"], [/^\/billing/, "Credits & plan"], [/^\/account/, "Account"], [/^\/refunds/, "Refund requests"], [/^\/insights/, "Insights"],
+  [/^\/admin\/user\//, "Account details"], [/^\/admin/, "Admin console"],
 ];
 // 7685 -> "7.7k", 950 -> "950": the mini gauge's label
 const short = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n));
 type Me = { email?: string; balance: number; reserved: number; plan_status: string | null; plan_id?: string | null;
-            plan_credits?: number; is_admin?: boolean; paid?: boolean };
+            plan_credits?: number; is_admin?: boolean; paid?: boolean; blocked?: { until: string | null } | null };
+
+// A blocked account (admin console, 2026-11-25) sees this instead of any page; every call but "me" is refused anyway.
+function Blocked({ until }: { until: string | null }) {
+  return (
+    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <View style={{ maxWidth: 460, gap: 12, backgroundColor: c.card, borderRadius: 14, padding: 22 }}>
+        <Text style={[{ color: c.ink, fontSize: 22 }, font.display]}>{tr("This account is blocked")}</Text>
+        <Text style={{ color: c.sub, fontSize: 15, lineHeight: 22 }}>
+          {until ? tr("It can be used again after {when}.", { when: new Date(until).toLocaleString(locale()) }) : tr("It cannot be used until the block is lifted.")}
+          {" "}{tr("If you think this is a mistake, write to support@anlim.ai.")}
+        </Text>
+        <Pressable onPress={() => { supabase.auth.signOut().catch(() => {}); }} accessibilityRole="button">
+          <Text style={{ color: c.link, fontSize: 14, textDecorationLine: "underline" }}>{tr("Sign out")}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
 
 export function Shell({ children }: { children: ReactNode }) {
   const path = usePathname();
@@ -85,7 +105,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const title = tr(TITLES.find(([r]) => r.test(path))?.[1] ?? "anlim.ai");
   // the browser tab says where you are (2026-11-19: Stack titles did not reach the tab with the header hidden)
   useEffect(() => { if (Platform.OS === "web") document.title = title === "Home" ? "anlim.ai" : `${title} · anlim.ai`; }, [title]);
-  const deep = /^\/(clip|shot|cut)\//.test(path) || path.startsWith("/shots");
+  const deep = /^\/(clip|shot|cut|admin\/user)\//.test(path) || path.startsWith("/shots");
   const hasPlan = me?.plan_status === "active" || me?.plan_status === "trialing";
   const toReview = home?.counts.to_review ?? 0;
   const avail = me ? me.balance - me.reserved : 0;
@@ -215,6 +235,7 @@ export function Shell({ children }: { children: ReactNode }) {
       {sideRow("/support", "play", tr("Help & support"), path.startsWith("/support"), () => router.navigate("/support"))}
       {me?.is_admin && <>
         {section(tr("ADMIN"))}
+        {sideRow("/admin", "account", tr("Admin console"), path.startsWith("/admin"), () => router.navigate("/admin" as never))}
         {sideRow("/refunds", "review", tr("Refund requests"), path.startsWith("/refunds"), () => router.navigate("/refunds" as never))}
         {sideRow("/insights", "search", tr("Insights"), path.startsWith("/insights"), () => router.navigate("/insights" as never))}
       </>}
@@ -312,7 +333,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <View style={{ flex: 1, backgroundColor: c.bg }}>
         <SunStage>
         {top}
-        <View style={{ flex: 1 }}>{children}<Notices /></View>
+        <View style={{ flex: 1 }}>{me?.blocked ? <Blocked until={me.blocked.until} /> : children}<Notices /></View>
         </SunStage>
         <View accessibilityRole="tablist" onLayout={(e) => setTabW(e.nativeEvent.layout.width / shown.length)}
           style={{ flexDirection: "row", backgroundColor: c.rail, shadowColor: "#000", shadowOpacity: 0.5, shadowRadius: 24,
@@ -380,7 +401,7 @@ export function Shell({ children }: { children: ReactNode }) {
         {/* 2026-11-20: every studio page sits in front of the sun light */}
         <SunStage>
         {top}
-        <View style={{ flex: 1 }}>{children}<Notices /></View>
+        <View style={{ flex: 1 }}>{me?.blocked ? <Blocked until={me.blocked.until} /> : children}<Notices /></View>
         </SunStage>
       </View>
     </View>

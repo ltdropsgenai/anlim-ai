@@ -1293,6 +1293,10 @@ Deno.serve(async (req) => {
     return json({ error: "this token is for the anlim app, not for AI tools: add anlim as a connector in your AI tool and sign in there" },
                 401, { "WWW-Authenticate": challenge("invalid_token") });
 
+  // a blocked account (admin console, 2026-11-25) cannot use the connector
+  const [blk] = await sql`select 1 from studio.block_of(${who.user.id}::uuid)`;
+  if (blk) return json({ error: "this anlim account is blocked: contact support@anlim.ai" }, 403);
+
   let m: Rpc;
   try { m = await req.json(); } catch { return json(err(null, -32700, "Parse error"), 400); }
   if (Array.isArray(m)) return json(err(null, -32600, "Batches are not supported"), 400);
