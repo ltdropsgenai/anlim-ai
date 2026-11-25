@@ -28,12 +28,34 @@ async function retention(days: number, dry: boolean) {
       (p.startsWith(`${owner}/`) || p.startsWith(`00000000-0000-0000-0000-000000000000/clean/${owner}/`));
     if (!paths.length || !paths.every(mine)) { skipped++; continue; }
     if (dry) { done++; files += paths.length; bytes += Number(r.bytes) || 0; continue; }
-    const { error } = await sb.storage.from(BUCKET).remove(paths);
+    const { error } = await sb.storage.from(BUCKET).remove([...paths, ...paths.map(thumbPath).filter((t): t is string => !!t)]);
     if (error) { console.error(`retention ${r.kind} ${r.ref_id}: ${error.message}`); skipped++; continue; }
     await sql`select studio.retention_done(${r.kind}, ${r.ref_id}, ${owner}::uuid, ${paths}::text[], ${Number(r.bytes) || 0}::bigint)`;
     done++; files += paths.length; bytes += Number(r.bytes) || 0;
   }
   return { days: d, dry, candidates: rows.length, done, files, bytes, skipped };
+}
+
+// Previews (2026-11-25): the worker writes a small JPEG beside each picture (worker/src/thumbs.js) at thumbPath(), inside
+// the owner's folder; studio-api hands it out instead of a Storage transform. "thumbs_due" names pictures that have none
+// yet, newest first; only pictures over 150 kB (smaller ones are sent as they are).
+const VAULT = "00000000-0000-0000-0000-000000000000/clean/";
+function thumbPath(p: string) {
+  const m = p.startsWith(VAULT) ? p.match(/^(00000000-0000-0000-0000-000000000000\/clean\/[^/]+\/)(.+)$/) : p.match(/^([^/]+\/)(.+)$/);
+  return m ? `${m[1]}thumbs/${m[2]}.jpg` : null;
+}
+async function thumbsDue(limit: number) {
+  const n = Math.max(1, Math.min(50, Math.round(Number(limit) || 20)));
+  const rows = await sql`
+    select o.name from storage.objects o
+     where o.bucket_id = ${BUCKET} and o.name ~* '\.(png|jpe?g|webp)$' and o.name !~ '(^|/)thumbs/'
+       and coalesce((o.metadata->>'size')::bigint, 0) > 150000
+       and not exists (select 1 from storage.objects t where t.bucket_id = ${BUCKET} and t.name =
+             case when o.name like '00000000-0000-0000-0000-000000000000/clean/%'
+                  then regexp_replace(o.name, '^(00000000-0000-0000-0000-000000000000/clean/[^/]+/)', '\1thumbs/')
+                  else regexp_replace(o.name, '^([^/]+/)', '\1thumbs/') end || '.jpg')
+     order by o.created_at desc limit ${n}`;
+  return rows.map((r) => ({ path: String(r.name), thumb: thumbPath(String(r.name)) })).filter((r) => r.thumb);
 }
 
 async function sha256(s: string) {
@@ -47,11 +69,15 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   const tok = req.headers.get("x-worker-token") || "";
   if (!tok || (await sha256(tok)) !== TOKEN_SHA256) return json({ error: "unauthorized" }, 401);
-  let body: { op?: string; path?: string; expires?: number; days?: number; dry?: boolean };
+  let body: { op?: string; path?: string; expires?: number; days?: number; dry?: boolean; limit?: number };
   try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
   if (body.op === "retention") {
     try { return json(await retention(Number(body.days) || 30, body.dry === true)); }
     catch (e) { console.error("retention:", (e as Error).message); return json({ error: "retention failed" }, 500); }
+  }
+  if (body.op === "thumbs_due") {
+    try { return json({ due: await thumbsDue(Number(body.limit) || 20) }); }
+    catch (e) { console.error("thumbs_due:", (e as Error).message); return json({ error: "thumbs_due failed" }, 500); }
   }
   const path = body.path || "";
   if (!PATH_OK.test(path) || path.includes("..")) return json({ error: "bad path" }, 400);
@@ -63,5 +89,5 @@ Deno.serve(async (req) => {
     const { data, error } = await sb.storage.from(BUCKET).createSignedUploadUrl(path, { upsert: true });
     return error ? json({ error: error.message }, 400) : json({ url: data.signedUrl, token: data.token });
   }
-  return json({ error: "op must be sign_download, sign_upload or retention" }, 400);
+  return json({ error: "op must be sign_download, sign_upload, retention or thumbs_due" }, 400);
 });

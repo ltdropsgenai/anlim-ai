@@ -28,6 +28,7 @@ import * as translate from "./translate.js";
 import * as audio from "./audio.js";
 import * as moderate from "./moderate.js";
 import * as exporter from "./export.js";
+import { maybeThumbs } from "./thumbs.js";
 
 const run = promisify(execFile);
 const providers = { fal, mock, higgsfield };
@@ -574,6 +575,7 @@ export async function tick() {
   await refreshPlans();
   maybeRetention();
   maybeMail();
+  maybeThumbs();
   const jobs = await db.claim(config.workerId, config.batch, 1500);
   const now = [];
   for (const g of jobs) {

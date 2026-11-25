@@ -58,8 +58,7 @@ function asUser<T>(uid: string, fn: (tx: postgres.TransactionSql) => Promise<T>)
 
 // Signing is batched and throttled (2026-11-19): the Assets list asked Storage for 100+ links at once, one request
 // each, and Storage answered 429 (rate limited), leaving blank cards. Plain links now go out as one
-// createSignedUrls call per expiry per tick; resized previews (which need their own call each) run at most 6 at a time
-// and fall back to the plain link when Storage refuses.
+// createSignedUrls call per expiry per tick. (Resized previews used Storage transforms until 2026-11-25; see thumb().)
 const signQueue = new Map<number, Map<string, Array<(u: string | null) => void>>>();
 let signFlush: Promise<void> | null = null;
 function sign(path: string | null, seconds = 3600): Promise<string | null> {
@@ -86,19 +85,19 @@ async function flushSigns() {
   }
 }
 
-let thumbsRunning = 0;
-const thumbWaiters: Array<() => void> = [];
+// Previews (2026-11-25 launch audit): Supabase image transforms ran out of the Pro quota (108 of 100 origin images in
+// the cycle, spend cap on). The worker now writes a small JPEG beside each picture, at thumbPath() (thumbs.js and
+// studio-storage "thumbs_due"); this hands out that file when it exists and the picture itself until then. Inside the
+// owner's own folder, so account deletion (studio-billing) removes previews with everything else.
+const VAULT = "00000000-0000-0000-0000-000000000000/clean/";
+function thumbPath(p: string) {
+  const m = p.startsWith(VAULT) ? p.match(/^(00000000-0000-0000-0000-000000000000\/clean\/[^/]+\/)(.+)$/) : p.match(/^([^/]+\/)(.+)$/);
+  return m ? `${m[1]}thumbs/${m[2]}.jpg` : null;
+}
 async function thumb(path: string | null) {
   if (!path) return null;
-  if (thumbsRunning >= 6) await new Promise<void>((r) => thumbWaiters.push(r));
-  thumbsRunning++;
-  try {
-    const { data, error } = await admin.storage.from(BUCKET).createSignedUrl(path, 3600, { transform: { width: 480, height: 270, resize: "cover", quality: 70 } });
-    if (!error) return data.signedUrl;
-  } finally {
-    thumbsRunning--; thumbWaiters.shift()?.();
-  }
-  return sign(path);   // preview refused (rate limit or not an image): the full picture still shows
+  const t = /\.(png|jpe?g|webp)$/i.test(path) ? thumbPath(path) : null;
+  return (t ? await sign(t) : null) ?? sign(path);
 }
 
 // Remove stored files a delete function returned. Only the caller's own folder and their clean copies are touched,
@@ -111,8 +110,9 @@ async function removeFiles(uid: string, paths: string[]) {
     const used = new Set((await sql`select studio.still_used(${mine}::text[]) as p`).map((r) => String(r.p)));
     mine = mine.filter((p) => !used.has(p));
   }
-  for (let i = 0; i < mine.length; i += 100) {
-    const { error } = await admin.storage.from(BUCKET).remove(mine.slice(i, i + 100));
+  const gone = [...mine, ...mine.map(thumbPath).filter((t): t is string => !!t)];   // and their previews
+  for (let i = 0; i < gone.length; i += 100) {
+    const { error } = await admin.storage.from(BUCKET).remove(gone.slice(i, i + 100));
     if (error) console.error(`remove files for ${uid}: ${error.message}`);
   }
   return mine.length;
