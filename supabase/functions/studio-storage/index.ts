@@ -46,15 +46,18 @@ function thumbPath(p: string) {
 }
 async function thumbsDue(limit: number) {
   const n = Math.max(1, Math.min(50, Math.round(Number(limit) || 20)));
+  // no backslashes in here: a tagged template turns "\1" into undefined (2026-11-25, first deploy failed on it)
   const rows = await sql`
-    select o.name from storage.objects o
-     where o.bucket_id = ${BUCKET} and o.name ~* '\.(png|jpe?g|webp)$' and o.name !~ '(^|/)thumbs/'
-       and coalesce((o.metadata->>'size')::bigint, 0) > 150000
-       and not exists (select 1 from storage.objects t where t.bucket_id = ${BUCKET} and t.name =
-             case when o.name like '00000000-0000-0000-0000-000000000000/clean/%'
-                  then regexp_replace(o.name, '^(00000000-0000-0000-0000-000000000000/clean/[^/]+/)', '\1thumbs/')
-                  else regexp_replace(o.name, '^([^/]+/)', '\1thumbs/') end || '.jpg')
-     order by o.created_at desc limit ${n}`;
+    with pics as (
+      select o.name, o.created_at,
+             coalesce(substring(o.name from '^00000000-0000-0000-0000-000000000000/clean/[^/]+/'), split_part(o.name, '/', 1) || '/') as pre
+        from storage.objects o
+       where o.bucket_id = ${BUCKET} and o.name ~* '[.](png|jpe?g|webp)$' and o.name !~ '(^|/)thumbs/'
+         and coalesce((o.metadata->>'size')::bigint, 0) > 150000)
+    select p.name from pics p
+     where not exists (select 1 from storage.objects t where t.bucket_id = ${BUCKET}
+                         and t.name = p.pre || 'thumbs/' || substr(p.name, length(p.pre) + 1) || '.jpg')
+     order by p.created_at desc limit ${n}`;
   return rows.map((r) => ({ path: String(r.name), thumb: thumbPath(String(r.name)) })).filter((r) => r.thumb);
 }
 
