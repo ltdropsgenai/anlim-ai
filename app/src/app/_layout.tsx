@@ -8,7 +8,7 @@ import { setOauthReturn, takeOauthReturn } from "../lib/oauthReturn";
 import { c, pageBg } from "../lib/theme";
 import { SunStage } from "../components/SunLight";
 import { Shell } from "../components/Shell";
-import { installErrorHandlers, reportError, trackView } from "../lib/telemetry";
+import { installErrorHandlers, reloadIfStaleBundle, reportError, trackView } from "../lib/telemetry";
 import { api } from "../lib/api";
 import { tr, getLang, setLang, onLang, Lang } from "../lib/i18n";
 
@@ -62,7 +62,7 @@ animation:anlim-drift 7s ease-in-out infinite;transition:transform .5s cubic-bez
 
 // A screen that throws shows this instead of a blank page (expo-router ErrorBoundary, review 2026-11-19).
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => Promise<void> }) {
-  useEffect(() => { reportError("screen", error); }, [error]);   // monitoring (2026-11-23)
+  useEffect(() => { reportError("screen", error); reloadIfStaleBundle(error); }, [error]);   // monitoring (2026-11-23); stale tab after a deploy (2026-11-25)
   return (
     <View style={{ flex: 1, backgroundColor: c.bg, alignItems: "center", justifyContent: "center", padding: 24, gap: 12 }}>
       <Text style={{ color: c.ink, fontSize: 20, fontWeight: "700" }}>{tr("Something went wrong on this screen")}</Text>

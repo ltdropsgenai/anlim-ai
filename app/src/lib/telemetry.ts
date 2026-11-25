@@ -37,10 +37,27 @@ export function reportError(place: string, error: unknown) {
                         page: Platform.OS === "web" && typeof location !== "undefined" ? location.pathname : null } });
 }
 
+// 2026-11-25: a tab left open across a deploy asks for code files the new build no longer has ("Loading module …
+// failed", logged 11-24 on /storage). Reloading once fetches the new build. The time in sessionStorage stops a loop
+// when the file is really missing: a second failure within a minute shows the error screen instead.
+const STALE = /Loading module .* failed|ChunkLoadError|Loading chunk .* failed|Failed to fetch dynamically imported module|Importing a module script failed/i;
+export function reloadIfStaleBundle(error: unknown): boolean {
+  if (Platform.OS !== "web" || typeof window === "undefined") return false;
+  const msg = String((error as { message?: string })?.message ?? error ?? "");
+  if (!STALE.test(msg)) return false;
+  try {
+    const last = Number(sessionStorage.getItem("anlim-stale-reload") || 0);
+    if (Date.now() - last < 60_000) return false;
+    sessionStorage.setItem("anlim-stale-reload", String(Date.now()));
+  } catch { return false; }   // no storage, no loop guard: leave it to the error screen
+  window.location.reload();
+  return true;
+}
+
 let installed = false;
 export function installErrorHandlers() {
   if (installed || Platform.OS !== "web" || typeof window === "undefined") return;
   installed = true;
-  window.addEventListener("error", (ev) => reportError("window", ev.error ?? ev.message));
-  window.addEventListener("unhandledrejection", (ev) => reportError("promise", ev.reason));
+  window.addEventListener("error", (ev) => { reportError("window", ev.error ?? ev.message); reloadIfStaleBundle(ev.error ?? ev.message); });
+  window.addEventListener("unhandledrejection", (ev) => { reportError("promise", ev.reason); reloadIfStaleBundle(ev.reason); });
 }
