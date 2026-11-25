@@ -89,6 +89,11 @@ const APPEARS = /\b(appears?|appearing|reappears?|re-?forms?|re-?forming|materia
 const LIGHT_CHANGES = /\b(halos?|auras?|glows?|glowing|radiant|radiance|beams? of (?:sun)?light|(?:sun|light) ?rays?|rays? of (?:sun)?light|bursts? of light|light (?:forms|floods|fills|spreads|grows|blazes))\b/i;
 async function endFrameGate(g, shot, characters = []) {
   if (!shot.end_frame_path || config.endFrameGate === "off") return null;
+  // 2026-11-25 (Number 10 swings): an end frame the creator uploaded (set_end_image) may be a new camera angle, which
+  // changes the whole frame by design; this check is for end frames made by editing the start still
+  if (shot.end_frame_upload_path && shot.end_frame_upload_path === shot.end_frame_path) {
+    log(g, "end frame: uploaded by the creator, not checked against the start image"); return null;
+  }
   const dir = path.join(config.workDir, g.id, "end_frame");
   const start = path.join(dir, "start" + path.extname(shot.start_frame_path));
   const end = path.join(dir, "end" + path.extname(shot.end_frame_path));

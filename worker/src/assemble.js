@@ -380,7 +380,10 @@ async function build(a) {
     const from = Math.min(skip, p.frames - keep);
     // 2026-11-22: the shot's speed (0.5 to 2); the trims are in the clip's own seconds, before the speed change
     const speed = Math.min(2, Math.max(0.5, Number(it.speed) || 1));
-    plan.push({ it, src, p, keep, from, speed, out: Math.max(1, Math.round(keep / speed)) });
+    // 2026-11-25 (Number 10 swings): the shot's hold, seconds its last frame stays on screen after the clip (0 to 5)
+    const held = Math.round(Math.min(5, Math.max(0, Number(it.hold) || 0)) * FPS);
+    const moved = Math.max(1, Math.round(keep / speed));
+    plan.push({ it, src, p, keep, from, speed, out: moved + held, hold: held, moved });
   }
   const sty = style.normalize(opts.style);
   const changes = sty ? style.kinds(plan.length, sty.transitions) : [];
@@ -408,23 +411,25 @@ async function build(a) {
       if ((await fs.stat(src)).size > 30 * 1024 * 1024) throw new Error("the music file is over 30 MB");
       const r = style.snap(plan.map((x) => x.out), await style.onsets(src, dir, SAFE_AUDIO_IN), FPS);
       // a shot made longer than its clip holds its last frame for the difference (part(): hold)
-      r.lens.forEach((n, i) => { plan[i].hold = Math.max(0, n - plan[i].out); plan[i].out = n; });
+      r.lens.forEach((n, i) => { plan[i].hold = Math.max(0, n - plan[i].moved); plan[i].out = n; });
       synced = r.moved;
       if (synced) notes.push(`Edit style: ${synced} shot change${synced > 1 ? "s" : ""} moved to land on a beat of the music (up to 0.33 s earlier${r.held ? `, or up to 0.25 s later with the last frame held` : ""}).`);
     } catch (e) { notes.push(`Edit style: the music's beats could not be found (${String(e.message || e).slice(0, 120)}); the shots change where they end.`); }
   }
   for (let i = 0; i < plan.length; i++) {
-    const { it, src, p, keep, from, speed, out, hold = 0 } = plan[i];
+    const { it, src, p, keep, from, speed, out, hold = 0, moved } = plan[i];
     const first = i === 0, last = i === plan.length - 1;
     const fades = { in: opts.fade && first, out: opts.fade && last };
     const dest = path.join(dir, `p${String(i).padStart(3, "0")}.mp4`);
     if (from || keep < p.frames) notes.push(`Shot ${it.ord}: trimmed to ${(keep / FPS).toFixed(2)} s (from ${(from / FPS).toFixed(2)} s).`);
-    if (out !== Math.max(1, Math.round(keep / speed)) || out !== keep) notes.push(`Shot ${it.ord}: ${speed !== 1 ? `at ${Math.round(speed * 100)}% speed, ` : ""}${(out / FPS).toFixed(2)} s in the cut.`);
+    if (out !== moved || out !== keep) notes.push(`Shot ${it.ord}: ${speed !== 1 ? `at ${Math.round(speed * 100)}% speed, ` : ""}${(out / FPS).toFixed(2)} s in the cut` +
+      (hold ? `, the last frame held ${(hold / FPS).toFixed(2)} s` : "") + ".");
     // 2026-11-22: end_card puts the credit over the last 2 s of the last shot
     const credit = !!opts.end_card && last ? await madeWithFor(a.owner) : false;
     await renew(a);                                                // slowed shots take minutes each: keep the lease
     const words = Array.isArray(it.words) ? it.words : [];
-    const look = sty ? { s: sty, kIn: first ? null : changes[i - 1], kOut: last ? null : changes[i], hold } : null;
+    // without an edit style the hold still goes in (part() reads it from here)
+    const look = sty ? { s: sty, kIn: first ? null : changes[i - 1], kOut: last ? null : changes[i], hold } : (hold ? { s: null, hold } : null);
     if (look && lookRef) {
       try { look.curves = await style.matchCurves(lookRef, src, p.frames); }
       catch (e) { notes.push(`Edit style: shot ${it.ord} keeps the default grade (${String(e.message || e).slice(0, 100)}).`); }
@@ -432,7 +437,7 @@ async function build(a) {
     try {
       await part(src, dest, a.format, out, fades, from, credit, speed, words, { w: p.w, h: p.h }, look);
     } catch (e) {
-      if (!look) throw e;
+      if (!look?.s) throw e;
       // the style is a finish: a shot it fails on goes in without it rather than failing the cut
       notes.push(`Edit style: shot ${it.ord} is in the cut without the style (${String(e.message || e).split("\n")[0].slice(0, 160)}).`);
       await part(src, dest, a.format, out, fades, from, credit, speed, words, { w: p.w, h: p.h }, hold ? { s: null, hold } : null);

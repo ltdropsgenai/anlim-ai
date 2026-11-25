@@ -213,6 +213,23 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { shot_id: { type: "string" }, speed: { type: "number", minimum: 0.5, maximum: 2 } },
       required: ["shot_id", "speed"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
+  // ---- v2.9 (2026-11-25, Number 10 swings): an uploaded end frame, and holding a shot's last frame in the cut
+  { name: "set_end_image", title: "Use an uploaded image as an end image",
+    description: "Uses one of the creator's uploaded images (upload id) as the shot's end frame, approved: the video model moves " +
+      "from the start image to it. Unlike make_end_image it may show the same moment from another camera angle (a camera swing " +
+      "around a frozen moment): the check that only the characters change is not run on it. For a swing, make both pictures as one " +
+      "moment seen from two cameras, or the video model moves the people to make them fit. Set the start image first (setting a " +
+      "start image clears the end image). Free.",
+    inputSchema: { type: "object", properties: { shot_id: { type: "string" }, upload_id: { type: "string" },
+      likeness_consent: { type: "boolean", description: "Set true only after the creator said, in this chat, that any real person in the picture is them or agreed to it. Not needed if they ticked that box on anlim.ai/upload." } },
+      required: ["shot_id", "upload_id"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
+  { name: "set_hold", title: "Hold a shot's last frame",
+    description: "Keeps the shot's last frame on screen for this many seconds after its clip in the scene's cut (0 to 5; 0 removes " +
+      "the hold): a frozen moment after a camera swing, or a beat to land a line. Then make_cut again. Free.",
+    inputSchema: { type: "object", properties: { shot_id: { type: "string" }, seconds: { type: "number", minimum: 0, maximum: 5 } },
+      required: ["shot_id", "seconds"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
   // ---- v2.6 (2026-11-23): words drawn over a shot in the cut (spelled exactly; the video model is not asked to write them)
   { name: "set_words", title: "Words over a shot",
     description: "Sets the words drawn over a shot in the scene's cut (replaces any already set; an empty list removes them). Each word " +
@@ -420,7 +437,7 @@ async function callTool(uid: string, name: string, a: Args) {
       if (!UUID.test(id)) return text("shot_id must be the id that create or add_shot returned.", undefined, true);
       const [x] = await asUser(uid, (tx) => tx`
         select sh.action, sh.from_text, sh.start_frame_path, sh.start_frame_approved, sh.motion_source_path is not null as motion,
-               sh.end_frame_path, sh.end_frame_approved, sh.trim_start_s, sh.trim_end_s,
+               sh.end_frame_path, sh.end_frame_approved, sh.end_frame_upload_path, sh.trim_start_s, sh.trim_end_s, sh.hold_end_s,
                (select row_to_json(e) from (select status, composed_path, error from studio.frame_jobs where shot_id = sh.id and kind = 'end'
                   order by created_at desc limit 1) e) as end_job,
                sh.approved_generation_id, se.name as series_name, se.aspect,
@@ -459,11 +476,12 @@ async function callTool(uid: string, name: string, a: Args) {
         : Array.isArray(x.reasons) && x.reasons.length && x.verdict && x.verdict !== "PASS" ? (x.reasons as string[]).slice(0, 4).join("; ").slice(0, 600) : null;
       const ej = x.end_job as { status: string; composed_path: string | null; error: string | null } | null;
       const endImg = x.end_frame_path ? await sign(x.end_frame_path) : ej && ej.status === "ready" ? await sign(ej.composed_path) : null;
-      const endLine = x.end_frame_path && x.end_frame_approved ? `End image (approved): ${endImg}`
+      const endLine = x.end_frame_path && x.end_frame_approved ? `End image (approved${x.end_frame_upload_path === x.end_frame_path ? ", uploaded" : ""}): ${endImg}`
         : ej?.status === "ready" ? `End image waiting for approval (approve_end_image): ${endImg}`
         : ej && ["queued", "running", "composing"].includes(ej.status) ? "The end image is being made."
         : ej?.status === "failed" ? `The end image could not be made: ${ej.error ?? "unknown error"}. Nothing was charged for it.` : null;
-      const trimLine = Number(x.trim_start_s) || Number(x.trim_end_s) ? `Trim in the cut: ${Number(x.trim_start_s)} s off the start, ${Number(x.trim_end_s)} s off the end.` : null;
+      const trimLine = [Number(x.trim_start_s) || Number(x.trim_end_s) ? `Trim in the cut: ${Number(x.trim_start_s)} s off the start, ${Number(x.trim_end_s)} s off the end.` : null,
+                        Number(x.hold_end_s) ? `Last frame held ${Number(x.hold_end_s)} s in the cut.` : null].filter(Boolean).join(" ") || null;
       // 2026-11-23 (Londi: the sofa turned round): the start image's own check (layout against the location, staging,
       // heights) was never shown from chat, so a flagged image was approved and animated unseen
       const fc = x.check_result as { verdict?: string; why?: string } | null;
@@ -714,6 +732,28 @@ async function callTool(uid: string, name: string, a: Args) {
       await asUser(uid, (tx) => tx`select studio.set_shot_speed(${sid}, ${sp}::numeric)`);
       return text(sp === 1 ? "Normal speed." : `This shot plays at ${Math.round(sp * 100)}% speed in the cut. Run make_cut to see it.`);
     }
+    case "set_end_image": {
+      const sid = String(a.shot_id || "");
+      if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
+      const up = await findUpload(uid, String(a.upload_id || ""));
+      if (!up || up.kind !== "image") return text("upload_id must be an image from list_uploads.", undefined, true);
+      const path = await copyUpload(uid, up, "stills");
+      const ok = await asUser(uid, async (tx) => {
+        await carryConsent(tx, uid, [up.path], [path], "start_still", a.likeness_consent);
+        await tx`select studio.set_end_frame(${sid}, ${path})`;
+        return true;
+      }).catch((e) => { if (/likeness consent/.test(String(e?.message))) return false; throw e; });
+      if (!ok) return text(CONSENT_ASK, undefined, true);
+      return text("The uploaded image is now the shot's approved end image. Next: animate (the clip moves from the start image to it).");
+    }
+    case "set_hold": {
+      const sid = String(a.shot_id || "");
+      if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
+      const s = Number(a.seconds);
+      if (!(s >= 0 && s <= 5)) return text("seconds is 0 to 5.", undefined, true);
+      await asUser(uid, (tx) => tx`select studio.set_shot_hold(${sid}, ${s}::numeric)`);
+      return text(s === 0 ? "No hold: the shot ends where its clip ends." : `The shot's last frame stays on screen ${s} s in the cut. Run make_cut to see it.`);
+    }
     case "set_words": {
       const sid = String(a.shot_id || "");
       if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
@@ -791,7 +831,7 @@ async function callTool(uid: string, name: string, a: Args) {
       if (!UUID.test(pid)) return text("project_id must be an id from list_projects.", undefined, true);
       const scene = await latestScene(uid, pid);
       const styles = String(a.styles || "").trim();
-      const shots = await asUser(uid, (tx) => tx`select sh.ord, sh.duration_s, sh.trim_start_s, sh.trim_end_s, sh.speed, g.clip_s
+      const shots = await asUser(uid, (tx) => tx`select sh.ord, sh.duration_s, sh.trim_start_s, sh.trim_end_s, sh.speed, sh.hold_end_s, g.clip_s
                                                    from studio.shots sh join studio.generations g on g.id = sh.approved_generation_id
                                                   where sh.scene_id = ${scene} order by sh.ord`);
       if (!shots.length) return text("Keep at least one clip in this scene first.", undefined, true);
@@ -1109,7 +1149,9 @@ function cutSeconds(r: Record<string, unknown>) {
   const skip = Math.max(0, Math.round(Number(r.trim_start_s || 0) * FPS)), cut = Math.max(0, Math.round(Number(r.trim_end_s || 0) * FPS));
   const keep = Math.max(Math.min(FPS, frames), frames - skip - cut);
   const speed = Math.min(2, Math.max(0.5, Number(r.speed) || 1));
-  return Math.max(1, Math.round(keep / speed)) / FPS;
+  // 2026-11-25: plus the shot's hold (its last frame kept on screen, 0 to 5 s)
+  const held = Math.round(Math.min(5, Math.max(0, Number(r.hold_end_s) || 0)) * FPS);
+  return (Math.max(1, Math.round(keep / speed)) + held) / FPS;
 }
 // One section per shot; a shot under 3 s (ElevenLabs' shortest section) joins the section before it, or the one after it
 // when it is first. Section ends are rounded on the running total, so rounding never adds up. The last section runs 1 s
@@ -1155,7 +1197,7 @@ async function rpc(uid: string, m: Rpc) {
           "get_upload_link so the creator uploads photos, add_character with an upload, add_location for the background, add_shot, " +
           "(update_character, update_shot, move_shot to change them), make_end_image when someone must appear or end somewhere exact, " +
           "make_start_image (new_setup places the characters), get_creation to look, animate, review_clip (keep), then make_cut and " +
-          "get_cut (trim_clip to shorten a clip, set_clip_speed to slow it, set_words to draw words over it, in the cut; make_voiceover (a shot's line, or without a shot the scene's narration over the whole cut), " +
+          "get_cut (trim_clip to shorten a clip, set_clip_speed to slow it, set_hold to freeze its last frame, set_words to draw words over it, in the cut; set_end_image to end a shot on an uploaded picture, such as the same moment from another camera angle; make_voiceover (a shot's line, or without a shot the scene's narration over the whole cut), " +
           "make_sound_effect and make_score add sound on the creator's ElevenLabs account). Steps that spend credits need a paid account. Clips take minutes: tell the creator and check again rather than " +
           "starting the same thing twice." });
     }
