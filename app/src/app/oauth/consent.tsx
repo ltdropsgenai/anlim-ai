@@ -10,11 +10,13 @@ import { supabase } from "../../lib/supabase";
 import { setOauthReturn } from "../../lib/oauthReturn";
 import { c, font, pageBg } from "../../lib/theme";
 import { tr, tMsg } from "../../lib/i18n";
+import { usePageTitle } from "../../lib/pageTitle";
 
 type Details = { authorization_id: string; redirect_uri: string; client: { id: string; name: string; uri: string; logo_uri: string };
                  user: { id: string; email: string }; scope: string };
 
 export default function Consent() {
+  usePageTitle(tr("Connect an AI tool"));
   const { authorization_id: id } = useLocalSearchParams<{ authorization_id?: string }>();
   const [d, setD] = useState<Details | null>(null);
   const [err, setErr] = useState<string | null>(null);

@@ -19,7 +19,7 @@ export const contact = () => SUPPORT_EMAIL || tr("the contact address on the Hel
 
 export default function Terms() {
   return (
-    <PublicFrame>
+    <PublicFrame title={tr("Terms")}>
       <Doc title={tr("Terms of service")}>
         <DraftNote />
         <P>{tr("Last updated {LAST_UPDATED}. anlim.ai is run by {OPERATOR} ({OPERATOR_PLACE}). By creating an account you agree to these terms.", { LAST_UPDATED: tr(LAST_UPDATED), OPERATOR, OPERATOR_PLACE: tr(OPERATOR_PLACE) })}</P>

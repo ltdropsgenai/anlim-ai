@@ -13,7 +13,7 @@ export default function Support() {
   const [signedIn, setSignedIn] = useState(false);
   useEffect(() => { supabase.auth.getSession().then(({ data }) => setSignedIn(!!data.session)).catch(() => {}); }, []);
   return (
-    <PublicFrame signedIn={signedIn}>
+    <PublicFrame signedIn={signedIn} title={tr("Help & contact")}>
       <Doc title={tr("Help & contact")}>
         {TUTORIALS.length > 0 && <>
           <H>{tr("Video guides")}</H>

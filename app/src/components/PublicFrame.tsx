@@ -8,8 +8,10 @@ import { OPERATOR } from "../lib/legal";
 import { tr } from "../lib/i18n";
 import { LanguagePicker } from "./LanguagePicker";
 import { LanguageMenu } from "./LanguageMenu";
+import { usePageTitle } from "../lib/pageTitle";
 
-export function PublicFrame({ children, signedIn }: { children: ReactNode; signedIn?: boolean }) {
+export function PublicFrame({ children, signedIn, title }: { children: ReactNode; signedIn?: boolean; title?: string }) {
+  usePageTitle(title);
   const { width } = useWindowDimensions();
   const narrow = width < 700;
   const page = (

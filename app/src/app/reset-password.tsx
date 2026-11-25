@@ -6,8 +6,10 @@ import { router } from "expo-router";
 import { authFlags, supabase } from "../lib/supabase";
 import { c, pageBg } from "../lib/theme";
 import { tr, tMsg } from "../lib/i18n";
+import { usePageTitle } from "../lib/pageTitle";
 
 export default function ResetPassword() {
+  usePageTitle(tr("Choose a new password"));
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
   const [busy, setBusy] = useState(false);

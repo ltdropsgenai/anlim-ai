@@ -7,7 +7,7 @@ import { tr } from "../lib/i18n";
 
 export default function Privacy() {
   return (
-    <PublicFrame>
+    <PublicFrame title={tr("Privacy")}>
       <Doc title={tr("Privacy policy")}>
         <DraftNote />
         <P>{tr("Last updated {LAST_UPDATED}. This explains what anlim.ai ({OPERATOR}) keeps about you, why, and who else handles it.", { LAST_UPDATED: tr(LAST_UPDATED), OPERATOR })}</P>

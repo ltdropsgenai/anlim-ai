@@ -8,10 +8,12 @@ import { AdminRefund, api, MODEL_NAMES } from "../lib/api";
 import { c, font, pageBg } from "../lib/theme";
 import { MediaView } from "../components/MediaView";
 import { tr, locale, trp, tMsg } from "../lib/i18n";
+import { usePageTitle } from "../lib/pageTitle";
 
 type Tab = "pending" | "upheld" | "reversed";
 
 export default function Refunds() {
+  usePageTitle(tr("Refunds"));
   const [tab, setTab] = useState<Tab>("pending");
   const [items, setItems] = useState<AdminRefund[] | null>(null);
   const [error, setError] = useState<string | null>(null);

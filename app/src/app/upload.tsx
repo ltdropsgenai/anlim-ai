@@ -10,6 +10,7 @@ import { supabase } from "../lib/supabase";
 import { c, font, pageBg } from "../lib/theme";
 import { LikenessConsent } from "../components/LikenessConsent";
 import { tr, trp, tMsg } from "../lib/i18n";
+import { usePageTitle } from "../lib/pageTitle";
 
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
@@ -38,6 +39,7 @@ function videoSeconds(file: File): Promise<number> {
 const randomPart = () => Array.from(crypto.getRandomValues(new Uint8Array(5)), (b) => (b % 36).toString(36)).join("");
 
 export default function Upload() {
+  usePageTitle(tr("Upload files"));
   const [owner, setOwner] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [drag, setDrag] = useState(false);

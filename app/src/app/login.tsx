@@ -10,6 +10,7 @@ import { c, pageBg } from "../lib/theme";
 import { Logo } from "../components/Logo";
 import { peekDraft } from "../lib/draft";
 import { tr, trMap, tMsg } from "../lib/i18n";
+import { usePageTitle } from "../lib/pageTitle";
 
 type Mode = "signin" | "signup" | "forgot" | "code";
 const TITLES: Record<Mode, string> = trMap({ signin: "Sign in", signup: "Create your account", forgot: "Reset your password", code: "Enter the code from the email" });
@@ -26,6 +27,7 @@ function friendly(msg: string) {
 }
 
 export default function Login() {
+  usePageTitle(tr("Sign in"));
   const params = useLocalSearchParams<{ mode?: string }>();
   const [mode, setMode] = useState<Mode>(params.mode === "signup" ? "signup" : "signin");
   const [captcha, setCaptcha] = useState<string | null>(null);
