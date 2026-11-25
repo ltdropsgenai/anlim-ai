@@ -3,11 +3,11 @@
 // (only the owner adds or removes them) and the Log of every admin action. Behind AdminGate (two-step code).
 // Data: studio.admin_* functions through studio-api (migration studio_admin_console). @anlim
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import { router } from "expo-router";
 import { api, AdminEntry, AdminIssues, AdminLogEntry, AdminOverview, AdminUserRow } from "../../lib/api";
 import { c, font, pageBg } from "../../lib/theme";
-import { AdminGate, Btn } from "../../components/AdminGate";
+import { AdminGate, Btn, Field } from "../../components/AdminGate";
 import { ago, detailText, s, when } from "../../components/adminUi";
 
 type Tab = "overview" | "users" | "issues" | "admins" | "log";
@@ -95,8 +95,8 @@ function Users() {
   useEffect(() => { const t = setTimeout(() => load(0), 250); return () => clearTimeout(t); }, [load]);
   return (<>
     <View style={s.row}>
-      <TextInput value={q} onChangeText={setQ} placeholder="Search by email or account id" placeholderTextColor={c.muted}
-        style={[s.input, { flex: 1, minWidth: 220 }]} autoCapitalize="none" accessibilityLabel="Search accounts" />
+      <Field value={q} onChangeText={setQ} placeholder="Search by email or account id"
+        style={[{ flex: 1, minWidth: 220 }]} autoCapitalize="none" accessibilityLabel="Search accounts" />
       {FILTERS.map(([id, label]) => (
         <Pressable key={id} onPress={() => setFilter(id)} style={[s.chip, filter === id && s.chipOn]} accessibilityRole="radio" accessibilityState={{ checked: filter === id }}>
           <Text style={{ color: filter === id ? c.onAccent : c.ink, fontWeight: "600", fontSize: 13 }}>{label}</Text>
@@ -223,8 +223,8 @@ function Admins({ owner }: { owner: boolean }) {
         <Text style={s.h2}>Add an admin</Text>
         <Text style={s.sub}>The person signs up on anlim.ai first; then add them by that account's email.</Text>
         <View style={s.row}>
-          <TextInput value={email} onChangeText={setEmail} placeholder="name@example.com" placeholderTextColor={c.muted}
-            style={[s.input, { flex: 1, minWidth: 220 }]} autoCapitalize="none" keyboardType="email-address" onSubmitEditing={add} accessibilityLabel="Email of the new admin" />
+          <Field value={email} onChangeText={setEmail} placeholder="name@example.com"
+            style={[{ flex: 1, minWidth: 220 }]} autoCapitalize="none" keyboardType="email-address" onSubmitEditing={add} accessibilityLabel="Email of the new admin" />
           <Btn label="Add admin" onPress={add} />
         </View>
       </View>

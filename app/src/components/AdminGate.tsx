@@ -3,7 +3,7 @@
 // assurance level becomes aal2). The first time, it sets the authenticator up (QR code, then one code). The server
 // checks the same thing on every admin call (studio-api + studio.admin_guard), so this page is the convenience,
 // not the lock. @anlim
-import { ReactNode, useCallback, useEffect, useState } from "react";
+import { ComponentProps, ReactNode, useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Image, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { api } from "../lib/api";
 import { supabase } from "../lib/supabase";
@@ -118,5 +118,18 @@ export function Btn({ label, onPress, disabled, tone = "accent" }: { label: stri
                                  alignSelf: "flex-start", transform: [{ scale: pressed ? 0.97 : 1 }] })}>
       <Text style={{ color: fg, fontWeight: "700", fontSize: 13 }}>{label}</Text>
     </Pressable>
+  );
+}
+
+// A text field that cannot be missed (2026-11-25, Londi: "I genuinely could not see" the reason box): a clearly lighter
+// fill than the card, readable placeholder text, and an orange glow while typing. No outline (Londi's rule).
+export function Field({ style, ...p }: ComponentProps<typeof TextInput>) {
+  const [focus, setFocus] = useState(false);
+  return (
+    <TextInput placeholderTextColor={c.sub} {...p}
+      onFocus={(e) => { setFocus(true); p.onFocus?.(e); }} onBlur={(e) => { setFocus(false); p.onBlur?.(e); }}
+      style={[{ color: c.ink, backgroundColor: focus ? "#33333B" : "#2A2A31", borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,
+                fontSize: 15, minHeight: 46, shadowColor: c.accent, shadowOpacity: focus ? 0.55 : 0, shadowRadius: 10, shadowOffset: { width: 0, height: 0 } },
+               Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : null, style]} />
   );
 }

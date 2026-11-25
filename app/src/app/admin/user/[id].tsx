@@ -1,11 +1,11 @@
 // Admin console: one account (2026-11-25). What it has, what it did, what admins did to it; block or unblock it and give
 // credits. Every action is confirmed with a second press and written to the admin log (studio.admin_log). @anlim
 import { ReactNode, useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { api, AdminUser } from "../../../lib/api";
 import { c, font, pageBg } from "../../../lib/theme";
-import { AdminGate, Btn } from "../../../components/AdminGate";
+import { AdminGate, Btn, Field } from "../../../components/AdminGate";
 import { ago, detailText, s, when } from "../../../components/adminUi";
 
 export default function AdminUserPage() {
@@ -79,7 +79,7 @@ function UserView() {
           </Text>
           <Text style={s.cell}>Reason: {u.block.reason}</Text>
           <Text style={s.label}>Note (optional)</Text>
-          <TextInput value={reason} onChangeText={setReason} placeholder="Note for the log (optional)" placeholderTextColor={c.muted} style={s.input} />
+          <Field value={reason} onChangeText={setReason} placeholder="Note for the log (optional)"  />
           <Btn label={arm === "unblock" ? "Confirm unblock" : "Unblock"} disabled={busy}
             onPress={() => run("unblock", async () => { const r = await api.adminUnblock(u.id, reason); setReason(""); return r.warning ?? "Unblocked. They can sign in again."; })} />
         </>) : u.role ? (
@@ -91,7 +91,7 @@ function UserView() {
             {a.subscription ? " This account has a plan subscription." : ""}
           </Text>
           <Text style={s.label}>Reason</Text>
-          <TextInput value={reason} onChangeText={setReason} placeholder="Why you are blocking them (kept in the log; not shown to them)" placeholderTextColor={c.muted} style={s.input} />
+          <Field value={reason} onChangeText={setReason} placeholder="Why you are blocking them (kept in the log; not shown to them)"  />
           <Text style={s.label}>How long</Text>
           <View style={s.row}>
             {DURATIONS.map(([label, h]) => (
@@ -113,9 +113,9 @@ function UserView() {
         <Text style={s.h2}>Give credits</Text>
         <Text style={s.sub}>For support (a failed job, goodwill). 1 to 20,000 at a time; recorded in their credit history as a grant.</Text>
         <View style={s.row}>
-          <TextInput value={credits} onChangeText={(t) => setCredits(t.replace(/\D/g, "").slice(0, 5))} placeholder="Credits" placeholderTextColor={c.muted}
-            keyboardType="number-pad" style={[s.input, { width: 110 }]} accessibilityLabel="Credits to give" />
-          <TextInput value={note} onChangeText={setNote} placeholder="Reason" placeholderTextColor={c.muted} style={[s.input, { flex: 1, minWidth: 200 }]} accessibilityLabel="Reason" />
+          <Field value={credits} onChangeText={(t) => setCredits(t.replace(/\D/g, "").slice(0, 5))} placeholder="Credits"
+            keyboardType="number-pad" style={[{ width: 110 }]} accessibilityLabel="Credits to give" />
+          <Field value={note} onChangeText={setNote} placeholder="Reason" style={[{ flex: 1, minWidth: 200 }]} accessibilityLabel="Reason" />
           <Btn label={arm === "grant" ? `Confirm ${credits || 0} credits` : "Give"} disabled={busy}
             onPress={() => run("grant", async () => { const r = await api.adminGrant(u.id, Number(credits), note); setCredits(""); setNote("");
               return `Done. Balance is now ${r.balance.toLocaleString()} credits.`; },
