@@ -39,7 +39,11 @@ export function AdminGate({ children }: { children: ReactNode }) {
       for (const x of f?.all ?? []) if (x.factor_type === "totp" && x.status !== "verified") await supabase.auth.mfa.unenroll({ factorId: x.id });
       const { data: e, error: eErr } = await supabase.auth.mfa.enroll({ factorType: "totp", friendlyName: "anlim admin" });
       if (eErr || !e) throw eErr ?? new Error("could not start the set-up");
-      setSt({ k: "enroll", factorId: e.id, qr: e.totp.qr_code, secret: e.totp.secret });
+      // Supabase gives the QR code as "data:image/svg+xml;utf-8,<svg ...>" with the SVG unescaped; the web Image puts it in
+      // a CSS url(), where its quotes and # break it (2026-11-25: Londi saw no QR code). Re-encode it.
+      const raw = e.totp.qr_code, at = raw.indexOf("<svg");
+      const qr = at >= 0 ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(raw.slice(at))}` : raw;
+      setSt({ k: "enroll", factorId: e.id, qr, secret: e.totp.secret });
     } catch (x) {
       setSt({ k: "error", msg: (x as Error).message || "Something went wrong" });
     }
