@@ -4,4 +4,4 @@ export const OPERATOR = "CodeAscent";                 // the business name on th
 export const OPERATOR_PLACE = "Utah, United States";
 export const SUPPORT_EMAIL = "support@anlim.ai";      // live 2026-11-25: Workspace alias on sysadmin@codeascent.online (MX smtp.google.com)
 export const LEGAL_REVIEWED = false;                  // false shows a "draft" note on Terms and Privacy
-export const LAST_UPDATED = "November 23, 2026";
+export const LAST_UPDATED = "November 25, 2026";
