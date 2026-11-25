@@ -18,6 +18,7 @@ const BUTTONS: Record<Mode, string> = trMap({ signin: "Sign in", signup: "Create
 
 // Supabase's messages are mostly clear; these two are the ones creators hit and misread.
 function friendly(msg: string) {
+  if (/banned/i.test(msg)) return tr("This account is blocked. Contact support@anlim.ai.");   // admin console block (2026-11-25)
   if (/email not confirmed/i.test(msg)) return tr("Confirm your email first: open the link we sent you, then sign in.");
   if (/invalid login credentials/i.test(msg)) return tr("That email and password don't match an account.");
   if (/captcha/i.test(msg)) return tr("The security check didn't go through. Tick it again, then try once more.");

@@ -1,7 +1,6 @@
 // studio-health: emails Londi when anlim stops working (2026-11-25 launch audit: nothing watched the worker). @anlim
 // Called every 15 minutes by pg_cron + pg_net (migration studio_health_cron), so it runs even when the Fly worker is
-// down. It reads the job tables only and answers {ok:true} whatever it finds, so calling it from outside reveals
-// nothing; each alert goes out at most once per 6 hours per kind (Resend Idempotency-Key), so it cannot be used to spam.
+// down. It reads the job tables only and answers {ok:true} whatever it finds; calls without the schedule's key are refused; each alert goes out at most once per 6 hours per kind (Resend Idempotency-Key), so it cannot be used to spam.
 // Checks:
 //   stalled  - work queued for more than 10 minutes (the worker picks jobs up within seconds): the worker is down
 //   stuck    - clips rendering or being checked with no progress for more than 75 minutes (motion timeout is 60)
@@ -61,8 +60,21 @@ async function send(kinds: string[], text: string, test: boolean) {
   return r.ok;
 }
 
+// Only the schedule may run the checks (2026-11-25 review): it sends the key kept in Vault (migration
+// studio_admin_hardening), which this function reads from the database; the key never appears in code or settings.
+async function keyOk(given: string) {
+  if (!given) return false;
+  const [r] = await sql`select decrypted_secret as k from vault.decrypted_secrets where name = 'studio_health_key'`;
+  const k = String(r?.k || "");
+  if (!k || k.length !== given.length) return false;
+  let d = 0;
+  for (let i = 0; i < k.length; i++) d |= k.charCodeAt(i) ^ given.charCodeAt(i);
+  return d === 0;
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
+  if (!(await keyOk(req.headers.get("x-health-key") || ""))) return json({ error: "unauthorized" }, 401);
   let body: { test?: boolean } = {};
   try { body = await req.json(); } catch { /* empty body is fine */ }
   try {

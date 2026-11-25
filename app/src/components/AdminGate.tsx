@@ -11,8 +11,8 @@ import { c, font, pageBg } from "../lib/theme";
 
 type State =
   | { k: "loading" }
-  | { k: "no" }
-  | { k: "enroll"; factorId: string; qr: string; secret: string }
+  | { k: "no"; ready: boolean }   // not an admin; ready = their two-step code is set up (they can be added)
+  | { k: "enroll"; factorId: string; qr: string; secret: string; admin: boolean }
   | { k: "code"; factorId: string }
   | { k: "ok" }
   | { k: "error"; msg: string };
@@ -26,15 +26,21 @@ export function AdminGate({ children }: { children: ReactNode }) {
   const start = useCallback(async () => {
     setSt({ k: "loading" }); setErr(null); setCode("");
     try {
+      // 2026-11-25 review: the owner can add only accounts that already have their own two-step code (studio.admin_add),
+      // so a signed-in non-admin can set one up here first. Otherwise whoever had a new admin's password first could
+      // claim the code on that admin's first visit.
       const me = await api.me();
-      if (!me.is_admin) { setSt({ k: "no" }); return; }
-      const { data: aal, error: aalErr } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-      if (aalErr) throw aalErr;
-      if (aal?.currentLevel === "aal2") { setSt({ k: "ok" }); return; }
+      const admin = !!me.is_admin;
       const { data: f, error: fErr } = await supabase.auth.mfa.listFactors();
       if (fErr) throw fErr;
       const verified = (f?.totp ?? []).find((x) => x.status === "verified");
-      if (verified) { setSt({ k: "code", factorId: verified.id }); return; }
+      if (!admin && verified) { setSt({ k: "no", ready: true }); return; }
+      if (admin) {
+        const { data: aal, error: aalErr } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        if (aalErr) throw aalErr;
+        if (aal?.currentLevel === "aal2") { setSt({ k: "ok" }); return; }
+        if (verified) { setSt({ k: "code", factorId: verified.id }); return; }
+      }
       // an unfinished set-up from before is removed first (enroll refuses a second factor with the same name)
       for (const x of f?.all ?? []) if (x.factor_type === "totp" && x.status !== "verified") await supabase.auth.mfa.unenroll({ factorId: x.id });
       const { data: e, error: eErr } = await supabase.auth.mfa.enroll({ factorType: "totp", friendlyName: "anlim admin" });
@@ -43,21 +49,21 @@ export function AdminGate({ children }: { children: ReactNode }) {
       // a CSS url(), where its quotes and # break it (2026-11-25: Londi saw no QR code). Re-encode it.
       const raw = e.totp.qr_code, at = raw.indexOf("<svg");
       const qr = at >= 0 ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(raw.slice(at))}` : raw;
-      setSt({ k: "enroll", factorId: e.id, qr, secret: e.totp.secret });
+      setSt({ k: "enroll", factorId: e.id, qr, secret: e.totp.secret, admin });
     } catch (x) {
       setSt({ k: "error", msg: (x as Error).message || "Something went wrong" });
     }
   }, []);
   useEffect(() => { start(); }, [start]);
 
-  const verify = async (factorId: string) => {
+  const verify = async (factorId: string, admin = true) => {
     const clean = code.replace(/\D/g, "");
     if (clean.length !== 6) { setErr("Enter the 6-digit code from your authenticator app."); return; }
     setBusy(true); setErr(null);
     const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId, code: clean });
     setBusy(false);
     if (error) { setErr(error.message.includes("Invalid") ? "That code did not match. Codes change every 30 seconds: try the current one." : error.message); return; }
-    setSt({ k: "ok" });
+    if (admin) setSt({ k: "ok" }); else setSt({ k: "no", ready: true });
   };
 
   if (st.k === "ok") return <>{children}</>;
@@ -66,13 +72,16 @@ export function AdminGate({ children }: { children: ReactNode }) {
       <View style={{ maxWidth: 480, width: "100%", backgroundColor: c.card, borderRadius: 14, padding: 22, gap: 12 }}>
         <Text style={[{ color: c.ink, fontSize: 22 }, font.display]}>Admin console</Text>
         {st.k === "loading" && <ActivityIndicator style={{ marginVertical: 20 }} />}
-        {st.k === "no" && <Text style={{ color: c.sub, fontSize: 15 }}>This page is for anlim admins only.</Text>}
+        {st.k === "no" && (st.ready
+          ? <Text style={{ color: c.sub, fontSize: 15, lineHeight: 22 }}>This page is for anlim admins. Your two-step code is set up, so the owner can now add you as an admin.</Text>
+          : <Text style={{ color: c.sub, fontSize: 15 }}>This page is for anlim admins only.</Text>)}
         {st.k === "error" && (<>
           <Text style={{ color: c.fail, fontSize: 14 }}>{st.msg}</Text>
           <Btn label="Try again" onPress={start} />
         </>)}
         {st.k === "enroll" && (<>
           <Text style={{ color: c.sub, fontSize: 15, lineHeight: 22 }}>
+            {st.admin ? "" : "This page is for anlim admins. If the owner asked you to become one, set up your two-step code first. "}
             Admin pages need a second step when you sign in. Scan this code with an authenticator app (Google Authenticator,
             1Password, Authy, Microsoft Authenticator), then type the 6-digit code it shows.
           </Text>
@@ -81,8 +90,8 @@ export function AdminGate({ children }: { children: ReactNode }) {
           </View>
           <Text style={{ color: c.muted, fontSize: 12 }}>Can't scan? Enter this key in the app instead:</Text>
           <Text selectable style={[{ color: c.ink, fontSize: 13 }, font.mono]}>{st.secret}</Text>
-          <CodeBox value={code} onChange={setCode} onSubmit={() => verify(st.factorId)} />
-          <Btn label={busy ? "Checking…" : "Turn on and continue"} onPress={() => verify(st.factorId)} disabled={busy} />
+          <CodeBox value={code} onChange={setCode} onSubmit={() => verify(st.factorId, st.admin)} />
+          <Btn label={busy ? "Checking…" : "Turn on and continue"} onPress={() => verify(st.factorId, st.admin)} disabled={busy} />
           <Text style={{ color: c.muted, fontSize: 12, lineHeight: 18 }}>
             Keep the authenticator on your phone: without it you cannot open the admin console. If the phone is lost, the
             factor is removed in Supabase (Authentication, Users, the account, MFA factors).
