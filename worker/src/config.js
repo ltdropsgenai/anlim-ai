@@ -22,7 +22,9 @@ export const config = {
   checkerToken: need("CHECKER_TOKEN"),
   checkerMaxUsd: Number(process.env.CHECKER_MAX_USD || "0.15"),   // per-clip checking budget (design doc)
   workDir: process.env.WORK_DIR || path.join(os.tmpdir(), "studio-work"),  // local clips + checker output
-  workerId: process.env.WORKER_ID || `${os.hostname()}-${process.pid}`,
+  // one id per machine (2026-11-25, second worker): Fly sets FLY_MACHINE_ID; jobs are claimed with skip locked and the
+  // cut builder checks locked_by = workerId, so two machines must never share an id (fly.toml no longer sets WORKER_ID)
+  workerId: process.env.WORKER_ID || (process.env.FLY_MACHINE_ID ? `fly-${process.env.FLY_MACHINE_ID}` : `${os.hostname()}-${process.pid}`),
   batch: Number(process.env.WORKER_BATCH || "4"),
   checkerSlots: Number(process.env.CHECKER_MAX_JOBS || "2"),   // clip checks in flight at once (same env as the checker)
   idleMs: Number(process.env.WORKER_IDLE_MS || "5000"),

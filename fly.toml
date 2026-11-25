@@ -10,10 +10,11 @@ primary_region = "ord"
   dockerfile = "Dockerfile"
 
 [env]
-  WORKER_ID = "fly-1"
+  # WORKER_ID is not set here: each machine uses fly-<FLY_MACHINE_ID> (config.js), so 2+ machines never share one
   CHECKER_MAX_JOBS = "1"   # 2 checks at once ran the 2 GB machine out of memory (OOM restarts every ~20 min, 2026-11-19)
 
-# Always on: one machine, restarted if it stops.
+# Always on: two machines since 2026-11-25 (flyctl scale count 2), each restarted if it stops. Jobs are claimed with
+# FOR UPDATE SKIP LOCKED; plan refresh locks the account row; ready-emails dedupe by idempotency key.
 [[restart]]
   policy = "always"
 
