@@ -90,6 +90,13 @@ Deno.serve(async (req) => {
   try {
     const due = await sql`select m.owner, m.email, m.items, a.language from studio.mail_due(50) m left join studio.accounts a on a.owner = m.owner`;
     for (const d of due) {
+      // 2026-11-25 launch audit: test accounts (@example.invalid) bounced 9 of the last 10 emails, and bounces count
+      // against the Resend account that also sends sign-up emails. Names reserved for tests never resolve (RFC 2606,
+      // RFC 6761), so those rows are closed without sending.
+      if (/@([^@]+\.)?(example\.(com|net|org)|example|invalid|test|localhost)$/i.test(String(d.email))) {
+        await sql`select studio.mail_done(${(d.items as Item[]).map((i) => i.id)}::bigint[], 'skipped: reserved test address')`;
+        continue;
+      }
       const lang = (["es", "fr"].includes(d.language) ? d.language : "en") as Lang;
       const items = await localDetails(d.items as Item[], lang), ids = items.map((i) => i.id);
       const { subject, text, html } = compose(items, lang);
