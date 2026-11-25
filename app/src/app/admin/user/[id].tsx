@@ -78,6 +78,7 @@ function UserView() {
             Since {when(u.block.blocked_at)}{u.block.by_email ? ` by ${u.block.by_email}` : ""} · {u.block.until ? `until ${when(u.block.until)}` : "until lifted"}
           </Text>
           <Text style={s.cell}>Reason: {u.block.reason}</Text>
+          <Text style={s.label}>Note (optional)</Text>
           <TextInput value={reason} onChangeText={setReason} placeholder="Note for the log (optional)" placeholderTextColor={c.muted} style={s.input} />
           <Btn label={arm === "unblock" ? "Confirm unblock" : "Unblock"} disabled={busy}
             onPress={() => run("unblock", async () => { const r = await api.adminUnblock(u.id, reason); setReason(""); return r.warning ?? "Unblocked. They can sign in again."; })} />
@@ -89,7 +90,9 @@ function UserView() {
             Work already queued finishes. It does not cancel a plan: if they have one, cancel it in Stripe.
             {a.subscription ? " This account has a plan subscription." : ""}
           </Text>
-          <TextInput value={reason} onChangeText={setReason} placeholder="Reason (kept in the log; not shown to them)" placeholderTextColor={c.muted} style={s.input} />
+          <Text style={s.label}>Reason</Text>
+          <TextInput value={reason} onChangeText={setReason} placeholder="Why you are blocking them (kept in the log; not shown to them)" placeholderTextColor={c.muted} style={s.input} />
+          <Text style={s.label}>How long</Text>
           <View style={s.row}>
             {DURATIONS.map(([label, h]) => (
               <Pressable key={label} onPress={() => setHours(h)} style={[s.chip, hours === h && s.chipOn]} accessibilityRole="radio" accessibilityState={{ checked: hours === h }}>

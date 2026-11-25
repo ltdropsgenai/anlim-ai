@@ -34,7 +34,9 @@ export const s = StyleSheet.create({
   chipOn: { backgroundColor: c.accent },
   card: { backgroundColor: c.card, borderRadius: 14, padding: 16, gap: 8 },
   userRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 14 },
-  input: { color: c.ink, backgroundColor: c.field, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14 },
+  // 2026-11-25 (Londi: "Where is the reason box?"): c.field on a card was almost invisible; a lighter fill and a label now
+  label: { color: c.sub, fontSize: 13, fontWeight: "600", marginTop: 4 },
+  input: { color: c.ink, backgroundColor: "#24242A", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
   tiles: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   tile: { backgroundColor: c.card, borderRadius: 12, padding: 14, minWidth: 160, flexGrow: 1, gap: 4 },
   tileN: { color: c.ink, fontSize: 24, fontWeight: "700" },
