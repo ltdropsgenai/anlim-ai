@@ -225,7 +225,7 @@ function Admins({ owner }: { owner: boolean }) {
         <View style={s.row}>
           <TextInput value={email} onChangeText={setEmail} placeholder="name@example.com" placeholderTextColor={c.muted}
             style={[s.input, { flex: 1, minWidth: 220 }]} autoCapitalize="none" keyboardType="email-address" onSubmitEditing={add} accessibilityLabel="Email of the new admin" />
-          <Btn label="Add admin" onPress={add} disabled={!email.includes("@")} />
+          <Btn label="Add admin" onPress={add} />
         </View>
       </View>
     ) : <Text style={s.small}>Only the owner can add or remove admins.</Text>}

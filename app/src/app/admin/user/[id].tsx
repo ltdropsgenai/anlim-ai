@@ -27,8 +27,11 @@ function UserView() {
   const [reason, setReason] = useState("");
   const [hours, setHours] = useState<number | null>(168);
   const [arm, setArm] = useState<string | null>(null);   // which action waits for its confirming press
-  const run = async (key: string, fn: () => Promise<string>) => {
-    if (arm !== key) { setArm(key); return; }
+  // 2026-11-25 (Londi: "the block button ... was not clickable"): buttons no longer grey out while a field is empty; a
+  // press says what is missing instead. The first press arms the action, the second ("Confirm …") runs it.
+  const run = async (key: string, fn: () => Promise<string>, missing?: string | null) => {
+    if (missing) { setArm(null); setMsg(null); setErr(missing); return; }
+    if (arm !== key) { setArm(key); setErr(null); return; }
     setArm(null); setBusy(true); setErr(null); setMsg(null);
     try { setMsg(await fn()); load(); } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
@@ -94,9 +97,11 @@ function UserView() {
               </Pressable>
             ))}
           </View>
-          <Btn label={arm === "block" ? "Confirm block" : "Block"} tone="danger" disabled={busy || !reason.trim()}
+          <Btn label={arm === "block" ? "Confirm block" : "Block"} tone="danger" disabled={busy}
             onPress={() => run("block", async () => { const r = await api.adminBlock(u.id, reason, hours); setReason("");
-              return r.warning ?? (r.until ? `Blocked until ${when(r.until)}.` : "Blocked until lifted."); })} />
+              return r.warning ?? (r.until ? `Blocked until ${when(r.until)}.` : "Blocked until lifted."); },
+              reason.trim() ? null : "Type a reason first (it goes in the log).")} />
+          {arm === "block" && <Text style={s.sub}>Press Confirm block to block {u.email}.</Text>}
         </>)}
       </View>
 
@@ -108,9 +113,10 @@ function UserView() {
           <TextInput value={credits} onChangeText={(t) => setCredits(t.replace(/\D/g, "").slice(0, 5))} placeholder="Credits" placeholderTextColor={c.muted}
             keyboardType="number-pad" style={[s.input, { width: 110 }]} accessibilityLabel="Credits to give" />
           <TextInput value={note} onChangeText={setNote} placeholder="Reason" placeholderTextColor={c.muted} style={[s.input, { flex: 1, minWidth: 200 }]} accessibilityLabel="Reason" />
-          <Btn label={arm === "grant" ? `Confirm ${credits || 0} credits` : "Give"} disabled={busy || !Number(credits) || !note.trim()}
+          <Btn label={arm === "grant" ? `Confirm ${credits || 0} credits` : "Give"} disabled={busy}
             onPress={() => run("grant", async () => { const r = await api.adminGrant(u.id, Number(credits), note); setCredits(""); setNote("");
-              return `Done. Balance is now ${r.balance.toLocaleString()} credits.`; })} />
+              return `Done. Balance is now ${r.balance.toLocaleString()} credits.`; },
+              !Number(credits) ? "Enter how many credits to give." : !note.trim() ? "Type a reason first (it goes in the log)." : null)} />
         </View>
       </View>
 
