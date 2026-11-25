@@ -16,6 +16,7 @@
 // ("create" keeps its own 5).
 import { createClient } from "npm:@supabase/supabase-js@2";
 import postgres from "npm:postgres@3.4.5";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 const BUCKET = "studio";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -1084,9 +1085,17 @@ async function rateGate(uid: string, tool: string, tools: string[], limit: numbe
     const [{ n }] = await tx`select count(*)::int as n from studio.mcp_calls where owner = ${uid} and tool = any(${tools}::text[])
                               and at > now() - interval '10 minutes'`;
     if (n >= limit) return false;
-    await tx`insert into studio.mcp_calls(owner, tool) values (${uid}, ${tool})`;
+    const [row] = await tx`insert into studio.mcp_calls(owner, tool) values (${uid}, ${tool}) returning id`;
+    gateRows.getStore()?.push(Number(row.id));
     return true;
   });
+}
+// Review 2026-11-24: a call the tool then refuses (a validation error, "already in flight", not enough credits) did
+// nothing, so it gives its place in the limit back. Each tools/call collects the rows its gates recorded here.
+const gateRows = new AsyncLocalStorage<number[]>();
+async function giveBack(rows: number[]) {
+  if (!rows.length) return;
+  await sql`delete from studio.mcp_calls where id = any(${rows}::bigint[])`.catch((e) => console.error("give back:", (e as Error).message));
 }
 const audioGate = async (uid: string, tool: string) => await rateGate(uid, tool, AUDIO_TOOLS, AUDIO_LIMIT) ? null
   : text(`Limit reached: ${AUDIO_LIMIT} voiceovers, sound effects and scores per 10 minutes from chat (they use your ElevenLabs credits). Wait a few minutes.`, undefined, true);
@@ -1155,9 +1164,13 @@ async function rpc(uid: string, m: Rpc) {
     case "tools/call": {
       const name = String(m.params?.name || "");
       if (!TOOLS.some((t) => t.name === name)) return err(m.id, -32602, `Unknown tool: ${name}`);
+      const rows: number[] = [];
       try {
-        return ok(m.id, await callTool(uid, name, (m.params?.arguments as Args) || {}));
+        const r = await gateRows.run(rows, () => callTool(uid, name, (m.params?.arguments as Args) || {}));
+        if ((r as { isError?: boolean })?.isError) await giveBack(rows);
+        return ok(m.id, r);
       } catch (e) {
+        await giveBack(rows);
         // messages written for creators (studio.* raise exception, P0001: "you have N credits", ...) are passed on
         const msg = e instanceof Error ? e.message : String(e);
         if ((e as { code?: string })?.code === "P0001") return ok(m.id, text(msg.slice(0, 300), undefined, true));

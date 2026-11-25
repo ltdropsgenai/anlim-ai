@@ -15,13 +15,21 @@ const sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, { prepare: false, max: 3 
 // the worker fills it (worker/src/translate.js); the app asks again on its next look.
 const NUM = /(?<![\w.⟨{])\d+(?:\.\d+)?(?![\w⟩}])/g;
 function template(t: string) { const nums: string[] = []; return { src: t.replace(NUM, (m) => `⟨${nums.push(m) - 1}⟩`), nums }; }
-async function translateTexts(texts: string[], lang: string) {
+// Review 2026-11-24: new texts cost a translation each (worker -> checker -> Claude), so each account may add at most
+// TRANSLATE_DAILY a day; texts already in the table (most of the app's messages) are free and not counted.
+const TRANSLATE_DAILY = 200;
+async function translateTexts(texts: string[], lang: string, uid: string) {
   const items = texts.map((t) => ({ t, ...template(t) }));
   const srcs = [...new Set(items.map((i) => i.src))];
   const rows = srcs.length ? await sql`select src, out from studio.translations where lang = ${lang} and src = any(${srcs})` : [];
   const have = new Map(rows.map((r) => [r.src as string, r.out as string | null]));
   const miss = srcs.filter((x) => !have.has(x)).slice(0, 20);   // a few new ones per request (each costs a translation)
-  if (miss.length) await sql`insert into studio.translations ${sql(miss.map((src) => ({ src, lang })))} on conflict do nothing`;
+  if (miss.length) await sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtext(${"translate:" + uid}))`;
+    const [{ n }] = await tx`select count(*)::int as n from studio.translations where owner = ${uid}::uuid and created_at > now() - interval '1 day'`;
+    const room = miss.slice(0, Math.max(0, TRANSLATE_DAILY - n));
+    if (room.length) await tx`insert into studio.translations ${tx(room.map((src) => ({ src, lang, owner: uid })))} on conflict do nothing`;
+  });
   const out: Record<string, string> = {};
   for (const i of items) {
     const tr = have.get(i.src);
@@ -166,7 +174,7 @@ async function handle(req: Request): Promise<Response> {
         const lang = String(body.lang || "");
         if (lang !== "es" && lang !== "fr") return json({ error: "lang must be es or fr" }, 400);
         const texts = (Array.isArray(body.texts) ? body.texts : []).filter((t): t is string => typeof t === "string" && !!t.trim() && t.length <= 2000).slice(0, 50);
-        return json({ out: texts.length ? await translateTexts(texts, lang) : {} });
+        return json({ out: texts.length ? await translateTexts(texts, lang, uid) : {} });
       }
       case "language": {   // en, es or fr: the app, emails, end cards and notices (2026-11-24)
         await asUser(uid, (tx) => tx`select studio.set_language(${String(body.language ?? "")})`);
