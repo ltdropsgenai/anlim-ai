@@ -102,7 +102,8 @@ export function Shell({ children }: { children: ReactNode }) {
     homeAt.current = Date.now();
     api.home().then(setHome).catch(() => {});
   }, [path, expanded]);
-  const title = tr(TITLES.find(([r]) => r.test(path))?.[1] ?? "anlim.ai");
+  // admin pages are named only to admins (2026-11-25): anyone else sees "anlim.ai" until they are sent Home
+  const title = tr((path.startsWith("/admin") && !me?.is_admin ? null : TITLES.find(([r]) => r.test(path))?.[1]) ?? "anlim.ai");
   // the browser tab says where you are (2026-11-19: Stack titles did not reach the tab with the header hidden)
   useEffect(() => { if (Platform.OS === "web") document.title = title === "Home" ? "anlim.ai" : `${title} · anlim.ai`; }, [title]);
   const deep = /^\/(clip|shot|cut|admin\/user)\//.test(path) || path.startsWith("/shots");

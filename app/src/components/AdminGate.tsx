@@ -5,13 +5,14 @@
 // not the lock. @anlim
 import { ComponentProps, ReactNode, useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Image, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { router } from "expo-router";
 import { api } from "../lib/api";
 import { supabase } from "../lib/supabase";
 import { c, font, pageBg } from "../lib/theme";
 
 type State =
   | { k: "loading" }
-  | { k: "no"; ready: boolean }   // not an admin; ready = their two-step code is set up (they can be added)
+  | { k: "no" }   // not an admin: sent Home
   | { k: "enroll"; factorId: string; qr: string; secret: string; admin: boolean }
   | { k: "code"; factorId: string }
   | { k: "ok" }
@@ -26,15 +27,14 @@ export function AdminGate({ children }: { children: ReactNode }) {
   const start = useCallback(async () => {
     setSt({ k: "loading" }); setErr(null); setCode("");
     try {
-      // 2026-11-25 review: the owner can add only accounts that already have their own two-step code (studio.admin_add),
-      // so a signed-in non-admin can set one up here first. Otherwise whoever had a new admin's password first could
-      // claim the code on that admin's first visit.
       const me = await api.me();
       const admin = !!me.is_admin;
+      // 2026-11-25 (Londi: "/admin should not be reachable to any account if it is not an admin account"): anyone else
+      // is sent to Home and shown nothing that says an admin page exists.
+      if (!admin) { setSt({ k: "no" }); router.replace("/"); return; }
       const { data: f, error: fErr } = await supabase.auth.mfa.listFactors();
       if (fErr) throw fErr;
       const verified = (f?.totp ?? []).find((x) => x.status === "verified");
-      if (!admin && verified) { setSt({ k: "no", ready: true }); return; }
       if (admin) {
         const { data: aal, error: aalErr } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
         if (aalErr) throw aalErr;
@@ -63,25 +63,21 @@ export function AdminGate({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId, code: clean });
     setBusy(false);
     if (error) { setErr(error.message.includes("Invalid") ? "That code did not match. Codes change every 30 seconds: try the current one." : error.message); return; }
-    if (admin) setSt({ k: "ok" }); else setSt({ k: "no", ready: true });
+    if (admin) setSt({ k: "ok" });
   };
 
   if (st.k === "ok") return <>{children}</>;
+  if (st.k === "loading" || st.k === "no") return <ActivityIndicator style={{ marginTop: 40 }} />;   // nothing that names the page
   return (
     <ScrollView style={{ backgroundColor: pageBg }} contentContainerStyle={{ padding: 24, alignItems: "center" }}>
       <View style={{ maxWidth: 480, width: "100%", backgroundColor: c.card, borderRadius: 14, padding: 22, gap: 12 }}>
         <Text style={[{ color: c.ink, fontSize: 22 }, font.display]}>Admin console</Text>
-        {st.k === "loading" && <ActivityIndicator style={{ marginVertical: 20 }} />}
-        {st.k === "no" && (st.ready
-          ? <Text style={{ color: c.sub, fontSize: 15, lineHeight: 22 }}>This page is for anlim admins. Your two-step code is set up, so the owner can now add you as an admin.</Text>
-          : <Text style={{ color: c.sub, fontSize: 15 }}>This page is for anlim admins only.</Text>)}
         {st.k === "error" && (<>
           <Text style={{ color: c.fail, fontSize: 14 }}>{st.msg}</Text>
           <Btn label="Try again" onPress={start} />
         </>)}
         {st.k === "enroll" && (<>
           <Text style={{ color: c.sub, fontSize: 15, lineHeight: 22 }}>
-            {st.admin ? "" : "This page is for anlim admins. If the owner asked you to become one, set up your two-step code first. "}
             Admin pages need a second step when you sign in. Scan this code with an authenticator app (Google Authenticator,
             1Password, Authy, Microsoft Authenticator), then type the 6-digit code it shows.
           </Text>

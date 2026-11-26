@@ -221,7 +221,7 @@ function Admins({ owner }: { owner: boolean }) {
     {owner ? (
       <View style={s.card}>
         <Text style={s.h2}>Add an admin</Text>
-        <Text style={s.sub}>The person signs up on anlim.ai, signs in, opens anlim.ai/admin and sets up their two-step code. Then add them by that account's email.</Text>
+        <Text style={s.sub}>The account must already have its own two-step code set up; then add it by its email.</Text>
         <View style={s.row}>
           <Field value={email} onChangeText={setEmail} placeholder="name@example.com"
             style={[{ flex: 1, minWidth: 220 }]} autoCapitalize="none" keyboardType="email-address" onSubmitEditing={add} accessibilityLabel="Email of the new admin" />
