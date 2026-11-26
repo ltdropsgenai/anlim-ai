@@ -191,7 +191,10 @@ function Admins({ owner }: { owner: boolean }) {
   const add = async () => {
     setErr(null); setMsg(null);
     try { await api.adminAdd(email.trim()); setMsg(`${email.trim()} is now an admin. They need the two-step code to open this console.`); setEmail(""); load(); }
-    catch (e) { setErr((e as Error).message); }
+    catch (e) {   // the database's wording predates the Account page set-up (2026-11-25)
+      const m = (e as Error).message;
+      setErr(/no two-step code yet/.test(m) ? "That account has no two-step sign-in yet: they turn it on in their Account page, then add them." : m);
+    }
   };
   const remove = async (a: AdminEntry) => {
     if (confirm !== a.user_id) { setConfirm(a.user_id); return; }
@@ -221,7 +224,7 @@ function Admins({ owner }: { owner: boolean }) {
     {owner ? (
       <View style={s.card}>
         <Text style={s.h2}>Add an admin</Text>
-        <Text style={s.sub}>The account must already have its own two-step code set up; then add it by its email.</Text>
+        <Text style={s.sub}>The person turns on two-step sign-in on their Account page first; then add them by that account's email.</Text>
         <View style={s.row}>
           <Field value={email} onChangeText={setEmail} placeholder="name@example.com"
             style={[{ flex: 1, minWidth: 220 }]} autoCapitalize="none" keyboardType="email-address" onSubmitEditing={add} accessibilityLabel="Email of the new admin" />

@@ -180,6 +180,12 @@ async function handle(req: Request): Promise<Response> {
   const [blk] = await sql`select reason, until from studio.block_of(${uid}::uuid)`;
   if (blk && body.op !== "me") return json({ error: "This account is blocked. Contact support@anlim.ai.", blocked: true }, 403);
   const aal = String(jwtClaims(jwt).aal || "aal1");
+  // Two-step sign-in (2026-11-25): an account with an authenticator turned on must have signed in with its code; a
+  // session from the password alone gets only what the sign-in page and the app frame need while it asks for the code.
+  if (aal !== "aal2" && !["me", "translate", "client_error", "track", "language"].includes(String(body.op))) {
+    const [m] = await sql`select exists (select 1 from auth.mfa_factors where user_id = ${uid}::uuid and status = 'verified') as on`;
+    if (m?.on) return json({ error: "enter your two-step code first", need_mfa: true }, 403);
+  }
   if (typeof body.op === "string" && body.op.startsWith("admin_") && aal !== "aal2") return json({ error: "enter your two-step code first", need_mfa: true }, 403);
 
   try {

@@ -8,6 +8,7 @@ import { Connections } from "../components/Connections";
 import { DangerZone } from "../components/DangerZone";
 import { LanguagePicker } from "../components/LanguagePicker";
 import { PhoneCheck } from "../components/PhoneCheck";
+import { TwoStepCard } from "../components/TwoStep";
 import { api, WelcomeStatus } from "../lib/api";
 import { tr, locale, trp, tMsg } from "../lib/i18n";
 
@@ -61,6 +62,7 @@ export default function Account() {
         <Text style={s.sub}>{tr("The app, your emails, end cards and anlim's messages use it.")}</Text>
         <LanguagePicker signedIn />
       </View>
+      <TwoStepCard />
       <Connections />
       {mail !== null && (
         <View style={s.card}>

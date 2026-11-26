@@ -173,6 +173,15 @@ async function handle(req: Request): Promise<Response> {
   const uid = who.user.id;
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
+  // two-step sign-in (2026-11-25): an account with an authenticator turned on must have signed in with its code
+  if (body.op !== "plans") {
+    let aal = "aal1";
+    try { aal = String(JSON.parse(atob(jwt.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).aal || "aal1"); } catch { /* aal1 */ }
+    if (aal !== "aal2") {
+      const [m] = await sql`select exists (select 1 from auth.mfa_factors where user_id = ${uid}::uuid and status = 'verified') as on`;
+      if (m?.on) return json({ error: "enter your two-step code first", need_mfa: true }, 403);
+    }
+  }
   // a blocked account (admin console, 2026-11-25) cannot buy; it can still open the billing portal to cancel a plan
   if (body.op === "checkout") {
     const [blk] = await sql`select 1 from studio.block_of(${uid}::uuid)`;

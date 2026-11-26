@@ -81,6 +81,18 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => Pro
 
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
+  // Two-step sign-in (2026-11-25): a session made with the password alone, on an account that has an authenticator
+  // turned on, may only finish signing in (/login asks for the code). undefined = still checking.
+  const [needCode, setNeedCode] = useState<boolean | undefined>(undefined);
+  useEffect(() => {
+    if (session === undefined) return;
+    if (!session) { setNeedCode(false); return; }
+    let live = true;
+    supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+      .then(({ data }) => { if (live) setNeedCode(data?.nextLevel === "aal2" && data?.currentLevel !== "aal2"); })
+      .catch(() => { if (live) setNeedCode(false); });
+    return () => { live = false; };
+  }, [session?.access_token]);   // eslint-disable-line react-hooks/exhaustive-deps
   const segments = useSegments();
   const pathname = usePathname();
   useWebLook();
@@ -130,14 +142,15 @@ export default function RootLayout() {
   const PUBLIC = ["welcome", "start", "login", "terms", "privacy", "support", "oauth"];   // oauth: the AI-tool consent page (2026-11-21)
   const seg = (segments[0] as string | undefined) ?? "";
   useEffect(() => {
-    if (session === undefined) return;
+    if (session === undefined || (session && needCode === undefined)) return;
     const onLogin = seg === "login";
+    if (session && needCode) { if (!onLogin) router.replace("/login"); return; }   // finish signing in: the code
     if (!session && seg === "upload") { setOauthReturn("/upload"); router.replace("/login"); return; }   // AI-tool uploads: sign in, then back
     if (!session && !PUBLIC.includes(seg)) router.replace("/welcome");   // includes /reset-password without a recovery session
     if (session && onLogin && !authFlags.recovery) router.replace((takeOauthReturn() ?? "/") as never);   // back to the consent page if it sent them
-  }, [session, seg]);   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [session, seg, needCode]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  const bare = PUBLIC.includes(seg) || seg === "reset-password" || !session;   // no studio frame on public pages
+  const bare = PUBLIC.includes(seg) || seg === "reset-password" || !session || needCode !== false;   // no studio frame on public pages
   const stack = (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: pageBg } }}>
       <Stack.Screen name="index" options={{ title: "anlim.ai" }} />
