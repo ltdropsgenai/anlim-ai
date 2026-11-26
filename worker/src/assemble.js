@@ -255,15 +255,38 @@ async function stem(src, dest, target, maxS) {
   const { I } = await measure(src, true);
   const gain = isFinite(I) && I > -70 ? target - I : 0;
   const af = [`volume=${gain.toFixed(2)}dB`, "aresample=48000", "aformat=sample_fmts=s16:channel_layouts=stereo"];
-  if (maxS) af.push(`atrim=0:${maxS.toFixed(3)}`, `afade=t=out:st=${Math.max(0, maxS - 0.15).toFixed(3)}:d=0.15`);
+  // the 0.15 s fade only when the take is longer than the room it has (2026-11-25: a take that fits ends as it was made)
+  if (maxS && (await audioDur(src, true)) > maxS + 0.01) af.push(`atrim=0:${maxS.toFixed(3)}`, `afade=t=out:st=${Math.max(0, maxS - 0.15).toFixed(3)}:d=0.15`);
   await ff([...SAFE_AUDIO_IN, "-i", src, "-af", af.join(","), "-c:a", "pcm_s16le", dest]);
 }
 
 // The cut's sound: the music bed plus each shot's voiceover and sound effect, placed where the shot starts, and the
 // scene's narration from its start time.
 async function mix(dir, a, opts, starts, lens, total, notes, hits = null) {
-  const vo = opts.voice !== false ? a.items.map((it, i) => it.vo ? { i, path: it.vo } : null).filter(Boolean) : [];
-  const fx = opts.sfx !== false ? a.items.map((it, i) => it.sfx ? { i, path: it.sfx } : null).filter(Boolean) : [];
+  let vo = opts.voice !== false ? a.items.map((it, i) => it.vo ? { i, path: it.vo } : null).filter(Boolean) : [];
+  let fx = opts.sfx !== false ? a.items.map((it, i) => it.sfx ? { i, path: it.sfx } : null).filter(Boolean) : [];
+  // 2026-11-25 (Londi): a shot's sound may start partway into its shot (audio_jobs.start_offset_s, seconds after the shot
+  // starts in the cut, after trims and speed). A delayed take that would run past its shot fades out over 0.15 s at the
+  // shot's end; one whose delay is at or past the shot's end (a shorter shot, or beat sync) is left out with a note.
+  const offs = new Map();
+  const shotPaths = [...vo, ...fx].map((x) => x.path);
+  if (shotPaths.length) {
+    try {
+      const r = await db.q("select output_path, coalesce(start_offset_s, 0)::float8 as s from studio.audio_jobs where owner = $1 and output_path = any($2)",
+                           [a.owner, shotPaths]);
+      for (const x of r.rows) offs.set(x.output_path, Math.max(0, Number(x.s) || 0));
+    } catch (e) { notes.push(`The sounds' start delays could not be read (${String(e.message || e).slice(0, 100)}); they start with their shots.`); }
+  }
+  const placed = (kind) => (v) => {
+    v.off = offs.get(v.path) || 0;
+    if (v.off > 0 && v.off >= lens[v.i] - 0.05) {
+      notes.push(`Shot ${a.items[v.i].ord}'s ${kind} starts ${v.off.toFixed(2)} s in, at or after the end of the shot in the cut (${lens[v.i].toFixed(2)} s): it is left out. Set an earlier start.`);
+      return false;
+    }
+    return true;
+  };
+  vo = vo.filter(placed("voiceover"));
+  fx = fx.filter(placed("sound effect"));
   // 2026-11-23: the scene's narration, one take over the whole cut from its start time (options.narration, set by
   // studio.request_assembly from the voiceover with no shot); off with the other voiceovers when "voice" is off
   let nar = opts.voice !== false && opts.narration?.path ? { path: opts.narration.path, at: Math.max(0, Number(opts.narration.at_s) || 0) } : null;
@@ -283,10 +306,12 @@ async function mix(dir, a, opts, starts, lens, total, notes, hits = null) {
   const inputs = [bed.out], filters = [];
   const LEAD = SPEECH_LEAD;                                      // speech starts just after the cut, not on it
   for (const [k, v] of vo.entries()) {
+    const off = v.off;
     const src = path.join(dir, `vo_${k}${path.extname(v.path) || ".mp3"}`), dest = path.join(dir, `vo_${k}.wav`);
     await storage.download(v.path, src);
-    await stem(src, dest, -16, null);
-    const len = await audioDur(dest), at = starts[v.i] + LEAD, ord = a.items[v.i].ord;
+    // without a delay a voiceover may carry into the next shot (noted below); with one it ends with its shot
+    await stem(src, dest, -16, off > 0 ? lens[v.i] - off : null);
+    const len = await audioDur(dest), at = starts[v.i] + (off > 0 ? off : LEAD), ord = a.items[v.i].ord;
     // 2026-11-23 (review): the speech starts LEAD after the cut, so a voiceover as long as its shot still ends a little after
     // it; only a real carry-over (more than 0.3 s) is noted, and the note says by how much
     const spill = at + len - (starts[v.i] + lens[v.i]);
@@ -313,10 +338,11 @@ async function mix(dir, a, opts, starts, lens, total, notes, hits = null) {
     inputs.push(dest); filters.push(`[${inputs.length - 1}:a]adelay=${Math.round(nar.at * 1000)}:all=1[s${inputs.length - 1}]`);
   }
   for (const [k, v] of fx.entries()) {
+    const off = v.off;
     const src = path.join(dir, `fx_${k}${path.extname(v.path) || ".mp3"}`), dest = path.join(dir, `fx_${k}.wav`);
     await storage.download(v.path, src);
-    await stem(src, dest, -22, lens[v.i]);                        // an effect belongs to its shot: it ends with it
-    inputs.push(dest); filters.push(`[${inputs.length - 1}:a]adelay=${Math.round(starts[v.i] * 1000)}:all=1[s${inputs.length - 1}]`);
+    await stem(src, dest, -22, lens[v.i] - off);                  // an effect belongs to its shot: it ends with it
+    inputs.push(dest); filters.push(`[${inputs.length - 1}:a]adelay=${Math.round((starts[v.i] + off) * 1000)}:all=1[s${inputs.length - 1}]`);
   }
   // 2026-11-23: the edit style's hits under the shot changes, one track the length of the cut, at the effects' level
   if (hits) {
@@ -327,7 +353,7 @@ async function mix(dir, a, opts, starts, lens, total, notes, hits = null) {
   const labels = ["[0:a]", ...inputs.slice(1).map((_, k) => `[s${k + 1}]`)].join("");
   const summed = path.join(dir, "summed.wav");
   await ff([...inputs.flatMap((p) => ["-i", p]), "-filter_complex",
-            `${filters.join(";")};${labels}amix=inputs=${inputs.length}:normalize=0:dropout_transition=0,apad=whole_dur=${total.toFixed(3)},atrim=0:${total.toFixed(3)}[m]`,
+            `${filters.length ? `${filters.join(";")};` : ""}${labels}amix=inputs=${inputs.length}:normalize=0:dropout_transition=0,apad=whole_dur=${total.toFixed(3)},atrim=0:${total.toFixed(3)}[m]`,
             "-map", "[m]", "-c:a", "pcm_s16le", summed]);
   // the whole mix: one fixed gain to -14 LUFS, a brickwall only for the peaks that would pass -1.5 dBTP
   const { I, tp } = await measure(summed);

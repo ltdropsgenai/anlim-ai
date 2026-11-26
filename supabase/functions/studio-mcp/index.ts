@@ -286,11 +286,24 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { audio_id: { type: "string" }, at_s: { type: "number", minimum: 0, maximum: 600 } },
       required: ["audio_id", "at_s"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
+  // 2026-11-25 (Londi): a shot's sound can start partway into its shot
+  { name: "set_audio_start", title: "Delay a shot's sound",
+    description: "Sets where a shot's sound effect or voiceover (audio id from list_audio) starts: start_s seconds after the shot " +
+      "starts in the cut (after trims and speed changes; 0 starts it with the shot). Changes the existing take; nothing is made again " +
+      "and no ElevenLabs credits are used. A delayed sound that would run past its shot fades out over 0.15 s at the shot's end. " +
+      "For the scene's narration use set_narration_start. Then make_cut again.",
+    inputSchema: { type: "object", properties: { audio_id: { type: "string", description: "From list_audio" },
+      start_s: { type: "number", minimum: 0, maximum: 30, description: "Seconds after the shot starts in the cut; less than the shot's length in the cut" } },
+      required: ["audio_id", "start_s"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
   { name: "make_sound_effect", title: "Make a shot's sound effect",
-    description: "A sound effect for a shot (ElevenLabs), 0.5 to 30 s, starting with the shot. Creator's ElevenLabs credits.",
+    description: "A sound effect for a shot (ElevenLabs), 0.5 to 30 s. It starts with the shot, or start_s seconds into the shot " +
+      "as it plays in the cut (after trims and speed changes); it never runs into the next shot (it fades out over 0.15 s at the " +
+      "shot's end). Change the start later with set_audio_start (free). Creator's ElevenLabs credits.",
     inputSchema: { type: "object", properties: {
       shot_id: { type: "string" }, text: { type: "string", minLength: 1, maxLength: 450 },
       seconds: { type: "number", minimum: 0.5, maximum: 30 },
+      start_s: { type: "number", minimum: 0, maximum: 30, default: 0, description: "Seconds after the shot starts in the cut; must be less than the shot's length in the cut" },
     }, required: ["shot_id", "text"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } },
   { name: "make_score", title: "Compose the scene's score",
@@ -305,8 +318,8 @@ const TOOLS = [
     }, required: ["project_id", "styles"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } },
   { name: "list_audio", title: "Sound in a project",
-    description: "The voiceovers, sound effects and scores of the project's latest scene: id, shot, length, which take is in the cut, " +
-      "status or error, and a link (one hour).",
+    description: "The voiceovers, sound effects and scores of the project's latest scene: id, shot, length, start_s (seconds into its " +
+      "shot where a shot's sound starts in the cut), which take is in the cut, status or error, and a link (one hour).",
     inputSchema: { type: "object", properties: { project_id: { type: "string" } }, required: ["project_id"], additionalProperties: false },
     annotations: { readOnlyHint: true, openWorldHint: false } },
   { name: "use_audio", title: "Choose the take for the cut",
@@ -815,6 +828,12 @@ async function callTool(uid: string, name: string, a: Args) {
         [sh] = await asUser(uid, (tx) => tx`select scene_id from studio.shots where id = ${sid}`);
         if (!sh) return text("Shot not found.", undefined, true);
       }
+      // 2026-11-25: a sound effect's start delay, checked against the shot's length in the cut before anything is spent
+      const startS = name === "make_sound_effect" && a.start_s != null ? a.start_s : 0;
+      if (startS !== 0) {
+        const bad = await badStart(uid, sid, startS);
+        if (bad) return text(bad, undefined, true);
+      }
       const gate = await audioGate(uid, name);
       if (gate) return gate;
       if (narration) sh = { scene_id: await latestScene(uid, pid) };
@@ -830,8 +849,13 @@ async function callTool(uid: string, name: string, a: Args) {
       const input = vo ? { text: String(a.text || ""), voice_id: String(a.voice_id || ""), voice_name: voiceName,
                            ...(narration ? { at_s: a.at_s == null ? 0 : Number(a.at_s) } : {}) }
                        : { text: String(a.text || ""), duration_s: a.seconds == null ? null : Number(a.seconds) };
-      const [r] = await asUser(uid, (tx) => tx`select studio.request_audio(${sh!.scene_id}, ${narration ? null : sid}, ${vo ? "voiceover" : "sfx"}, ${tx.json(input)}) as id`);
-      return text(`The ${narration ? "narration" : vo ? "voiceover" : "sound effect"} is being made (usually under a minute) on your ElevenLabs credits. ` +
+      const [r] = await asUser(uid, async (tx) => {
+        const [x] = await tx`select studio.request_audio(${sh!.scene_id}, ${narration ? null : sid}, ${vo ? "voiceover" : "sfx"}, ${tx.json(input)}) as id`;
+        if (startS) await tx`select studio.set_audio_start(${x.id}, ${Number(startS)})`;
+        return [x];
+      });
+      return text(`The ${narration ? "narration" : vo ? "voiceover" : "sound effect"} is being made (usually under a minute) on your ElevenLabs credits` +
+        `${startS ? `; it starts ${Number(startS)} s into the shot in the cut` : ""}. ` +
         `audio_id ${r.id}. Check it with list_audio; the newest finished take goes in the cut.`, { audio_id: r.id });
     }
     case "make_score": {
@@ -860,16 +884,17 @@ async function callTool(uid: string, name: string, a: Args) {
       const pid = String(a.project_id || "");
       if (!UUID.test(pid)) return text("project_id must be an id from list_projects.", undefined, true);
       const scene = await latestScene(uid, pid);
-      const rows = await asUser(uid, (tx) => tx`select a.id, a.kind, a.status, a.in_cut, a.duration_s, a.error, a.output_path, a.input,
+      const rows = await asUser(uid, (tx) => tx`select a.id, a.kind, a.status, a.in_cut, a.duration_s, a.error, a.output_path, a.input, a.start_offset_s,
                                                        sh.ord as shot_ord from studio.audio_jobs a left join studio.shots sh on sh.id = a.shot_id
                                                  where a.scene_id = ${scene} order by a.created_at desc limit 30`);
       if (!rows.length) return text("No sound yet: make_voiceover, make_sound_effect or make_score.");
       const items = await Promise.all(rows.map(async (x: any) => ({ id: x.id,
         kind: x.kind === "voiceover" && x.shot_ord == null ? `narration from ${Number(x.input?.at_s ?? 0)} s` : x.kind,
-        shot: x.shot_ord ?? null, status: x.status,
+        shot: x.shot_ord ?? null, status: x.status, start_s: x.shot_ord == null ? null : Number(x.start_offset_s ?? 0),
         in_cut: x.in_cut, seconds: x.duration_s == null ? null : Number(x.duration_s), error: x.error,
         text: String(x.input?.text ?? "").slice(0, 80), url: x.status === "done" ? await sign(x.output_path) : null })));
       return text(items.map((x) => `${x.kind}${x.shot ? ` shot ${x.shot}` : ""} [${x.id}] ${x.status}${x.seconds ? ` ${x.seconds.toFixed(1)} s` : ""}` +
+        `${x.start_s ? ` from ${x.start_s} s into the shot` : ""}` +
         `${x.in_cut ? " (in the cut)" : ""}${x.error ? `: ${x.error}` : ""}${x.url ? `: ${x.url}` : ""}`).join("\n"), { audio: items });
     }
     case "set_narration_start": {
@@ -878,6 +903,18 @@ async function callTool(uid: string, name: string, a: Args) {
       if (!(typeof a.at_s === "number" && isFinite(a.at_s))) return text("at_s must be a number of seconds from 0 to 600.", undefined, true);
       await asUser(uid, (tx) => tx`select studio.set_narration_start(${id}, ${Number(a.at_s)})`);
       return text(`The narration now starts at ${Number(a.at_s)} s in the cut. Make the cut again to hear it.`);
+    }
+    case "set_audio_start": {
+      const id = String(a.audio_id || "");
+      if (!UUID.test(id)) return text("audio_id must be an id from list_audio.", undefined, true);
+      const [j] = await asUser(uid, (tx) => tx`select shot_id, kind from studio.audio_jobs where id = ${id}`);
+      if (!j) return text("Audio not found.", undefined, true);
+      if (!j.shot_id || j.kind === "music") return text("Only a shot's sound effect or voiceover has a start delay. The narration's start: set_narration_start.", undefined, true);
+      const bad = await badStart(uid, j.shot_id, a.start_s);
+      if (bad) return text(bad, undefined, true);
+      await asUser(uid, (tx) => tx`select studio.set_audio_start(${id}, ${Number(a.start_s)})`);
+      return text(Number(a.start_s) ? `It now starts ${Number(a.start_s)} s into its shot in the cut. Make the cut again to hear it.`
+        : "It now starts with its shot. Make the cut again to hear it.");
     }
     case "use_audio": {
       const id = String(a.audio_id || "");
@@ -1179,6 +1216,19 @@ function cutSeconds(r: Record<string, unknown>) {
 // when it is first. Section ends are rounded on the running total, so rounding never adds up. The last section runs 1 s
 // past the cut (the fade). Each section takes the mood of its longest shot.
 type Sec = { label: string; seconds: number; styles: string };
+// A shot's sound delay (start_s) must be from 0 to 30 s and before the end of the shot as it plays in the cut (trims,
+// speed and hold; the kept clip's length, or the planned length before there is one). The error, or null. (2026-11-25)
+async function badStart(uid: string, shotId: string, s: unknown): Promise<string | null> {
+  if (!(typeof s === "number" && isFinite(s) && s >= 0 && s <= 30)) return "start_s must be a number of seconds from 0 to 30.";
+  const [r] = await asUser(uid, (tx) => tx`select sh.ord, sh.duration_s, sh.trim_start_s, sh.trim_end_s, sh.speed, sh.hold_end_s, g.clip_s
+                                             from studio.shots sh left join studio.generations g on g.id = sh.approved_generation_id
+                                            where sh.id = ${shotId}`);
+  if (!r) return "Shot not found.";
+  const len = cutSeconds(r);
+  if (s >= len) return `start_s ${s} is at or past the end of shot ${r.ord}, which is ${len.toFixed(2)} s long in the cut` +
+    `${r.clip_s == null ? " (its planned length: no clip kept yet)" : ""}. Use a start below ${len.toFixed(2)} s.`;
+  return null;
+}
 function scoreSections(shots: Record<string, unknown>[], moods: string[]): Sec[] {
   const lens = shots.map(cutSeconds);
   lens[lens.length - 1] += 1;
