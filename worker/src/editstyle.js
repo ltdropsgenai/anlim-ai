@@ -18,6 +18,7 @@
 //     small handle tag (the reference carries its maker's tag above the middle)
 import fs from "node:fs/promises";
 import * as glyphs from "./glyphs.js";
+import * as textpic from "./textpic.js";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -374,10 +375,21 @@ const TITLE_FONTS = [[/[\u0600-\u06ff\u0750-\u077f\ufb50-\ufdff\ufe70-\ufeff]/, 
 export async function overlays(s, dir, assets, W, H, total, notes) {
   const out = [], v = H > W, m = Math.min(W, H);
   if (s.handle) {
+    // 2026-11-25: emojis and symbols are drawn as a picture (textpic.js); only characters no font has stay boxes
+    const noGlyph = await textpic.undrawable(SERIF(assets), s.handle);
+    if (noGlyph.length) notes.push(`Edit style: the handle uses characters its font cannot draw (${glyphs.list(noGlyph)}): they show as boxes.`);
+    if (await textpic.needsPicture(SERIF(assets), s.handle)) {
+      try {
+        const png = await textpic.render(path.join(dir, "style_handle.png"), s.handle,
+          { size: Math.round(m * 0.024), font: SERIF(assets), color: [255, 255, 255], alpha: 0.55, shadow: { dx: 0, dy: 1, alpha: 0.4 }, maxWidth: W * 0.9 });
+        out.push(textpic.overlay(png, "h", { fps: 24, x: "(W-w)/2", y: String(Math.round(H * (v ? 0.30 : 0.12))) }));
+        s = { ...s, handle: null };
+      } catch (e) { console.error(`handle picture: ${e.message}`); }
+    }
+  }
+  if (s.handle) {
     const file = path.join(dir, "style_handle.txt");
     await fs.writeFile(file, s.handle);
-    const noGlyph = await glyphs.missing(SERIF(assets), s.handle);
-    if (noGlyph.length) notes.push(`Edit style: the handle uses characters its font cannot draw (${glyphs.list(noGlyph)}): they show as boxes.`);
     out.push(`drawtext=fontfile=${SERIF(assets)}:textfile=${file}:expansion=none:fontsize=${Math.round(m * 0.024)}:fontcolor=white@0.55` +
              `:shadowcolor=black@0.4:shadowx=0:shadowy=1:x=(w-tw)/2:y=${Math.round(H * (v ? 0.30 : 0.12))}`);
   }
@@ -388,9 +400,18 @@ export async function overlays(s, dir, assets, W, H, total, notes) {
     // (text_shaping, on by default where ffmpeg has fribidi). Latin, Cyrillic and Vietnamese stay in Montserrat.
     const font = TITLE_FONTS.find(([re]) => re.test(s.title))?.[1] || "Montserrat-Bold.ttf";
     // 2026-11-24: any character the picked font lacks (Chinese, Japanese, Korean, Greek, emoji...) is named in a note
-    const noGlyph = await glyphs.missing(path.join(assets, "fonts", font), s.title);
+    const noGlyph = await textpic.undrawable(path.join(assets, "fonts", font), s.title);
     if (noGlyph.length) notes.push(`Edit style: the title uses characters its font cannot draw (${glyphs.list(noGlyph)}): they show as boxes.`);
     const size = Math.round(Math.min(m * 0.062, (W * 0.88) / (s.title.length * 0.62)));
+    if (await textpic.needsPicture(path.join(assets, "fonts", font), s.title)) {   // emojis, symbols (2026-11-25)
+      try {
+        const png = await textpic.render(path.join(dir, "style_title.png"), s.title,
+          { size: Math.round(m * 0.062), font: path.join(assets, "fonts", font), color: [255, 255, 255], shadow: { dx: 0, dy: 3, alpha: 0.6 }, maxWidth: W * 0.88 });
+        out.push(textpic.overlay(png, "t", { fps: 24, t0: 0, t1: end, fin: 0.25, fout: 0.4,
+          x: "(W-w)/2", y: `${Math.round(H * (v ? 0.42 : 0.40))}-h/2` }));
+        return out;
+      } catch (e) { console.error(`title picture: ${e.message}`); }
+    }
     out.push(`drawtext=fontfile=${path.join(assets, "fonts", font)}:textfile=${file}:expansion=none:fontsize=${size}` +
              `:fontcolor=white:shadowcolor=black@0.6:shadowx=0:shadowy=3:x=(w-tw)/2:y=${Math.round(H * (v ? 0.42 : 0.40))}-th/2` +
              `:enable='lt(t,${end.toFixed(3)})':alpha='min(1,min(t/0.25,max(0,(${end.toFixed(3)}-t)/0.4)))'`);

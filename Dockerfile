@@ -2,10 +2,10 @@
 # Build from the repo root:  fly deploy   (fly.toml points here)
 FROM node:22-bookworm-slim
 
-# ffmpeg/ffprobe for the worker and the checker; Python for the checker; Noto Color Emoji for emojis in words over
-# shots (worker/src/wordimg.py, 2026-11-25).
+# ffmpeg/ffprobe for the worker and the checker; Python for the checker; the GL libraries Skia links against (text with
+# emojis is drawn by worker/src/wordimg.py; it draws on the CPU, the libraries only have to load), 2026-11-25.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg python3 python3-venv ca-certificates tini fonts-noto-color-emoji \
+ && apt-get install -y --no-install-recommends ffmpeg python3 python3-venv ca-certificates tini libgl1 libegl1 \
  && rm -rf /var/lib/apt/lists/*
 
 # Same versions as the machine the checker was benchmarked on (2026-11-19).
@@ -15,6 +15,9 @@ RUN python3 -m venv /opt/py \
 # Face landmarks for the lip sync check (frame_check/lipsync_check.py, 2026-11-23). 0.10.30 needs no OpenCV of its own;
 # its sounddevice dependency is only loaded for audio tasks, so PortAudio is not needed.
 RUN /opt/py/bin/pip install --no-cache-dir mediapipe==0.10.30
+# Skia for text with emojis at any size (COLRv1 colour fonts, HarfBuzz shaping), 2026-11-25
+RUN /opt/py/bin/pip install --no-cache-dir skia-python==144.1 \
+ && /opt/py/bin/python -c "import skia; skia.Surface(8, 8)"
 ENV PATH=/opt/py/bin:$PATH \
     U2NET_HOME=/opt/u2net
 # rembg downloads its matting model on first use; fetch it at build time instead.

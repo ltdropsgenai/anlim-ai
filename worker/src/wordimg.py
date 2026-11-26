@@ -1,77 +1,87 @@
-# Words over a shot as a picture, for words with emojis or symbols (2026-11-25, Londi: in an episode "emojis are not
-# rendered accurately. They appear as boxes"). ffmpeg's drawtext draws one font and no colour emoji, so a word with a
-# character Montserrat lacks is drawn here instead: Montserrat for letters, Noto Sans Symbols 2 for symbols (★),
-# Noto Color Emoji for emojis, then placed and animated by ffmpeg like the drawn words. @anlim
+# Text with emojis and symbols, drawn as a picture (2026-11-25, Londi: in an episode "emojis are not rendered
+# accurately. They appear as boxes"; then "even recent emoji packs" and "at any size"). ffmpeg's drawtext draws one font
+# and no colour emoji, so any words, title or handle with a character their font lacks is drawn here and laid over the
+# video by ffmpeg. Skia shapes the text (HarfBuzz: emoji sequences such as 👍🏽 and 👨‍👩‍👧 join up), falls back from the
+# text font to Noto Color Emoji (the COLRv1 vector build, so emojis stay sharp at any size, with the newest Unicode
+# emojis) and then to Noto Sans Symbols 2 (★ and similar). All three fonts are OFL. @anlim
 #
 # usage: python wordimg.py <in.json> <out.png>
-#   in.json: {"size": px, "color": "#FFF1D6", "fonts": {"text": path, "symbols": path, "emoji": path},
-#             "runs": [{"t": "Hi ", "f": "text"}, {"t": "😠", "f": "emoji"}, ...]}
-# Writes an RGBA PNG: the words with the same soft shadow as drawtext's (black at 55%, 2 px right, 3 px down).
+#   in.json: {"text": "...", "size": px, "color": [r, g, b], "alpha": 0..1, "fonts": [text font, emoji, symbols, ...],
+#             "shadow": {"dx": 2, "dy": 3, "alpha": 0.55}, "max_width": px (optional: the line is shrunk to fit)}
+# Writes an RGBA PNG cropped to the drawing (shadow included).
 import json
 import sys
 
-from PIL import Image, ImageDraw, ImageFont
+import skia
 
-EMOJI_PX = 109          # Noto Color Emoji is a bitmap font with one size: 109 px
+tl = skia.textlayout
+
+
+def collection(paths):
+    prov = tl.TypefaceFontProvider()
+    families = []
+    for p in paths:
+        tf = skia.Typeface.MakeFromFile(p)
+        if tf is None:
+            continue
+        prov.registerTypeface(tf)
+        if tf.getFamilyName() not in families:
+            families.append(tf.getFamilyName())
+    fc = tl.FontCollection()
+    fc.setDefaultFontManager(prov)
+    return fc, families
+
+
+def layout(fc, families, text, size, color):
+    st = tl.TextStyle()
+    st.setFontSize(size)
+    st.setFontFamilies(families)
+    st.setForegroundPaint(skia.Paint(AntiAlias=True, Color=skia.Color(*color)))
+    ps = tl.ParagraphStyle()
+    ps.setTextStyle(st)
+    b = tl.ParagraphBuilder.make(ps, fc, skia.Unicode.ICU_Make())
+    b.pushStyle(st)
+    b.addText(text)
+    p = b.Build()
+    p.layout(1e6)
+    return p
 
 
 def main(src, out):
     spec = json.load(open(src, encoding="utf-8"))
-    size = max(8, int(spec["size"]))
-    color = spec.get("color", "#FFF1D6")
-    fonts = spec["fonts"]
-    text_font = ImageFont.truetype(fonts["text"], size)
-    sym_font = ImageFont.truetype(fonts["symbols"], size) if fonts.get("symbols") else text_font
-    emoji_font = ImageFont.truetype(fonts["emoji"], EMOJI_PX) if fonts.get("emoji") else None
-    asc, desc = text_font.getmetrics()
-    line_h = asc + desc
-    em = round(size * 1.05)            # an emoji about as tall as the capitals plus a little
-
-    pieces = []                         # (image RGBA, y offset from the top of the line)
-    for run in spec["runs"]:
-        t, f = run["t"], run.get("f", "text")
-        if not t:
-            continue
-        if f == "emoji" and emoji_font is not None:
-            # one emoji at its native size, cropped to its pixels, then scaled to the line
-            g = Image.new("RGBA", (EMOJI_PX * 3, EMOJI_PX * 2), (0, 0, 0, 0))
-            ImageDraw.Draw(g).text((EMOJI_PX // 2, EMOJI_PX // 4), t, font=emoji_font, embedded_color=True)
-            box = g.getbbox()
-            if not box:
-                continue
-            g = g.crop(box)
-            k = em / max(g.height, 1)
-            g = g.resize((max(1, round(g.width * k)), max(1, round(g.height * k))), Image.LANCZOS)
-            gap = round(size * 0.06)
-            padded = Image.new("RGBA", (g.width + 2 * gap, g.height), (0, 0, 0, 0))
-            padded.paste(g, (gap, 0))
-            pieces.append((padded, (line_h - g.height) // 2 - round(size * 0.04)))
-        else:
-            font = sym_font if f == "symbols" else text_font
-            l, _, r, _ = font.getbbox(t)
-            w = max(1, round(font.getlength(t)), r)
-            img = Image.new("RGBA", (w + 2, line_h), (0, 0, 0, 0))
-            ImageDraw.Draw(img).text((0, 0), t, font=font, fill=color)
-            pieces.append((img, 0))
-
-    if not pieces:
-        Image.new("RGBA", (2, 2), (0, 0, 0, 0)).save(out)
-        return
-    pad = 4
-    W = sum(p.width for p, _ in pieces) + 2 * pad + 3
-    H = line_h + 2 * pad + 4
-    word = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    x = pad
-    for p, dy in pieces:
-        word.alpha_composite(p, (x, max(0, pad + dy)))
-        x += p.width
-    # the drop shadow from the word's own shape
-    shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    a = word.getchannel("A").point(lambda v: v * 55 // 100)
-    shadow.paste((0, 0, 0, 255), (2, 3), a.crop((0, 0, W - 2, H - 3)))
-    shadow.alpha_composite(word)
-    box = shadow.getbbox() or (0, 0, W, H)
-    shadow.crop(box).save(out)
+    text = spec["text"]
+    size = max(6.0, float(spec["size"]))
+    color = spec.get("color", [255, 241, 214])
+    alpha = max(0.0, min(1.0, float(spec.get("alpha", 1))))
+    sh = spec.get("shadow") or {"dx": 2, "dy": 3, "alpha": 0.55}
+    fc, families = collection(spec["fonts"])
+    p = layout(fc, families, text, size, color)
+    mw = spec.get("max_width")
+    if mw and p.LongestLine > mw:          # too wide for the picture: the same line, smaller
+        size = max(6.0, size * mw / p.LongestLine)
+        p = layout(fc, families, text, size, color)
+    pad = int(size * 0.25) + max(abs(int(sh["dx"])), abs(int(sh["dy"]))) + 4
+    w, h = int(p.LongestLine) + 2 * pad, int(p.Height) + 2 * pad
+    surface = skia.Surface(w, h)           # N32 premultiplied, transparent
+    canvas = surface.getCanvas()
+    canvas.clear(skia.ColorTRANSPARENT)
+    layer = skia.Paint(Alphaf=alpha)
+    if float(sh.get("alpha", 0)) > 0:
+        layer.setImageFilter(skia.ImageFilters.DropShadow(float(sh["dx"]), float(sh["dy"]), 0, 0,
+                                                          skia.Color4f(0, 0, 0, float(sh["alpha"])).toColor()))
+    canvas.saveLayer(None, layer)
+    p.paint(canvas, pad, pad)
+    canvas.restore()
+    img = surface.makeImageSnapshot()
+    # crop to what was drawn (a few pixels of air), so ffmpeg places it by its real size
+    arr = img.toarray()                    # h x w x 4, premultiplied BGRA or RGBA: only alpha (index 3) is read
+    rows = (arr[:, :, 3] > 0).any(axis=1).nonzero()[0]
+    cols = (arr[:, :, 3] > 0).any(axis=0).nonzero()[0]
+    if len(rows) and len(cols):
+        y0, y1 = max(0, rows[0] - 2), min(h, rows[-1] + 3)
+        x0, x1 = max(0, cols[0] - 2), min(w, cols[-1] + 3)
+        img = img.makeSubset(skia.IRect.MakeLTRB(int(x0), int(y0), int(x1), int(y1))) or img
+    img.save(out, skia.kPNG)
 
 
 if __name__ == "__main__":

@@ -11,12 +11,14 @@ import { tr, tMsg } from "../lib/i18n";
 const SPEEDS = [0.5, 0.75, 1, 1.5, 2];
 const MAX_WORDS = 12;
 // times are kept as the typed text (a number per keystroke turned "1." into 1, so 1.5 could not be typed; 2026-11-23 test)
-type DraftWord = Omit<ShotWord, "at_s" | "dur_s"> & { at: string; dur: string };
+// size: percent of the usual size, as typed (2026-11-25, Londi: emojis "at any size"); 100 = the usual 6% of the width
+type DraftWord = Omit<ShotWord, "at_s" | "dur_s" | "size"> & { at: string; dur: string; size: string };
+const SIZES = [[50, "S"], [100, "M"], [160, "L"], [250, "XL"], [400, "XXL"]] as const;
 type Draft = { speed: number; trimStart: string; trimEnd: string; words: DraftWord[] };
 const draftOf = (r: ShotRow): Draft => ({
   speed: Number(r.speed) || 1,
   trimStart: String(Number(r.trim_start_s) || 0), trimEnd: String(Number(r.trim_end_s) || 0),
-  words: (r.words ?? []).map(({ at_s, dur_s, ...w }) => ({ ...w, at: String(at_s), dur: String(dur_s) })),
+  words: (r.words ?? []).map(({ at_s, dur_s, size, ...w }) => ({ ...w, at: String(at_s), dur: String(dur_s), size: String(Math.round((Number(size) || 1) * 100)) })),
 });
 const num = (v: string) => (v.trim() === "" ? 0 : Number(v));
 
@@ -67,13 +69,15 @@ function ShotCard({ row, ratio, onSaved }: { row: ShotRow; ratio: number; onSave
     const at = num(w.at), dur = num(w.dur);
     if (!(at >= 0) || at >= len) problems.push(tr("Word {v0}: it must appear between 0 and {v1} s (the shot's length in the cut).", { v0: i + 1, v1: len.toFixed(1) }));
     if (!(dur >= 1 && dur <= 6)) problems.push(`Word ${i + 1}: it stays 1 to 6 seconds.`);
+    const sz = num(w.size);
+    if (!(sz >= 25 && sz <= 800)) problems.push(tr("Word {v0}: its size is 25 to 800%.", { v0: i + 1 }));
   });
 
   async function save() {
     setBusy(true); setMsg(null);
     try {
       await api.shotCutEdit(row.id, { speed: d.speed, trim_start_s: ts, trim_end_s: te,
-        words: d.words.map(({ at, dur, ...w }) => ({ ...w, text: w.text.trim(), at_s: num(at), dur_s: num(dur) })) });
+        words: d.words.map(({ at, dur, size, ...w }) => ({ ...w, text: w.text.trim(), at_s: num(at), dur_s: num(dur), size: Math.round(num(size)) / 100 })) });
       setMsg({ ok: true, text: tr("Saved. The next cut uses it.") }); onSaved();
     } catch (e) { setMsg({ ok: false, text: (e as Error).message }); }
     setBusy(false);
@@ -99,7 +103,7 @@ function ShotCard({ row, ratio, onSaved }: { row: ShotRow; ratio: number; onSave
             style={[s.pic, { aspectRatio: ratio }, sel !== null && { borderColor: c.accent }]}>
             {row.thumb_url ? <Image source={{ uri: row.thumb_url }} style={StyleSheet.absoluteFill} resizeMode="cover" /> : null}
             {d.words.map((w, i) => {
-              const size = Math.min(0.06 * box.w, (0.9 * box.w) / Math.max(1, w.text.length * 0.66));
+              const size = Math.min(0.06 * box.w * Math.min(8, Math.max(0.25, num(w.size) / 100 || 1)), (0.9 * box.w) / Math.max(1, w.text.length * 0.66));
               return (
                 // centred on (x, y) like the worker's drawtext (x - tw/2, y - th/2)
                 <View key={i} pointerEvents="none" style={[s.marker, { width: box.w, left: w.x * box.w - box.w / 2, top: w.y * box.h - size * 0.6 }]}>
@@ -147,6 +151,18 @@ function ShotCard({ row, ratio, onSaved }: { row: ShotRow; ratio: number; onSave
               <TextInput style={s.num} value={w.dur} keyboardType="decimal-pad" onFocus={() => setSel(i)}
                 onChangeText={(v) => setWord(i, { dur: v })} />
               <Text style={s.sub}>s</Text>
+              <View style={[s.row, { width: "100%", gap: 6 }]}>
+                <Text style={s.sub}>{tr("size")}</Text>
+                {SIZES.map(([v, label]) => (
+                  <Pressable key={v} onPress={() => { setSel(i); setWord(i, { size: String(v) }); }} style={[s.chip, s.chipSm, num(w.size) === v && s.chipOn]}
+                    accessibilityRole="radio" accessibilityState={{ checked: num(w.size) === v }} accessibilityLabel={`${label} ${v}%`}>
+                    <Text style={{ color: num(w.size) === v ? c.onAccent : c.ink, fontSize: 12 }}>{label}</Text>
+                  </Pressable>
+                ))}
+                <TextInput style={s.num} value={w.size} keyboardType="number-pad" onFocus={() => setSel(i)} accessibilityLabel={tr("Size in percent")}
+                  onChangeText={(v) => setWord(i, { size: v.replace(/[^\d]/g, "").slice(0, 3) })} />
+                <Text style={s.sub}>%</Text>
+              </View>
               <Pressable onPress={() => { setD((x) => ({ ...x, words: x.words.filter((_, k) => k !== i) })); setSel(null); }}
                 accessibilityRole="button" accessibilityLabel={tr("Remove word {v0}", { v0: i + 1 })}>
                 <Text style={s.remove}>{tr("Remove")}</Text>
@@ -156,13 +172,14 @@ function ShotCard({ row, ratio, onSaved }: { row: ShotRow; ratio: number; onSave
           {d.words.length < MAX_WORDS && (
             <Pressable style={s.ghost} accessibilityRole="button" onPress={() => {
               const at = d.words.length ? Math.min(len - 0.5, (num(d.words[d.words.length - 1].at) || 0) + 1) : 0;
-              setD((x) => ({ ...x, words: [...x.words, { text: "", at: String(Math.max(0, Number(at.toFixed(2)))), x: 0.5, y: 0.4, dur: "2.6" }] }));
+              setD((x) => ({ ...x, words: [...x.words, { text: "", at: String(Math.max(0, Number(at.toFixed(2)))), x: 0.5, y: 0.4, dur: "2.6", size: "100" }] }));
               setSel(d.words.length);
             }}>
               <Text style={{ color: c.ink }}>{tr("Add a word")}</Text>
             </Pressable>
           )}
-          <Text style={s.hint}>{tr("A word appears at its time in the shot as it plays in the cut (after trims and speed), then falls and fades.")}</Text>
+          <Text style={s.hint}>{tr("A word appears at its time in the shot as it plays in the cut (after trims and speed), then falls and fades.")}{" "}
+            {tr("Emojis work too, at any size (a word or a line too wide for the picture is drawn smaller to fit).")}</Text>
 
           {problems.map((p) => <Text key={p} style={s.err}>{p}</Text>)}
           <View style={s.row}>
@@ -194,6 +211,7 @@ const s = StyleSheet.create({
   row: { flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "center" },
   chip: { borderWidth: 1, borderColor: c.line, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: c.field },
   chipOn: { backgroundColor: c.accent, borderColor: c.accent },
+  chipSm: { paddingHorizontal: 9, paddingVertical: 4 },
   num: { width: 60, borderWidth: 1, borderColor: c.line, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, color: c.ink, backgroundColor: c.bg },
   text: { borderWidth: 1, borderColor: c.line, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, color: c.ink, backgroundColor: c.bg, minWidth: 100 },
   wordRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, alignItems: "center", borderWidth: 1, borderColor: c.line, borderRadius: 10, padding: 8 },

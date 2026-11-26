@@ -29,6 +29,7 @@ import * as captions from "./captions.js";
 import * as style from "./editstyle.js";
 import * as translate from "./translate.js";
 import * as glyphs from "./glyphs.js";
+import * as textpic from "./textpic.js";
 
 // A shot's voiceover starts this long after the shot does in a cut (worker.js lip-syncs to the same offset)
 export const SPEECH_LEAD = 0.15;
@@ -135,39 +136,10 @@ function picRect(format, size) {
   const w = Math.floor(Math.round(size.w * k) / 2) * 2, h = Math.floor(Math.round(size.h * k) / 2) * 2;
   return { x: Math.floor((W - w) / 2), y: Math.floor((H - h) / 2), w, h };
 }
-// 2026-11-25 (Londi: an episode's emojis "appear as boxes"): drawtext has one font and no colour emoji, so a word with
-// a character Montserrat lacks is drawn as a picture by wordimg.py (Montserrat for letters, Noto Sans Symbols 2 for
-// symbols such as ★, Noto Color Emoji for emojis) and moved by overlay with the same fall, drift and fades.
-// The emoji font comes from Debian's fonts-noto-color-emoji (Dockerfile); without it a cut still runs, with boxes.
-const SYMBOL_FONT = path.join(path.dirname(MARK), "fonts", "NotoSansSymbols2-Regular.ttf");
-const EMOJI_FONT = process.env.EMOJI_FONT || "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf";
-const WORDIMG = path.join(path.dirname(new URL(import.meta.url).pathname), "wordimg.py");
-const EMOJI_LIKE = /\p{Extended_Pictographic}|\u{FE0F}|\p{Regional_Indicator}/u;
-const lacks = async (font, g) => (await glyphs.missing(font, g)).length > 0;
-// Runs of text and the font each needs, or null when Montserrat has every character (drawtext draws it).
-async function wordRuns(text) {
-  if (!(await lacks(WORD_FONT, text))) return null;
-  const runs = [];
-  for (const { segment: g } of new Intl.Segmenter("en", { granularity: "grapheme" }).segment(text)) {
-    let f = "text";
-    if (await lacks(WORD_FONT, g)) {
-      if (EMOJI_LIKE.test(g) && !(await lacks(EMOJI_FONT, g))) f = "emoji";
-      else if (!(await lacks(SYMBOL_FONT, g))) f = "symbols";
-      else if (!(await lacks(EMOJI_FONT, g))) f = "emoji";
-    }
-    const last = runs[runs.length - 1];
-    if (last && last.f === f && f !== "emoji") last.t += g; else runs.push({ t: g, f });
-  }
-  return runs;
-}
-/** Characters none of the word fonts can draw: these still show as boxes. */
-export async function undrawable(text) {
-  const out = [];
-  for (const ch of await glyphs.missing(WORD_FONT, text)) {
-    if ((await lacks(SYMBOL_FONT, ch)) && (await lacks(EMOJI_FONT, ch))) out.push(ch);
-  }
-  return out;
-}
+// 2026-11-25 (Londi: emojis "appear as boxes", then "even recent emoji packs" and "at any size"): a word with a
+// character Montserrat lacks is drawn as a picture (textpic.js: colour emoji, symbols) and moved by overlay with the
+// same fall, drift and fades. Each word may carry a size (w.size, 0.25 to 8 times the usual 6% of the picture's width);
+// a line that would not fit is drawn smaller, so nothing runs off the picture.
 async function wordFilters(words, dir, tag, W, H, pic = { x: 0, y: 0, w: W, h: H }) {
   const out = [];
   for (const [k, w] of (words || []).slice(0, 12).entries()) {
@@ -177,24 +149,20 @@ async function wordFilters(words, dir, tag, W, H, pic = { x: 0, y: 0, w: W, h: H
     await fs.writeFile(file, text);
     const t0 = Math.max(0, Number(w.at_s) || 0), d = Math.min(6, Math.max(1, Number(w.dur_s) || 2.6));
     const x0 = pic.x + Math.min(1, Math.max(0, Number(w.x ?? 0.5))) * pic.w, y0 = pic.y + Math.min(1, Math.max(0, Number(w.y ?? 0.4))) * pic.h;
-    // size: 6% of the picture's width, smaller for long lines so a line never needs more than 90% of it
-    const size = Math.round(Math.min(pic.w * 0.06, (pic.w * 0.9) / (text.length * 0.66)));
+    // size: 6% of the picture's width times the word's size, smaller for long lines so a line never needs more than 90% of it
+    const scale = Math.min(8, Math.max(0.25, Number(w.size) || 1));
+    const size = Math.round(Math.min(pic.w * 0.06 * scale, (pic.w * 0.9) / (text.length * 0.66)));
     const g = pic.h * 0.09, wind = pic.w * 0.05;               // px/s^2 fall, px/s drift to the right
     const T = `(t-${t0.toFixed(3)})`;
-    const runs = await wordRuns(text).catch(() => null);
-    if (runs) {
-      const spec = path.join(dir, `${tag}_word${k}.json`), png = path.join(dir, `${tag}_word${k}.png`);
-      await fs.writeFile(spec, JSON.stringify({ size, color: "#FFF1D6", fonts: { text: WORD_FONT, symbols: SYMBOL_FONT, emoji: EMOJI_FONT }, runs }));
+    if (await textpic.needsPicture(WORD_FONT, text)) {
       try {
-        await exec("python3", ["-I", WORDIMG, spec, png], { maxBuffer: 1 << 20 });
-        const fadeOut = Math.max(t0, t0 + d - 0.8);
-        out.push(`null[wa${k}];movie=${png},loop=loop=-1:size=1:start=0,setpts=N/${FPS}/TB,format=rgba,` +
-          `fade=t=in:st=${t0.toFixed(3)}:d=0.25:alpha=1,fade=t=out:st=${fadeOut.toFixed(3)}:d=0.8:alpha=1[wb${k}];` +
-          `[wa${k}][wb${k}]overlay=shortest=1:enable='between(t,${t0.toFixed(3)},${(t0 + d).toFixed(3)})'` +
-          `:x='max(${Math.round(pic.x + pic.w * 0.03)},min(${Math.round(pic.x + pic.w * 0.97)}-w,${x0.toFixed(1)}-w/2+${wind.toFixed(1)}*${T}))'` +
-          `:y='${y0.toFixed(1)}-h/2+0.5*${g.toFixed(1)}*${T}*${T}'`);
+        const png = await textpic.render(path.join(dir, `${tag}_word${k}.png`), text,
+          { size: Math.round(pic.w * 0.06 * scale), font: WORD_FONT, maxWidth: pic.w * 0.9 });
+        out.push(textpic.overlay(png, `w${k}`, { fps: FPS, t0, t1: t0 + d, fin: 0.25, fout: 0.8,
+          x: `max(${Math.round(pic.x + pic.w * 0.03)},min(${Math.round(pic.x + pic.w * 0.97)}-w,${x0.toFixed(1)}-w/2+${wind.toFixed(1)}*${T}))`,
+          y: `${y0.toFixed(1)}-h/2+0.5*${g.toFixed(1)}*${T}*${T}` }));
         continue;
-      } catch (e) { console.error(`word picture ${tag}_word${k}: ${e.message}`); }   // falls back to drawtext
+      } catch (e) { console.error(`word picture ${tag}_word${k}: ${e.message}`); }   // falls back to drawtext (boxes)
     }
     out.push(`drawtext=fontfile=${WORD_FONT}:textfile=${file}:expansion=none:fontsize=${size}:fontcolor=0xFFF1D6` +
       `:shadowcolor=black@0.55:shadowx=2:shadowy=3:enable='between(t,${t0.toFixed(3)},${(t0 + d).toFixed(3)})'` +
@@ -492,7 +460,7 @@ async function build(a) {
     }
     if ((it.words || []).length) notes.push(`Shot ${it.ord}: ${it.words.length} word${it.words.length > 1 ? "s" : ""} drawn over it.`);
     // 2026-11-24: a character the font lacks is drawn as a box, silently; say so (glyphs.js)
-    const noGlyph = await undrawable((it.words || []).map((w) => String(w.text || "")).join(" "));   // emojis are drawn now (2026-11-25)
+    const noGlyph = await textpic.undrawable(WORD_FONT, (it.words || []).map((w) => String(w.text || "")).join(" "));   // emojis are drawn now (2026-11-25)
     if (noGlyph.length) notes.push(`Shot ${it.ord}: the words over it use characters the font cannot draw (${glyphs.list(noGlyph)}): they show as boxes.`);
     if (fades.in) quiet.push([frames / FPS, frames / FPS + FADE_IN]);
     starts.push(frames / FPS); lens.push(out / FPS);
