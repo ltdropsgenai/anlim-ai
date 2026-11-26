@@ -6,10 +6,13 @@ did no better (DINOv2 0.57-0.60, CLIP 0.48-0.77 on 11-14 clips). So the comparis
 start frame and four later frames, plus each character's uploaded picture only to say who is who.
 
   python cartoon_id_ai.py judge --clip C.mp4 --start S.png --cast "Anlim=photo.png" --cast "Partner=" [--model ...]
-  python cartoon_id_ai.py eval --cases cases.json --labels labels.txt [--model claude-sonnet-5-5] [--max-usd 2] [--yes] [--faces]
+  python cartoon_id_ai.py eval --cases cases.json --labels labels.txt [--model claude-sonnet-5-5] [--max-usd 2] [--yes] [--faces | --vs-photo]
 
 v1 (four frames, whole-frame view) caught 0 of 10 KAMK failures and flagged 0 of 18 held, $0.26 with Sonnet: it read the
-clothes and hair as the same character ("same bearded man... cream henley"). v2 (--faces) adds face crops and says so.
+clothes and hair as the same character ("same bearded man... cream henley"). v2 (--faces) adds face crops and says so:
+also 0 of 10, $0.41. Londi then said (2026-11-26) his labels compare each drawn character with the UPLOADED PHOTO, not
+with the start frame, so v1/v2 answered a different question. v3 (--vs-photo, implies --faces) asks his question: is
+each drawn face still a recognisable cartoon of the person in the photo, in the start frame and in every later frame.
 
 cases.json: [{"name": "C_FT1_kling", "clip": path, "start": path or null (null = the clip's first frame),
               "cast": {name: photo path or null}}]; labels.txt: lines "C_FT1_kling|Anlim = held|drifted|swapped|unsure".
@@ -64,6 +67,22 @@ hair, skin tone, apparent age. Clothes, hairstyle and position are NOT evidence 
 model often keeps the clothes and hair while the face becomes someone else's. If the face in a later crop would not pass
 for the same drawn character as in the start-frame crops, say drifted."""
 
+SYSTEM_PHOTO = """You check drawn (cartoon) video clips against the real people they are meant to show. For each named
+character you get the creator's uploaded PHOTO of the real person. The clip's frames follow: image 1 is the START FRAME,
+then later frames in order, each followed by enlarged crops of the faces found in it.
+The cartoon style changes the person on purpose (simplified shapes, bigger eyes, flat colour). The question is only:
+would someone who knows the person in the photo still recognise THIS drawn face as a cartoon of them?
+Judge from the FACE: face shape and jaw, eye shape and spacing, eyebrows, nose, mouth and lips, facial hair, skin tone,
+apparent age, hairline and hair type. Clothes, hairstyle colour alone, pose and position are NOT evidence.
+- held: recognisable as that person in the start frame and in every later frame where the face is visible.
+- drifted: in the start frame or in at least one later frame, the drawn face would not pass for that person (a generic
+  or different face, a different age, skin tone or facial hair), even briefly.
+- swapped: the face looks like another named cast member's photo instead, or two characters traded faces or places.
+- not_visible: too small, hidden or turned away in every frame.
+Be strict: a pleasant generic cartoon face that merely shares the hair and clothes is drifted.
+Answer with ONE JSON object: {"characters": {"<name>": {"verdict": "held|drifted|swapped|not_visible",
+"frames": [frame numbers where it fails, 1 = start], "why": "<at most 20 words>"}}}"""
+
 def face_crops(path, n=6, size=384):
     """Enlarged crops of the biggest faces in a frame (YuNet), saved next to it."""
     import face_id
@@ -78,20 +97,27 @@ def face_crops(path, n=6, size=384):
         p = f"{path[:-4]}_face{i}.jpg"; cv2.imwrite(p, c, [cv2.IMWRITE_JPEG_QUALITY, 92]); out.append(p)
     return out
 
-def judge(clip, start, cast, model="claude-sonnet-5-5", k=None, faces=False):
+def judge(clip, start, cast, model="claude-sonnet-5-5", k=None, faces=False, vs_photo=False):
+    faces = faces or vs_photo
     first, later = frames(clip, n=6 if faces else 4)
-    content = [{"type": "text", "text": "Image 1: START FRAME."}, A.img_block(start or first, 1600)[0]]
+    content = []
+    if vs_photo:
+        for n, ph in cast.items():
+            if ph: content += [{"type": "text", "text": f"PHOTO of the real person behind {n}:"}, A.img_block(ph, 768)[0]]
+    content += [{"type": "text", "text": "Image 1: START FRAME."}, A.img_block(start or first, 1600)[0]]
     if faces:
         for c in face_crops(start or first): content += [{"type": "text", "text": "Start-frame face crop:"}, A.img_block(c, 400)[0]]
     for j, (t, p) in enumerate(later):
         content += [{"type": "text", "text": f"Later frame {j + 2} (at {t} s):"}, A.img_block(p, 1600)[0]]
         if faces:
             for c in face_crops(p): content += [{"type": "text", "text": f"Face crop from frame {j + 2}:"}, A.img_block(c, 400)[0]]
-    for n, ph in cast.items():
-        if ph: content += [{"type": "text", "text": f"Uploaded picture of {n} (who is who only):"}, A.img_block(ph, 512)[0]]
+    if not vs_photo:
+        for n, ph in cast.items():
+            if ph: content += [{"type": "text", "text": f"Uploaded picture of {n} (who is who only):"}, A.img_block(ph, 512)[0]]
     names = ", ".join(cast)
     content.append({"type": "text", "text": f"Characters in this clip: {names}. Judge each one as described."})
-    txt, usage = A._call(model, k or key(), SYSTEM + (FACES_NOTE if faces else ""), content, max_tokens=800)
+    txt, usage = A._call(model, k or key(), SYSTEM_PHOTO if vs_photo else SYSTEM + (FACES_NOTE if faces else ""), content,
+                         max_tokens=800)
     pi, _, _, po = A.PRICES.get(model, (4.0, 5.0, 0.2, 20.0))
     usd = usage.get("input_tokens", 0) * pi / 1e6 + usage.get("output_tokens", 0) * po / 1e6
     try: r = A.first_json(txt) or {}
@@ -106,14 +132,14 @@ def cmd_eval(a):
     cases = json.load(open(a.cases)); labels = {}
     for line in open(a.labels, encoding="utf-8"):
         if " = " in line: kk, v = line.strip().split(" = "); t, n = kk.split("|"); labels[(t, n)] = v
-    est = (len(cases) * 0.03 if "sonnet" in a.model else len(cases) * 0.003) * (2.5 if a.faces else 1)
+    est = (len(cases) * 0.03 if "sonnet" in a.model else len(cases) * 0.003) * (2.5 if (a.faces or a.vs_photo) else 1)
     if not a.yes:
         sys.exit(f"about ${est:.2f} for {len(cases)} clips with {a.model} (rough: ~10k tokens a clip); add --yes to run")
     k = key(); spent = 0.0; out = []
-    res_path = os.path.splitext(a.cases)[0] + f"_ai_{a.model}{'_faces' if a.faces else ''}.json"
+    res_path = os.path.splitext(a.cases)[0] + f"_ai_{a.model}{'_photo' if a.vs_photo else '_faces' if a.faces else ''}.json"
     for c in cases:
         if spent > a.max_usd: print("stopped: --max-usd reached"); break
-        r = judge(c["clip"], c.get("start"), c["cast"], a.model, k, faces=a.faces); spent += r["usd"]
+        r = judge(c["clip"], c.get("start"), c["cast"], a.model, k, faces=a.faces, vs_photo=a.vs_photo); spent += r["usd"]
         for n in c["cast"]:
             lab = labels.get((c["name"], n)); got = (r["characters"].get(n) or {}).get("verdict")
             out.append({"take": c["name"], "name": n, "label": lab, "ai": got, "why": (r["characters"].get(n) or {}).get("why")})
@@ -134,4 +160,6 @@ if __name__ == "__main__":
     e.add_argument("--model", default="claude-sonnet-5-5"); e.add_argument("--max-usd", type=float, default=2.0); e.add_argument("--yes", action="store_true")
     e.add_argument("--faces", action="store_true", help="v2 (2026-11-26): six later frames plus enlarged face crops, and judge the face only "
                    "(v1 judged by clothes and hair: 0 of 10 failures caught on KAMK)")
+    e.add_argument("--vs-photo", action="store_true", help="v3 (2026-11-26): judge each drawn face against the uploaded photo, "
+                   "start frame included (Londi's labels are against the photo); implies --faces")
     a = ap.parse_args(); (cmd_judge if a.cmd == "judge" else cmd_eval)(a)
