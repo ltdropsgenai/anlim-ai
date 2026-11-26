@@ -173,6 +173,17 @@ def _find_big(F, img, up_to=3840):
         out.append({"x": float(row[0] / im.shape[1]), "w_px": float(row[2] / k), "det": float(row[14]), "frontal": frontal, "emb": e})
     return out
 
+# 2026-11-26 (Pa Tann Mwen Ale singer clips, 2560x1440): enlarging every frame to 3840 px made close-up faces (400-600 px)
+# too big for YuNet: 7 of 19 close-up clips had no clear face at all (L11 and L17: none; L02 at detector 0.74, not
+# frontal), while at 1280 px all were found at 0.93-0.94. So: look at 1280 px first; enlarge only when there is no
+# clear face or the biggest clear one is small (under 60 px at 1280), as in the app's wide shots.
+def _find_any(F, img):
+    fs = _find_big(F, img, 1280)
+    clear = [f for f in fs if f["frontal"]]
+    if clear and max(f["w_px"] for f in clear) * 1280 / max(img.shape[:2]) >= 60:
+        return fs
+    return _find_big(F, img)
+
 def _assign(faces, refs):
     """Greedy one-face-per-person: the highest (face, person) score first. refs: {name: emb}."""
     pairs = sorted(((float(f["emb"] @ e), i, n) for i, f in enumerate(faces) for n, e in refs.items()), reverse=True)
@@ -197,14 +208,14 @@ def identity(clip, refs_in, start_frame=None, fps=2.0, thr=IDENTITY_THR, log=Non
     base = dict(card); against = {n: "card" for n in card}
     sf = cv2.imread(start_frame) if start_frame else None
     if sf is not None:
-        for n, (f, sc) in _assign([f for f in _find_big(F, sf) if f["frontal"]], card).items():
+        for n, (f, sc) in _assign([f for f in _find_any(F, sf) if f["frontal"]], card).items():
             if sc >= 0.3: base[n] = f["emb"]; against[n] = "start frame"     # below 0.3 the start face is not clearly them
     # Scored only against the start frame: against the card alone, good SuperCool clips scored -0.00 to 0.18
     # (stylised grade, card drawn differently), i.e. noise. No clear start face = "not checked", said out loud.
     scores = {n: [] for n in card}; samples = 0
     for key, t, im in samples_iter(clip, fps):
         samples += 1
-        for n, (f, sc) in _assign([f for f in _find_big(F, im) if f["frontal"]], base).items():
+        for n, (f, sc) in _assign([f for f in _find_any(F, im) if f["frontal"]], base).items():
             if against[n] == "start frame": scores[n].append(sc)
     rep = {"people": {}, "drift": [], "unchecked": [], "thr": thr}
     for n, v in scores.items():
