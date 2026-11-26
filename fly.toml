@@ -18,6 +18,11 @@ primary_region = "ord"
 [[restart]]
   policy = "always"
 
+# 2026-11-26 (Londi: "upgrade to a server architecture that will support the workloads"): dedicated CPUs. On
+# shared-cpu-2x, sustained matting used up the CPU burst balance (500 s max) and the machine dropped to the 6.25 %
+# baseline (Fly docs, machines/cpu-performance): Atud Clinton's 6-child cartoon end image went from ~12 s per image's
+# cut-outs on an idle machine to over 5 min per try. performance-2x is never throttled. Each machine runs one heavy
+# check at a time (CHECKER_MAX_JOBS = 1), so add machines (flyctl scale count N) for more people at once.
 [[vm]]
-  size = "shared-cpu-2x"
+  size = "performance-2x"
   memory = "4gb"   # 2026-11-23: the checker ran out of memory on 2 GB (oom_killed during an end-frame check)

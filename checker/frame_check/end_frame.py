@@ -28,7 +28,7 @@ LIMITS: one room, locked camera. A deliberate camera change between start and en
 is reported as drift everywhere; a prop the shot MEANS to move (she picks up the truck) is reported too:
 pass it in allow=[x0,y0,x1,y1 fractions].
 """
-import argparse, json, os, sys
+import argparse, json, os, sys, threading
 os.environ.setdefault("OPENCV_LOG_LEVEL", "ERROR")
 import numpy as np
 import cv2
@@ -189,7 +189,33 @@ def matte_grown(bgr, x0, y0, x1, y1, cx0, cx1, sess):
     return cm, (x0, y0, x1, y1)
 
 
+_MASK_CACHE = {}          # 2026-11-26: char_mask results by image content (see char_mask)
+_MASK_CACHE_MAX = 8
+_MASK_LOCK = threading.Lock()
+
+
 def char_mask(bgr, pad=0.08):
+    """_char_mask, remembered by the image's content and the request's look and cast classes.
+    2026-11-26 (Atud Clinton's end image, job dcedf786, a cartoon park with 6 children): one compose matted the same
+    images again and again (the start still in compose and in each check() pass, the composed frame in check() and in
+    the repair pass): up to 11 char_mask calls for about 5 different images, each ~12 s of full CPU at 1.7 s per child
+    on the Fly shared-cpu-2x, which drained the machine's CPU burst and slowed it 16 times (Fly shared-CPU baseline).
+    Identical pixels give the identical mask, so a repeat is a lookup. Callers get copies (they may draw on them)."""
+    import hashlib
+    key = (hashlib.blake2b(np.ascontiguousarray(bgr).tobytes(), digest_size=16).hexdigest(), bgr.shape, pad,
+           _CFG["look"], tuple(_CFG["classes"]))
+    with _MASK_LOCK:
+        hit = _MASK_CACHE.get(key)
+    if hit is None:
+        hit = _char_mask(bgr, pad)
+        with _MASK_LOCK:
+            _MASK_CACHE[key] = hit
+            while len(_MASK_CACHE) > _MASK_CACHE_MAX: _MASK_CACHE.pop(next(iter(_MASK_CACHE)))
+    m, boxes, matted = hit
+    return m.copy(), [list(b) for b in boxes], matted
+
+
+def _char_mask(bgr, pad=0.08):
     """uint8 mask (255 = a character) and the people boxes (pixels). One cut-out per detected person.
     2026-11-16 (reposition live test, job f5f11c3d): the detector's box for a seated Layana started at her mouth, the
     mask stopped at the box edge, and compose pasted the wall over her hair and bows. When the mask runs into the top
