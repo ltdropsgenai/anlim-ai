@@ -2,9 +2,10 @@
 # Build from the repo root:  fly deploy   (fly.toml points here)
 FROM node:22-bookworm-slim
 
-# ffmpeg/ffprobe for the worker and the checker; Python for the checker.
+# ffmpeg/ffprobe for the worker and the checker; Python for the checker; Noto Color Emoji for emojis in words over
+# shots (worker/src/wordimg.py, 2026-11-25).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg python3 python3-venv ca-certificates tini \
+ && apt-get install -y --no-install-recommends ffmpeg python3 python3-venv ca-certificates tini fonts-noto-color-emoji \
  && rm -rf /var/lib/apt/lists/*
 
 # Same versions as the machine the checker was benchmarked on (2026-11-19).
