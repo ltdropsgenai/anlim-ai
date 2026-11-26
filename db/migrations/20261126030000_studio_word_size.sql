@@ -1,10 +1,11 @@
--- Words over a shot get a size (2026-11-25, Londi: emojis "at any size to any project"). @anlim
+-- Words over a shot get a size (2026-11-25, Londi: emojis "at any size to any project") and a style ("plain" or
+-- "fire": flame gradient, ember edge and glow, Londi: "a fire text style and make it resizable"). @anlim
 -- size: times the usual size (6% of the picture's width), 0.25 to 8; missing = 1. The worker (assemble.js) draws a line
 -- that would not fit the picture smaller, so a large size never runs off the picture. Everything else is unchanged from
 -- 20261123110000_studio_shot_words.
 create or replace function studio.set_shot_words(p_shot uuid, p_words jsonb)
 returns void language plpgsql security definer set search_path to '' as $$
-declare v_owner uuid; v_w jsonb; v_out jsonb := '[]'::jsonb; v_text text; v_at numeric; v_x numeric; v_y numeric; v_d numeric; v_s numeric;
+declare v_owner uuid; v_w jsonb; v_out jsonb := '[]'::jsonb; v_text text; v_at numeric; v_x numeric; v_y numeric; v_d numeric; v_s numeric; v_st text;
 begin
   v_owner := studio.shot_owner(p_shot);
   if v_owner is null or auth.uid() is null or auth.uid() <> v_owner then raise exception 'shot not found'; end if;
@@ -19,12 +20,14 @@ begin
     v_y := coalesce(nullif(v_w->>'y', '')::numeric, 0.4);
     v_d := coalesce(nullif(v_w->>'dur_s', '')::numeric, 2.6);
     v_s := coalesce(nullif(v_w->>'size', '')::numeric, 1);
+    v_st := coalesce(nullif(v_w->>'style', ''), 'plain');
     if v_at < 0 or v_at > 600 then raise exception 'a word appears 0 to 600 seconds into the shot'; end if;
     if v_x < 0 or v_x > 1 or v_y < 0 or v_y > 1 then raise exception 'x and y are fractions of the frame, 0 to 1'; end if;
     if v_d < 1 or v_d > 6 then raise exception 'a word stays 1 to 6 seconds'; end if;
+    if v_st not in ('plain', 'fire') then raise exception 'a word''s style is plain or fire'; end if;
     if v_s < 0.25 or v_s > 8 then raise exception 'a word''s size is 0.25 to 8 times the usual size (25 to 800%%)'; end if;
     v_out := v_out || jsonb_build_object('text', v_text, 'at_s', round(v_at, 2), 'x', round(v_x, 3), 'y', round(v_y, 3), 'dur_s', round(v_d, 2),
-                                         'size', round(v_s, 2));
+                                         'size', round(v_s, 2), 'style', v_st);
   end loop;
   update studio.shots set words = v_out where id = p_shot;
 end $$;

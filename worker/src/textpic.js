@@ -29,13 +29,14 @@ export async function undrawable(font, text) {
 }
 
 /** Draws `text` to `png`. opts: size (px), font (text font file), color [r,g,b], alpha 0..1, shadow {dx,dy,alpha},
- *  maxWidth (px: a longer line is drawn smaller to fit). */
+ *  maxWidth (px: a longer line is drawn smaller to fit), style ("fire": flame gradient, ember edge, glow; 2026-11-25). */
 export async function render(png, text, opts) {
   const spec = png.replace(/\.png$/, ".json");
   await fs.writeFile(spec, JSON.stringify({
     text, size: opts.size, color: opts.color || [255, 241, 214], alpha: opts.alpha ?? 1,
     fonts: [opts.font, EMOJI_FONT, SYMBOL_FONT], shadow: opts.shadow || { dx: 2, dy: 3, alpha: 0.55 },
     ...(opts.maxWidth ? { max_width: Math.round(opts.maxWidth) } : {}),
+    ...(opts.style ? { style: opts.style } : {}),
   }));
   await exec("python3", ["-I", WORDIMG, spec, png], { maxBuffer: 1 << 20, timeout: 60_000 });
   return png;

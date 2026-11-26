@@ -235,7 +235,7 @@ const TOOLS = [
     description: "Sets the words drawn over a shot in the scene's cut (replaces any already set; an empty list removes them). Each word " +
       "appears at a moment of the shot as it plays in the cut (seconds after the shot starts, after any speed change: time it to " +
       "the voiceover), at a point in the frame (x and y from 0 to 1, from the top left; put it on the person it comes from), then " +
-      "falls, drifts on the breeze and fades. Spelled exactly as given; emojis are drawn in colour. size makes a word larger or smaller (0.25 to 8). " +
+      "falls, drifts on the breeze and fades. Spelled exactly as given; emojis are drawn in colour. size makes a word larger or smaller (0.25 to 8); style \"fire\" makes it flaming. " +
       "Up to 12 words of up to 40 characters. Then make_cut. Free.",
     inputSchema: { type: "object", properties: {
       shot_id: { type: "string" },
@@ -245,6 +245,7 @@ const TOOLS = [
         x: { type: "number", minimum: 0, maximum: 1, default: 0.5 }, y: { type: "number", minimum: 0, maximum: 1, default: 0.4 },
         seconds: { type: "number", minimum: 1, maximum: 6, default: 2.6, description: "How long it stays (falling)" },
         size: { type: "number", minimum: 0.25, maximum: 8, default: 1, description: "Times the usual size (6% of the picture's width); a word too wide for the picture is drawn smaller to fit" },
+        style: { type: "string", enum: ["plain", "fire"], default: "plain", description: "fire: flame-coloured letters with an ember edge and a glow" },
       }, required: ["text", "at_seconds"], additionalProperties: false } },
     }, required: ["shot_id", "words"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
@@ -762,7 +763,7 @@ async function callTool(uid: string, name: string, a: Args) {
       const list = Array.isArray(a.words) ? (a.words as Record<string, unknown>[]).slice(0, 12) : [];
       const words = list.map((w) => ({ text: String(w.text ?? ""), at_s: Number(w.at_seconds ?? 0), x: w.x == null ? 0.5 : Number(w.x),
                                        y: w.y == null ? 0.4 : Number(w.y), dur_s: w.seconds == null ? 2.6 : Number(w.seconds),
-                                       size: w.size == null ? 1 : Number(w.size) }));
+                                       size: w.size == null ? 1 : Number(w.size), style: w.style === "fire" ? "fire" : "plain" }));
       await asUser(uid, (tx) => tx`select studio.set_shot_words(${sid}, ${tx.json(words)})`);
       return text(words.length ? `${words.length} word${words.length > 1 ? "s" : ""} set on this shot: ` +
         words.map((w) => `"${w.text}" at ${w.at_s} s`).join(", ") + ". Run make_cut to see them." : "Words removed from this shot.");

@@ -7,7 +7,8 @@
 #
 # usage: python wordimg.py <in.json> <out.png>
 #   in.json: {"text": "...", "size": px, "color": [r, g, b], "alpha": 0..1, "fonts": [text font, emoji, symbols, ...],
-#             "shadow": {"dx": 2, "dy": 3, "alpha": 0.55}, "max_width": px (optional: the line is shrunk to fit)}
+#             "shadow": {"dx": 2, "dy": 3, "alpha": 0.55}, "max_width": px (optional: the line is shrunk to fit),
+#             "style": "fire" (optional)}
 # Writes an RGBA PNG cropped to the drawing (shadow included).
 import json
 import sys
@@ -32,11 +33,11 @@ def collection(paths):
     return fc, families
 
 
-def layout(fc, families, text, size, color):
+def layout(fc, families, text, size, color, paint=None):
     st = tl.TextStyle()
     st.setFontSize(size)
     st.setFontFamilies(families)
-    st.setForegroundPaint(skia.Paint(AntiAlias=True, Color=skia.Color(*color)))
+    st.setForegroundPaint(paint or skia.Paint(AntiAlias=True, Color=skia.Color(*color)))
     ps = tl.ParagraphStyle()
     ps.setTextStyle(st)
     b = tl.ParagraphBuilder.make(ps, fc, skia.Unicode.ICU_Make())
@@ -45,6 +46,26 @@ def layout(fc, families, text, size, color):
     p = b.Build()
     p.layout(1e6)
     return p
+
+
+# "fire" (2026-11-25, Londi: "a fire text style"): a flame gradient (pale yellow at the base, orange, deep red at the
+# tips), a dark ember edge and an orange glow around it. Emojis keep their own colours.
+FIRE_GLOW = skia.Color(255, 106, 0)
+
+
+def fire(canvas, fc, families, text, size, pad, height):
+    top, bottom = pad, pad + height
+    grad = skia.GradientShader.MakeLinear(
+        [skia.Point(0, top + height * 0.15), skia.Point(0, bottom - height * 0.18)],
+        [skia.Color(214, 32, 0), skia.Color(255, 122, 0), skia.Color(255, 196, 40), skia.Color(255, 246, 196)],
+        [0.0, 0.38, 0.72, 1.0])
+    glow = skia.Paint(AntiAlias=True, Color=FIRE_GLOW,
+                      MaskFilter=skia.MaskFilter.MakeBlur(skia.kNormal_BlurStyle, max(2.0, size * 0.14)))
+    edge = skia.Paint(AntiAlias=True, Color=skia.Color(90, 8, 0), Style=skia.Paint.kStroke_Style,
+                      StrokeWidth=max(1.5, size * 0.07), StrokeJoin=skia.Paint.kRound_Join)
+    fill = skia.Paint(AntiAlias=True, Shader=grad)
+    for paint in (glow, edge, fill):
+        layout(fc, families, text, size, None, paint).paint(canvas, pad, pad)
 
 
 def main(src, out):
@@ -60,7 +81,7 @@ def main(src, out):
     if mw and p.LongestLine > mw:          # too wide for the picture: the same line, smaller
         size = max(6.0, size * mw / p.LongestLine)
         p = layout(fc, families, text, size, color)
-    pad = int(size * 0.25) + max(abs(int(sh["dx"])), abs(int(sh["dy"]))) + 4
+    pad = int(size * (0.45 if spec.get("style") == "fire" else 0.25)) + max(abs(int(sh["dx"])), abs(int(sh["dy"]))) + 4
     w, h = int(p.LongestLine) + 2 * pad, int(p.Height) + 2 * pad
     surface = skia.Surface(w, h)           # N32 premultiplied, transparent
     canvas = surface.getCanvas()
@@ -70,7 +91,10 @@ def main(src, out):
         layer.setImageFilter(skia.ImageFilters.DropShadow(float(sh["dx"]), float(sh["dy"]), 0, 0,
                                                           skia.Color4f(0, 0, 0, float(sh["alpha"])).toColor()))
     canvas.saveLayer(None, layer)
-    p.paint(canvas, pad, pad)
+    if spec.get("style") == "fire":
+        fire(canvas, fc, families, text, size, pad, p.Height)
+    else:
+        p.paint(canvas, pad, pad)
     canvas.restore()
     img = surface.makeImageSnapshot()
     # crop to what was drawn (a few pixels of air), so ffmpeg places it by its real size

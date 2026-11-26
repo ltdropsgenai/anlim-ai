@@ -107,7 +107,7 @@ function ShotCard({ row, ratio, onSaved }: { row: ShotRow; ratio: number; onSave
               return (
                 // centred on (x, y) like the worker's drawtext (x - tw/2, y - th/2)
                 <View key={i} pointerEvents="none" style={[s.marker, { width: box.w, left: w.x * box.w - box.w / 2, top: w.y * box.h - size * 0.6 }]}>
-                  <Text numberOfLines={1} style={[s.wordText, { fontSize: Math.max(6, size) }, sel === i && { color: c.accent }]}>
+                  <Text numberOfLines={1} style={[s.wordText, { fontSize: Math.max(6, size) }, w.style === "fire" && s.fireText, sel === i && { color: c.accent }]}>
                     {w.text || "…"}
                   </Text>
                 </View>
@@ -159,6 +159,11 @@ function ShotCard({ row, ratio, onSaved }: { row: ShotRow; ratio: number; onSave
                     <Text style={{ color: num(w.size) === v ? c.onAccent : c.ink, fontSize: 12 }}>{label}</Text>
                   </Pressable>
                 ))}
+                {/* 2026-11-25 (Londi: "a fire text style"): plain or fire, per word */}
+                <Pressable onPress={() => { setSel(i); setWord(i, { style: w.style === "fire" ? "plain" : "fire" }); }}
+                  style={[s.chip, s.chipSm, w.style === "fire" && s.chipFire]} accessibilityRole="switch" accessibilityState={{ checked: w.style === "fire" }}>
+                  <Text style={{ color: w.style === "fire" ? "#2A0A00" : c.ink, fontSize: 12, fontWeight: "700" }}>{tr("🔥 Fire")}</Text>
+                </Pressable>
                 <TextInput style={s.num} value={w.size} keyboardType="number-pad" onFocus={() => setSel(i)} accessibilityLabel={tr("Size in percent")}
                   onChangeText={(v) => setWord(i, { size: v.replace(/[^\d]/g, "").slice(0, 3) })} />
                 <Text style={s.sub}>%</Text>
@@ -212,6 +217,8 @@ const s = StyleSheet.create({
   chip: { borderWidth: 1, borderColor: c.line, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: c.field },
   chipOn: { backgroundColor: c.accent, borderColor: c.accent },
   chipSm: { paddingHorizontal: 9, paddingVertical: 4 },
+  chipFire: { backgroundColor: "#FF8A1E", borderColor: "#FF8A1E" },
+  fireText: { color: "#FFB23A", textShadowColor: "rgba(255,90,0,0.95)", textShadowRadius: 8, textShadowOffset: { width: 0, height: 0 } },
   num: { width: 60, borderWidth: 1, borderColor: c.line, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, color: c.ink, backgroundColor: c.bg },
   text: { borderWidth: 1, borderColor: c.line, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, color: c.ink, backgroundColor: c.bg, minWidth: 100 },
   wordRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, alignItems: "center", borderWidth: 1, borderColor: c.line, borderRadius: 10, padding: 8 },

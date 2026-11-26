@@ -154,10 +154,11 @@ async function wordFilters(words, dir, tag, W, H, pic = { x: 0, y: 0, w: W, h: H
     const size = Math.round(Math.min(pic.w * 0.06 * scale, (pic.w * 0.9) / (text.length * 0.66)));
     const g = pic.h * 0.09, wind = pic.w * 0.05;               // px/s^2 fall, px/s drift to the right
     const T = `(t-${t0.toFixed(3)})`;
-    if (await textpic.needsPicture(WORD_FONT, text)) {
+    const fire = w.style === "fire";   // 2026-11-25 (Londi: "a fire text style"): always a picture (textpic.js)
+    if (fire || await textpic.needsPicture(WORD_FONT, text)) {
       try {
         const png = await textpic.render(path.join(dir, `${tag}_word${k}.png`), text,
-          { size: Math.round(pic.w * 0.06 * scale), font: WORD_FONT, maxWidth: pic.w * 0.9 });
+          { size: Math.round(pic.w * 0.06 * scale), font: WORD_FONT, maxWidth: pic.w * 0.9, ...(fire ? { style: "fire" } : {}) });
         out.push(textpic.overlay(png, `w${k}`, { fps: FPS, t0, t1: t0 + d, fin: 0.25, fout: 0.8,
           x: `max(${Math.round(pic.x + pic.w * 0.03)},min(${Math.round(pic.x + pic.w * 0.97)}-w,${x0.toFixed(1)}-w/2+${wind.toFixed(1)}*${T}))`,
           y: `${y0.toFixed(1)}-h/2+0.5*${g.toFixed(1)}*${T}*${T}` }));

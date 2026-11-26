@@ -36,7 +36,7 @@ export type ShotRow = {
 // A word drawn over a shot in the cut (studio.set_shot_words): it appears at at_s seconds into the shot as it plays in the
 // cut (after trims and speed), at x,y (fractions of the frame, from the top left), falls and fades over dur_s seconds.
 // size (2026-11-25): times the usual size (6% of the picture's width), 0.25 to 8; missing = 1
-export type ShotWord = { text: string; at_s: number; x: number; y: number; dur_s: number; size?: number };
+export type ShotWord = { text: string; at_s: number; x: number; y: number; dur_s: number; size?: number; style?: "plain" | "fire" };
 // A shot's length in the scene cut, exactly as the worker's assemble.js makes it (2026-11-23, review): the clip's real
 // length (or the shot's asked length), trims in whole frames with at least 1 s of the clip kept, then the speed.
 const FPS = 24;
