@@ -93,12 +93,13 @@ const TOOLS = [
   // ---- v2: files, cast, shots, review, motion transfer, cuts (2026-11-22)
   { name: "get_upload_link", title: "Upload photos or videos",
     description: "A chat cannot send files to anlim directly. This returns a link to anlim.ai/upload: give it to the creator, they drop " +
-      "their photos (reference images, backgrounds, start images) or videos (motion transfer sources) there, and each file gets an " +
-      "upload id. Then call list_uploads to see them and use the ids with add_character, add_location, set_start_image or motion_transfer.",
+      "their photos (reference images, backgrounds, start images), videos (motion transfer sources) or songs and music (MP3, WAV, M4A) " +
+      "there, and each file gets an upload id. Then call list_uploads to see them and use the ids with add_character, add_location, " +
+      "set_start_image, motion_transfer, or make_cut's music_upload_id for the creator's own song.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true, openWorldHint: false } },
   { name: "list_uploads", title: "Uploaded files",
-    description: "The creator's recent uploads from anlim.ai/upload, newest first: upload id, kind (image or video), length for videos, when.",
+    description: "The creator's recent uploads from anlim.ai/upload, newest first: upload id, kind (image, video or audio), length for videos and audio, when.",
     inputSchema: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 30, default: 10 } }, additionalProperties: false },
     annotations: { readOnlyHint: true, openWorldHint: false } },
   { name: "get_project", title: "Project details",
@@ -379,6 +380,7 @@ const TOOLS = [
       "edit_style 'story' gives the cut the look of a moody voiceover edit: a darker teal grade, a slow push-in on every shot, " +
       "transitions between shots (blur flash, whip, zoom, spin, glitch, punch-in), a whoosh or hit under each change, the changes moved onto " +
       "the music's beats, serif captions (with captions on), an optional title over the first 3.5 s and a small handle tag. " +
+      "The creator's own song: upload it at anlim.ai/upload (get_upload_link), then pass its upload id as music_upload_id. " +
       "Free like every cut. Follow it with get_cut.",
     inputSchema: { type: "object", properties: {
       project_id: { type: "string" }, format: { type: "string", enum: ["16x9", "9x16", "1x1", "4x5", "4x3", "3x4", "21x9"] },
@@ -386,6 +388,8 @@ const TOOLS = [
       voiceover: { type: "boolean", default: true }, sound_effects: { type: "boolean", default: true },
       captions: { type: "boolean", default: false, description: "Draw the voiceovers' and narration's words over the picture, timed to the speech; also a .srt file (get_cut). Uses the creator's ElevenLabs account to time the words." },
       music: { type: "boolean", default: true, description: "The scene's score in the cut (from make_score), if there is one" },
+      // 2026-11-25 (Londi: "Unable to use an outside audio file in anlim.ai"): the creator's own song, uploaded at anlim.ai/upload
+      music_upload_id: { type: "string", description: "The creator's own song or music (an audio upload from list_uploads) as the cut's music, in place of the score. A song longer than the cut is cut off at the end of the video; a shorter one leaves the rest silent." },
       // 2026-11-23: the edit style (worker editstyle.js)
       edit_style: { type: "string", enum: ["plain", "story"], default: "plain", description: "plain: the cut as before. story: the moody voiceover-edit look (see above)." },
       transitions: { type: "string", enum: ["mixed", "flash", "whip", "zoom", "spin", "glitch", "punch", "cut"], default: "mixed",
@@ -523,8 +527,8 @@ async function callTool(uid: string, name: string, a: Args) {
 
     // ---- v2 tools (2026-11-22)
     case "get_upload_link":
-      return text(`Ask the creator to open ${APP}/upload (signed in to anlim), drop their photos or videos there, then say when it is done. ` +
-        "Each file gets an upload id; call list_uploads to see them.", { url: `${APP}/upload` });
+      return text(`Ask the creator to open ${APP}/upload (signed in to anlim), drop their photos, videos or songs there, then say when it is done. ` +
+        "Photos, videos and songs (MP3, WAV, M4A) all go there. Each file gets an upload id; call list_uploads to see them.", { url: `${APP}/upload` });
     case "list_uploads": {
       const n = Math.min(Math.max(Number(a.limit) || 10, 1), 30);
       const ups = await uploads(uid, n);
@@ -1011,7 +1015,13 @@ async function callTool(uid: string, name: string, a: Args) {
       if (!await rateGate(uid, "make_cut", ["make_cut"], CUT_LIMIT))
         return text(`Limit reached: ${CUT_LIMIT} cuts per 10 minutes from chat. Wait a few minutes.`, undefined, true);
       // 2026-11-22: the scene's sound goes in too: the voiceovers and effects in the cut, and the score in the cut
-      const [score] = a.music === false ? [] : await asUser(uid, (tx) => tx`select id from studio.audio_jobs where scene_id = ${scene}
+      // 2026-11-25: the creator's own uploaded song comes first
+      let own: Upload | null = null;
+      if (a.music_upload_id) {
+        own = await findUpload(uid, String(a.music_upload_id));
+        if (!own || own.kind !== "audio") return text("music_upload_id must be an audio upload from list_uploads (MP3, WAV or M4A).", undefined, true);
+      }
+      const [score] = a.music === false || own ? [] : await asUser(uid, (tx) => tx`select id from studio.audio_jobs where scene_id = ${scene}
                                                     and kind = 'music' and in_cut and status = 'done' order by created_at desc limit 1`);
       // 2026-11-24: match this look: an uploaded picture, copied to the creator's stills
       let lookRef: string | null = null;
@@ -1022,13 +1032,13 @@ async function callTool(uid: string, name: string, a: Args) {
       }
       const opts = { fade: a.fade !== false, end_card: a.end_card !== false, voice: a.voiceover !== false, sfx: a.sound_effects !== false,
                      captions: a.captions === true,
-                     music_path: score ? `${uid}/audio/music/${score.id}.mp3` : null,
+                     music_path: own ? own.path : score ? `${uid}/audio/music/${score.id}.mp3` : null,
                      style: a.edit_style === "story" ? { preset: "story", transitions: a.transitions ?? "mixed", rain: a.rain === true,
                        drops: a.drops === true, look_ref: lookRef,
                        hits: a.hits !== false, beat_sync: a.beat_sync !== false, grade: a.grade !== false,
                        title: typeof a.title === "string" ? a.title.slice(0, 60) : null, handle: typeof a.handle === "string" ? a.handle.slice(0, 30) : null } : null };
       const [r] = await asUser(uid, (tx) => tx`select studio.request_assembly(${scene}, ${format}, ${tx.json(opts)}) as id`);
-      return text(`The cut is being made (${format}${opts.style ? ", story edit style" : ""}${opts.end_card ? ", with Made with anlim.ai on the last shot" : ""}); ` +
+      return text(`The cut is being made (${format}${own ? `, with the creator's song${own.seconds ? ` (${own.seconds.toFixed(1)} s)` : ""}` : ""}${opts.style ? ", story edit style" : ""}${opts.end_card ? ", with Made with anlim.ai on the last shot" : ""}); ` +
         `usually under a minute (longer with slowed shots${opts.style ? " or the story style" : ""}). ` +
         "Get it with get_cut.", { cut_id: r.id });
     }
@@ -1065,15 +1075,23 @@ async function xiKey(uid: string) {
 const UPLOAD_ID = /^up-[a-z0-9]{4,16}-[a-z0-9]{3,8}$/;
 const rand = () => Math.random().toString(36).slice(2, 7);
 const ext = (p: string) => (p.split(".").pop() || "png").toLowerCase();
-type Upload = { id: string; path: string; kind: "image" | "video"; seconds: number | null; at: string };
+type Upload = { id: string; path: string; kind: "image" | "video" | "audio"; seconds: number | null; at: string };
+// Photos and videos are uploaded to <owner>/motion/, songs and music to <owner>/music/ (2026-11-25; the storage policy
+// allows mp3 / wav / m4a / aac there), all named up-<time>-<random>[_d<centiseconds>].<ext>
 async function uploads(uid: string, limit = 30): Promise<Upload[]> {
-  const { data } = await admin.storage.from(BUCKET).list(`${uid}/motion`, { limit: 200, search: "up-", sortBy: { column: "created_at", order: "desc" } });
-  return (data || []).filter((f) => f.name.startsWith("up-")).slice(0, limit).map((f) => {
-    const m = f.name.match(/^(up-[a-z0-9]+-[a-z0-9]+)(?:_d(\d+))?\.([a-z0-9]+)$/);
-    const e = m?.[3] ?? "";
-    return { id: m?.[1] ?? f.name, path: `${uid}/motion/${f.name}`, kind: ["mp4", "mov", "webm"].includes(e) ? "video" : "image",
-             seconds: m?.[2] ? Number(m[2]) / 100 : null, at: String(f.created_at ?? "").slice(0, 16).replace("T", " ") } as Upload;
-  });
+  const all: (Upload & { t: string })[] = [];
+  for (const folder of ["motion", "music"]) {
+    const { data } = await admin.storage.from(BUCKET).list(`${uid}/${folder}`, { limit: 200, search: "up-", sortBy: { column: "created_at", order: "desc" } });
+    for (const f of data || []) {
+      if (!f.name.startsWith("up-")) continue;
+      const m = f.name.match(/^(up-[a-z0-9]+-[a-z0-9]+)(?:_d(\d+))?\.([a-z0-9]+)$/);
+      const e = m?.[3] ?? "";
+      const kind = folder === "music" ? "audio" : ["mp4", "mov", "webm"].includes(e) ? "video" : "image";
+      all.push({ id: m?.[1] ?? f.name, path: `${uid}/${folder}/${f.name}`, kind, seconds: m?.[2] ? Number(m[2]) / 100 : null,
+                 at: String(f.created_at ?? "").slice(0, 16).replace("T", " "), t: String(f.created_at ?? "") });
+    }
+  }
+  return all.sort((x, y) => (x.t < y.t ? 1 : -1)).slice(0, limit).map(({ t: _t, ...u }) => u);
 }
 async function findUpload(uid: string, id: string) {
   if (!UPLOAD_ID.test(id)) return null;
@@ -1198,7 +1216,7 @@ async function rpc(uid: string, m: Rpc) {
         serverInfo: { name: "anlim", title: "anlim.ai", version: "2.7.0" },
         instructions: "anlim makes images and short video clips and keeps them in the creator's projects. Quick: create (an image or a " +
           "clip from words) then get_creation. Step by step, for a real person, a set or several shots: new_project (or list_projects), " +
-          "get_upload_link so the creator uploads photos, add_character with an upload, add_location for the background, add_shot, " +
+          "get_upload_link so the creator uploads photos (or a song for make_cut's music_upload_id), add_character with an upload, add_location for the background, add_shot, " +
           "(update_character, update_shot, move_shot to change them), make_end_image when someone must appear or end somewhere exact, " +
           "make_start_image (new_setup places the characters), get_creation to look, animate, review_clip (keep), then make_cut and " +
           "get_cut (trim_clip to shorten a clip, set_clip_speed to slow it, set_hold to freeze its last frame, set_words to draw words over it, in the cut; set_end_image to end a shot on an uploaded picture, such as the same moment from another camera angle; make_voiceover (a shot's line, or without a shot the scene's narration over the whole cut), " +

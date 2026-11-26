@@ -2,7 +2,9 @@
 // to anlim's MCP server, so the connector's get_upload_link sends the creator here. Each file goes straight to storage
 // with the creator's own session, to <owner>/motion/up-<time>-<random>[_d<centiseconds>].<ext> (the folder the storage
 // policy already allows for images and videos); a video's length is measured here and kept in the name. The AI then
-// sees the files with list_uploads and uses their ids (characters, backgrounds, start images, motion transfer). @anlim
+// sees the files with list_uploads and uses their ids (characters, backgrounds, start images, motion transfer).
+// 2026-11-25 (Londi: "Unable to use an outside audio file in anlim.ai"): songs and music too (MP3, WAV, M4A, AAC), to
+// <owner>/music/up-…_d<centiseconds>.<ext> (the folder the storage policy allows for audio), for make_cut's music_upload_id. @anlim
 import { useEffect, useState } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { api } from "../lib/api";
@@ -14,8 +16,27 @@ import { usePageTitle } from "../lib/pageTitle";
 
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
-const MAX_IMAGE_MB = 15, MAX_VIDEO_MB = 250;
-type Row = { name: string; id?: string; state: "uploading" | "done" | "failed"; note?: string; kind: "image" | "video"; seconds?: number };
+const AUDIO_EXT: Record<string, string> = { mp3: "mp3", wav: "wav", m4a: "m4a", aac: "aac" };
+// browsers name audio types inconsistently (audio/mpeg, audio/mp3, audio/x-wav, audio/x-m4a…) and Windows sometimes gives
+// none, so audio is recognised by its extension
+const audioExt = (f: File) => AUDIO_EXT[(f.name.split(".").pop() || "").toLowerCase()] ?? null;
+// 30 MB: the cut's worker refuses a bigger music file (worker/src/assemble.js)
+const MAX_IMAGE_MB = 15, MAX_VIDEO_MB = 250, MAX_AUDIO_MB = 30;
+type Kind = "image" | "video" | "audio";
+type Row = { name: string; id?: string; state: "uploading" | "done" | "failed"; note?: string; kind: Kind; seconds?: number };
+
+// A song's length in seconds (NaN if the browser cannot read it; the upload still works, it just shows no length)
+function audioSeconds(file: File): Promise<number> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file), a = document.createElement("audio");
+    const done = (x: number) => { URL.revokeObjectURL(url); resolve(x); };
+    a.preload = "metadata";
+    a.onloadedmetadata = () => done(isFinite(a.duration) && a.duration > 0 ? a.duration : NaN);
+    a.onerror = () => done(NaN);
+    setTimeout(() => done(NaN), 8000);
+    a.src = url;
+  });
+}
 
 // A video's length in seconds. WebM recordings (MediaRecorder) often report Infinity until the browser has read to the
 // end; seeking far past the end makes it work the length out (review 2026-11-23). NaN if it still cannot be read.
@@ -55,22 +76,25 @@ export default function Upload() {
   async function send(files: File[]) {
     if (!owner) return;
     const start = rows.length;
-    setRows((xs) => [...xs, ...files.map((f) => ({ name: f.name, state: "uploading" as const, kind: f.type.startsWith("video/") ? "video" as const : "image" as const }))]);
+    const kindOf = (f: File): Kind => (audioExt(f) ? "audio" : f.type.startsWith("video/") ? "video" : "image");
+    setRows((xs) => [...xs, ...files.map((f) => ({ name: f.name, state: "uploading" as const, kind: kindOf(f) }))]);
     await Promise.all(files.map(async (f, k) => {
-      const i = start + k, video = VIDEO_TYPES.includes(f.type);
+      const i = start + k, aext = audioExt(f), video = !aext && VIDEO_TYPES.includes(f.type);
       try {
-        if (!video && !IMAGE_TYPES.includes(f.type)) throw new Error(tr("Use a PNG, JPEG or WebP image, or an MP4, MOV or WebM video."));
-        if (f.size > (video ? MAX_VIDEO_MB : MAX_IMAGE_MB) * 1024 * 1024) throw new Error(`Over ${video ? MAX_VIDEO_MB : MAX_IMAGE_MB} MB.`);
-        const secs = video ? await videoSeconds(f) : null;
+        if (!aext && !video && !IMAGE_TYPES.includes(f.type)) throw new Error(tr("Use a PNG, JPEG or WebP image, an MP4, MOV or WebM video, or an MP3, WAV or M4A song."));
+        const max = aext ? MAX_AUDIO_MB : video ? MAX_VIDEO_MB : MAX_IMAGE_MB;
+        if (f.size > max * 1024 * 1024) throw new Error(`Over ${max} MB.`);
+        const secs = video ? await videoSeconds(f) : aext ? await audioSeconds(f) : null;
         const id = `up-${Date.now().toString(36)}-${randomPart()}`;
-        const ext = f.type === "image/jpeg" ? "jpg" : f.type === "image/webp" ? "webp" : f.type === "image/png" ? "png"
-          : f.type === "video/quicktime" ? "mov" : f.type === "video/webm" ? "webm" : "mp4";
+        const ext = aext ?? (f.type === "image/jpeg" ? "jpg" : f.type === "image/webp" ? "webp" : f.type === "image/png" ? "png"
+          : f.type === "video/quicktime" ? "mov" : f.type === "video/webm" ? "webm" : "mp4");
         if (video && !(secs && isFinite(secs))) throw new Error(tr("This video's length could not be read, so it cannot be used for motion transfer. Try an MP4 file."));
-        const path = `${owner}/motion/${id}${secs && isFinite(secs) ? `_d${Math.round(secs * 100)}` : ""}.${ext}`;
-        const { error } = await supabase.storage.from("studio").upload(path, f, { contentType: f.type, upsert: false });
+        const path = `${owner}/${aext ? "music" : "motion"}/${id}${secs && isFinite(secs) ? `_d${Math.round(secs * 100)}` : ""}.${ext}`;
+        const type = aext ? (f.type.startsWith("audio/") ? f.type : aext === "wav" ? "audio/wav" : aext === "mp3" ? "audio/mpeg" : "audio/mp4") : f.type;
+        const { error } = await supabase.storage.from("studio").upload(path, f, { contentType: type, upsert: false });
         if (error) throw new Error(error.message);
-        if (consent) await api.likenessConsent([path], "upload");
-        set(i, { state: "done", id, seconds: secs ?? undefined });
+        if (consent && !aext) await api.likenessConsent([path], "upload");
+        set(i, { state: "done", id, seconds: secs && isFinite(secs) ? secs : undefined });
       } catch (e) { set(i, { state: "failed", note: (e as Error).message }); }
     }));
   }
@@ -87,15 +111,15 @@ export default function Upload() {
     <ScrollView style={[s.page, { backgroundColor: pageBg }]} contentContainerStyle={{ padding: 24, paddingBottom: 80 }}>
       <View style={{ maxWidth: 760, width: "100%", alignSelf: "center", gap: 16 }}>
         <Text style={[s.kicker, font.mono]}>{tr("UPLOAD FOR YOUR AI TOOL")}</Text>
-        <Text style={[s.h1, font.display]}>{tr("Drop your photos and videos")}</Text>
-        <Text style={s.lead}>{tr("For Claude, ChatGPT or any AI tool connected to anlim: upload here, then tell it you're done. It sees each file by its upload id and can use it for a character's reference photo, a background, a start image or a motion transfer video. Images: PNG, JPEG or WebP up to {MAX_IMAGE_MB} MB. Videos: MP4, MOV or WebM up to {MAX_VIDEO_MB} MB.", { MAX_IMAGE_MB, MAX_VIDEO_MB })}</Text>
+        <Text style={[s.h1, font.display]}>{tr("Drop your photos, videos and songs")}</Text>
+        <Text style={s.lead}>{tr("For Claude, ChatGPT or any AI tool connected to anlim: upload here, then tell it you're done. It sees each file by its upload id and can use it for a character's reference photo, a background, a start image, a motion transfer video, or your own song as a cut's music. Images: PNG, JPEG or WebP up to {MAX_IMAGE_MB} MB. Videos: MP4, MOV or WebM up to {MAX_VIDEO_MB} MB. Songs: MP3, WAV or M4A up to {MAX_AUDIO_MB} MB.", { MAX_IMAGE_MB, MAX_VIDEO_MB, MAX_AUDIO_MB })}</Text>
         <LikenessConsent on={consent} onChange={setConsent} plural />
         {/* a plain drop zone: the browser's own file input, so it also works with a click */}
         <label onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
           onDrop={(e) => { e.preventDefault(); setDrag(false); send(Array.from(e.dataTransfer.files)); }}
           style={{ display: "block", cursor: owner ? "pointer" : "default", borderRadius: 18, border: `2px dashed ${drag ? c.accent : c.line}`,
                    padding: 36, textAlign: "center", background: drag ? "rgba(255,138,61,0.06)" : c.card, color: c.sub, fontSize: 15 }}>
-          <input type="file" multiple accept={[...IMAGE_TYPES, ...VIDEO_TYPES].join(",")} style={{ display: "none" }} disabled={!owner}
+          <input type="file" multiple accept={[...IMAGE_TYPES, ...VIDEO_TYPES, "audio/*", ".mp3", ".wav", ".m4a", ".aac"].join(",")} style={{ display: "none" }} disabled={!owner}
             onChange={(e) => { const fs = Array.from(e.target.files ?? []); e.target.value = ""; if (fs.length) send(fs); }} />
           {owner ? tr("Drop files here, or click to choose") : signInError ? tr("Not signed in: {signInError} Sign in at anlim.ai, then open this page again.", { signInError }) : tr("Signing you in…")}
         </label>
