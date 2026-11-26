@@ -213,7 +213,14 @@ export type AudioKind = "voiceover" | "sfx" | "music";
 export type AudioJob = { id: string; shot_id: string | null; kind: AudioKind; status: "queued" | "running" | "done" | "failed"; in_cut: boolean;
   duration_s: string | null; error: string | null; created_at: string; url: string | null;
   input: { text: string; voice_id?: string; voice_name?: string; duration_s?: number | null; length_s?: number; instrumental?: boolean;
-           at_s?: number } };   // at_s: where the scene's narration (a voiceover with no shot) starts in the cut
+           at_s?: number; lyrics?: string; styles?: string };   // at_s: where the scene's narration (a voiceover with no shot) starts in the cut
+  // 2026-11-26 songs: who made it (the creator's ElevenLabs, or anlim credits) and the song's sections
+  provider?: "elevenlabs" | "anlim" | null; credits_reserved?: number; settled?: string | null;
+  sections?: { label: string; lines: string[]; start_s: number; seconds: number }[] | null };
+export type LyricsDraft = { id: string; status: "queued" | "running" | "done" | "failed"; title: string | null; lyrics: string | null; error: string | null };
+export type MusicModel = { id: string; label: string; credits_per_minute: number; min_credits: number; min_duration_s: number; max_duration_s: number; active: boolean };
+// what a song with anlim credits costs; must match studio.song_credits
+export const songCredits = (m: MusicModel, seconds: number) => Math.max(m.min_credits ?? 0, Math.ceil(seconds * (m.credits_per_minute ?? 0) / 60));
 
 export const END_FRAME_CREDITS = 20;   // studio.request_end_frame: Nano Banana 2 edit, $0.08 at the house margin
 export const FRAME_CREDITS = 20;       // start still (reposition / new setup) and plate: one Nano Banana 2 edit; "continue" is free
@@ -425,8 +432,16 @@ export const api = {
   voices: (search?: string) => call<{ items: Voice[] }>({ op: "voices", search: search ?? null }).then((r) => r.items),
   makeAudio: (a: { scene_id: string; shot_id?: string | null; kind: AudioKind; text: string; voice_id?: string; voice_name?: string;
                    duration_s?: number | null; length_s?: number; instrumental?: boolean; styles?: string; sections?: ScoreSection[];
-                   at_s?: number }) =>
+                   at_s?: number; lyrics?: string; provider?: "elevenlabs" | "anlim"; model?: string }) =>
     call<{ id: string }>({ op: "audio_create", ...a }),
+  // 2026-11-26 songs
+  writeLyrics: (a: { brief: string; language?: string; styles?: string; length_s?: number; scene_id?: string }) =>
+    call<{ id: string }>({ op: "lyrics_create", ...a }),
+  lyrics: (id: string) => call<{ draft: LyricsDraft }>({ op: "lyrics_get", id }).then((r) => r.draft),
+  musicModels: () => call<{ models: MusicModel[]; elevenlabs: boolean }>({ op: "music_models" }),
+  sceneCharacters: (sceneId: string) => call<{ items: { id: string; name: string }[] }>({ op: "scene_characters", scene_id: sceneId }).then((r) => r.items),
+  songShots: (id: string, singerId: string, maxShotS = 10) =>
+    call<{ shots: { shot_id: string; section: string; seconds: number }[]; seconds: number; song_s: number; timing: string }>({ op: "song_shots", id, singer_id: singerId, max_shot_s: maxShotS }),
   narrationStart: (id: string, atS: number) => call<{ ok: true }>({ op: "narration_start", id, at_s: atS }),
   audio: (sceneId: string) => call<{ items: AudioJob[] }>({ op: "audio_list", scene_id: sceneId }).then((r) => r.items),
   useAudio: (id: string, on: boolean) => call<{ ok: true }>({ op: "audio_use", id, on }),

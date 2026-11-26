@@ -4,10 +4,12 @@
 // 2026-11-22 the score composer (Londi: "kind of a mini Suno"): one style for the whole score, and by default one section
 // per kept shot, each with its own mood and exactly as long as the shot is in the cut, so the music changes on the cut.
 // Instrumental for now; ElevenLabs music_v2_5 composition plans (worker/src/audio.js). @anlim
+// 2026-11-26 songs (Londi: a composer "akin to Suno", inside anlim): Make a song writes lyrics (or takes the creator's),
+// sings them on the creator's ElevenLabs or with anlim credits, and can lay the scene's shots on the song (SongMaker).
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
-import { api, AudioJob, AudioKind, Connection, cutSeconds as shotCutSeconds, LipsyncQuote, scoreSections, ShotRow, uploadMusic, Voice } from "../lib/api";
+import { api, AudioJob, AudioKind, Connection, cutSeconds as shotCutSeconds, LipsyncQuote, MusicModel, scoreSections, ShotRow, songCredits, uploadMusic, Voice } from "../lib/api";
 import { c, font } from "../lib/theme";
 import { pad2 } from "../lib/shotStatus";
 import { StillPicker } from "./StillPicker";
@@ -20,6 +22,8 @@ const BUSY = ["queued", "running"];
 // quick picks for the composer; tapping one adds it to the text (the creator can write anything)
 const STYLES = ["cinematic film score", "warm strings", "soft piano", "ambient pads", "acoustic guitar", "epic orchestral", "lo-fi beats", "synthwave"];
 const MOODS = ["somber", "tense", "reflective", "hopeful", "uplifting", "triumphant", "calm", "playful"];
+const SONG_STYLES = ["kompa", "zouk", "afrobeats", "R&B ballad", "gospel", "pop", "hip-hop", "reggae", "acoustic folk", "warm male vocal", "soulful female vocal"];
+const isSong = (j: AudioJob) => j.kind === "music" && !!j.input.lyrics;
 
 function Chip({ on, text, onPress, disabled }: { on: boolean; text: string; onPress: () => void; disabled?: boolean }) {
   return (
@@ -223,7 +227,7 @@ export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, 
   const [voices, setVoices] = useState<Voice[] | null>(null);
   const [voice, setVoice] = useState<Voice | null>(null);
   const [vq, setVq] = useState("");
-  const [mode, setMode] = useState<"none" | "upload" | "score">(music?.source === "score" ? "score" : music ? "upload" : "none");
+  const [mode, setMode] = useState<"none" | "upload" | "score" | "song">(music?.source === "score" ? (music.name.startsWith("Song") ? "song" : "score") : music ? "upload" : "none");
   const [prompt, setPrompt] = useState("");
   const [instrumental, setInstrumental] = useState(true);
   const [follow, setFollow] = useState(true);                       // the score's sections follow the shots
@@ -263,15 +267,17 @@ export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, 
   // spare second; a section shorter than ElevenLabs' 3 s joins a neighbour (lib/api.ts scoreSections, same as the connector)
   const plan = useMemo(() => scoreSections(shots, (r) => moods[r.id] ?? ""), [shots, moods]);
   const sections = plan.sections;
-  const scores = useMemo(() => jobs.filter((j) => j.kind === "music"), [jobs]);
+  const scores = useMemo(() => jobs.filter((j) => j.kind === "music" && !isSong(j)), [jobs]);
+  const songs = useMemo(() => jobs.filter(isSong), [jobs]);
   const scorePath = (j: AudioJob) => `${owner}/audio/music/${j.id}.mp3`;
   // the score in the cut follows the chosen one
   useEffect(() => {
-    if (mode !== "score") return;
-    const used = scores.find((j) => j.in_cut && j.status === "done");
-    if (used && music?.path !== scorePath(used)) setMusic({ path: scorePath(used), name: `Score: ${used.input.text.slice(0, 40)}`, source: "score" });
+    if (mode !== "score" && mode !== "song") return;
+    const used = (mode === "song" ? songs : scores).find((j) => j.in_cut && j.status === "done");
+    if (used && music?.path !== scorePath(used))
+      setMusic({ path: scorePath(used), name: `${mode === "song" ? "Song" : "Score"}: ${used.input.text.slice(0, 40)}`, source: "score" });
     if (!used && music?.source === "score") setMusic(null);
-  }, [mode, scores]);   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mode, scores, songs]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const use = async (j: AudioJob, on: boolean) => { try { await api.useAudio(j.id, on); await load(); } catch (e) { setError((e as Error).message); } };
   const anyVo = jobs.some((j) => j.kind === "voiceover" && j.in_cut && j.status === "done");
@@ -284,7 +290,10 @@ export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, 
         <Chip on={mode === "none"} text={tr("No music")} onPress={() => { setMode("none"); setMusic(null); }} />
         <Chip on={mode === "upload"} text={tr("Your track")} onPress={() => { setMode("upload"); if (music?.source !== "upload") setMusic(null); }} />
         <Chip on={mode === "score"} text={tr("Generate a score")} onPress={() => setMode("score")} />
+        <Chip on={mode === "song"} text={tr("Make a song")} onPress={() => setMode("song")} />
       </View>
+      {mode === "song" && <SongMaker sceneId={sceneId} jobs={songs} connected={connected} lengthHint={shots.length ? cutSeconds : 60}
+        hasShots={shots.length > 0} onMade={load} onUse={use} setError={setError} />}
       {mode === "upload" && (music?.source === "upload" ? (
         <View style={s.row}>
           <Text style={{ color: c.ink }}>{music.name}</Text>
@@ -388,6 +397,109 @@ export function SoundPanel({ sceneId, owner, endCard, music, setMusic, voiceOn, 
         )}
       </>)}
       {error && <Text style={{ color: c.fail, marginTop: 8 }}>{tMsg(error)}</Text>}
+    </View>
+  );
+}
+
+// A song (2026-11-26): what it is about -> lyrics (written by anlim, then edited, or typed) -> sung on the creator's
+// ElevenLabs credits or with anlim credits (MiniMax Music 3; the price shows before it is made) -> the scene's music.
+// On a scene with no shots yet it can lay the shots on the song (one or more per verse and chorus, for lip sync).
+function SongMaker({ sceneId, jobs, connected, lengthHint, hasShots, onMade, onUse, setError }: {
+  sceneId: string; jobs: AudioJob[]; connected: boolean; lengthHint: number; hasShots: boolean;
+  onMade: () => void; onUse: (j: AudioJob, on: boolean) => void; setError: (e: string | null) => void }) {
+  const [about, setAbout] = useState(""), [language, setLanguage] = useState(""), [styles, setStyles] = useState(jobs[0]?.input.styles ?? "");
+  const [lyrics, setLyrics] = useState(jobs[0]?.input.lyrics ?? ""), [len, setLen] = useState(String(Math.round(lengthHint > 3 ? lengthHint : 60)));
+  const [writing, setWriting] = useState(false), [busy, setBusy] = useState(false);
+  const [models, setModels] = useState<MusicModel[]>([]);
+  const [provider, setProvider] = useState<"elevenlabs" | "anlim">(connected ? "elevenlabs" : "anlim");
+  const [cast, setCast] = useState<{ id: string; name: string }[]>([]), [singer, setSinger] = useState<string | null>(null), [planned, setPlanned] = useState<string | null>(null);
+  useEffect(() => { api.musicModels().then((r) => setModels(r.models)).catch(() => null); api.sceneCharacters(sceneId).then(setCast).catch(() => null); }, [sceneId]);
+  useEffect(() => { setProvider(connected ? "elevenlabs" : "anlim"); }, [connected]);
+  const model = models.find((m) => m.id === "minimax-music-3");
+  const lenN = Number(len), lenOk = isFinite(lenN) && lenN >= 10 && lenN <= (provider === "anlim" ? (model?.max_duration_s ?? 300) : 600);
+  const price = model && lenOk ? songCredits(model, lenN) : null;
+  const making = jobs.some((j) => BUSY.includes(j.status));
+  const used = jobs.find((j) => j.in_cut && j.status === "done");
+  const canMake = lyrics.trim().length >= 10 && styles.trim().length >= 3 && lenOk && !busy && !making
+    && (provider === "elevenlabs" ? connected : !!model?.active);
+  async function write() {
+    setWriting(true); setError(null);
+    try {
+      const { id } = await api.writeLyrics({ brief: about, language: language.trim() || undefined, styles: styles.trim() || undefined,
+                                            length_s: lenOk ? lenN : undefined, scene_id: sceneId });
+      for (let i = 0; i < 45; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const d = await api.lyrics(id);
+        if (d.status === "done") { setLyrics(d.lyrics ?? ""); break; }
+        if (d.status === "failed") { setError(d.error ?? tr("The lyrics could not be written; try again.")); break; }
+      }
+    } catch (e) { setError((e as Error).message); }
+    setWriting(false);
+  }
+  return (
+    <View style={{ gap: 8 }}>
+      <Text style={s.label}>{tr("What is the song about?")}</Text>
+      <TextInput value={about} onChangeText={setAbout} multiline placeholderTextColor={c.muted} style={s.input}
+        placeholder={tr("e.g. two friends who grew up together, now far apart, remembering summer nights")} />
+      <View style={s.row}>
+        <TextInput value={language} onChangeText={setLanguage} placeholderTextColor={c.muted} style={[s.input, { minHeight: 0, flex: 1, minWidth: 160 }]}
+          placeholder={tr("Language (e.g. Haitian Creole)")} />
+        <TextInput value={len} onChangeText={setLen} keyboardType="numeric" placeholderTextColor={c.muted} style={[s.input, { minHeight: 0, width: 110 }]}
+          placeholder={tr("Seconds")} accessibilityLabel={tr("Length in seconds")} />
+      </View>
+      <Text style={s.label}>{tr("Style: genre, tempo, instruments, voice (in English, no artist names)")}</Text>
+      <TextInput value={styles} onChangeText={setStyles} placeholderTextColor={c.muted} style={[s.input, { minHeight: 0 }]}
+        placeholder={tr("e.g. kompa, 96 bpm, warm male vocal, guitar and keys")} />
+      <View style={s.row}>
+        {SONG_STYLES.map((t) => <Chip key={t} on={styles.toLowerCase().includes(t.toLowerCase())} text={t}
+          onPress={() => setStyles((p) => p.toLowerCase().includes(t.toLowerCase()) ? p : (p.trim() ? `${p.trim().replace(/,$/, "")}, ${t}` : t))} />)}
+      </View>
+      <Pressable style={[s.ghost, (about.trim().length < 3 || writing) && { opacity: 0.5 }]} disabled={about.trim().length < 3 || writing}
+        onPress={write} accessibilityRole="button">
+        {writing ? <ActivityIndicator size="small" /> : <Text style={{ color: c.ink }}>{lyrics.trim() ? tr("Write new lyrics") : tr("Write the lyrics for me")}</Text>}
+      </Pressable>
+      <Text style={s.label}>{tr("Lyrics: [Verse 1], [Chorus], [Bridge] on their own lines")}</Text>
+      <TextInput value={lyrics} onChangeText={setLyrics} multiline placeholderTextColor={c.muted} style={[s.input, { minHeight: 160 }]}
+        placeholder={"[Verse 1]\n…\n[Chorus]\n…"} />
+      <Text style={s.small}>{tr("Use lyrics you wrote or have the rights to. Lyrics from existing songs and real singers' names are refused.")}</Text>
+      <View style={s.row}>
+        <Chip on={provider === "elevenlabs"} disabled={!connected} text={tr("Your ElevenLabs credits")} onPress={() => setProvider("elevenlabs")} />
+        <Chip on={provider === "anlim"} disabled={!model?.active} onPress={() => setProvider("anlim")}
+          text={model?.active ? (price != null ? tr("anlim credits · {n}", { n: price }) : tr("anlim credits")) : tr("anlim credits (soon)")} />
+      </View>
+      {!connected && !model?.active && <Text style={s.small}>{tr("Connect ElevenLabs in Account to make songs now; songs with anlim credits open soon.")}</Text>}
+      <Pressable style={[s.btnSm, !canMake && { opacity: 0.5 }]} disabled={!canMake} accessibilityRole="button"
+        onPress={async () => {
+          setBusy(true); setError(null);
+          try {
+            await api.makeAudio({ scene_id: sceneId, kind: "music", text: styles, styles, lyrics, length_s: lenN, provider,
+                                  model: provider === "anlim" ? "minimax-music-3" : undefined });
+            onMade();
+          } catch (e) { setError((e as Error).message); }
+          setBusy(false);
+        }}>
+        <Text style={s.btnText}>{provider === "anlim" && price != null ? tr("Make the song ({n} credits)", { n: price }) : tr("Make the song")}</Text>
+      </Pressable>
+      <Text style={s.small}>{provider === "anlim" ? tr("Charged when the song is delivered; nothing if it fails.")
+        : tr("Made with ElevenLabs Music on your ElevenLabs credits. Check ElevenLabs' terms for where you may publish it.")}</Text>
+      <Takes jobs={jobs} onUse={onUse} label="song" />
+      {used && !hasShots && cast.length > 0 && (
+        <View style={[s.take, { marginTop: 6 }]}>
+          <Text style={{ color: c.ink, fontSize: 14 }}>{tr("Plan the shots on this song")}</Text>
+          <Text style={s.small}>{tr("One or more shots per verse and chorus, so each shot can be lip-synced to its part of the song. Who sings?")}</Text>
+          <View style={s.row}>{cast.map((x) => <Chip key={x.id} on={singer === x.id} text={x.name} onPress={() => setSinger(x.id)} />)}</View>
+          <Pressable style={[s.btnSm, (!singer || busy) && { opacity: 0.5 }]} disabled={!singer || busy} accessibilityRole="button"
+            onPress={async () => {
+              setBusy(true); setError(null);
+              try { const r = await api.songShots(used.id, singer!); setPlanned(tr("{n} shots added ({s} s). Make each shot's start image, animate it at normal speed, keep it, then lip-sync it.", { n: r.shots.length, s: r.seconds })); onMade(); }
+              catch (e) { setError((e as Error).message); }
+              setBusy(false);
+            }}>
+            <Text style={s.btnText}>{tr("Add the shots")}</Text>
+          </Pressable>
+        </View>
+      )}
+      {planned && <Text style={[s.small, { color: c.pass }]}>{planned}</Text>}
     </View>
   );
 }

@@ -143,7 +143,7 @@ async function submitLipsync(g, shot) {
   const dir = path.join(config.workDir, g.id);
   await fs.mkdir(dir, { recursive: true });
   const [src] = await db.q("select output_path from studio.generations where id = $1", [g.lipsync_source]);
-  const [vo] = await db.q("select output_path from studio.audio_jobs where id = $1 and status = 'done'", [g.lipsync_audio]);
+  const [vo] = await db.q("select output_path, kind from studio.audio_jobs where id = $1 and status = 'done'", [g.lipsync_audio]);
   if (!src?.output_path) throw Object.assign(new Error("the kept clip to lip-sync is missing; nothing was charged"), { permanent: true });
   if (!vo?.output_path) throw Object.assign(new Error("the voiceover to lip-sync to is missing; nothing was charged"), { permanent: true });
   const clipIn = path.join(dir, "lipsync-src.mp4"), voIn = path.join(dir, "lipsync-voice-src.mp3");
@@ -164,7 +164,28 @@ async function submitLipsync(g, shot) {
                            : ["-c", "copy"]), "-movflags", "+faststart", video]);
   // The voice starts where the cut plays it: after any trim at the start, plus the cut's speech lead (assemble.js LEAD,
   // 0.15 s). 2026-11-23: without the lead the mouths moved 0.15 s before the voice in the cut.
-  const lead = Math.max(0, Number(shot.trim_start_s) || 0) + assemble.SPEECH_LEAD;
+  // 2026-11-26 (songs): lip-synced to the scene's SONG, the clip hears the part of the song that plays under it in the
+  // cut: the song starts with the cut, so this shot starts at the length of the kept shots before it (cut frames, as
+  // assemble.js counts them: trims, speed, hold). Clip time 0 is trim_start_s before that point.
+  const lead = vo.kind === "music" ? null : Math.max(0, Number(shot.trim_start_s) || 0) + assemble.SPEECH_LEAD;
+  let songFrom = null;
+  if (vo.kind === "music") {
+    const before = await db.q(`select coalesce(g.clip_s, s.duration_s) as clip_s, s.trim_start_s, s.trim_end_s, s.speed, s.hold_end_s
+                                 from studio.shots s join studio.generations g on g.id = s.approved_generation_id
+                                where s.scene_id = (select scene_id from studio.shots where id = $1)
+                                  and s.ord < (select ord from studio.shots where id = $1) and g.output_path is not null`, [g.shot_id]);
+    const F = 24, at = before.reduce((t, r) => {
+      const frames = Math.round(Number(r.clip_s) * F), skip = Math.max(0, Math.round(Number(r.trim_start_s || 0) * F));
+      const cut = Math.max(0, Math.round(Number(r.trim_end_s || 0) * F)), keep = Math.max(Math.min(F, frames), frames - skip - cut);
+      const sp = Math.min(2, Math.max(0.5, Number(r.speed) || 1)), held = Math.round(Math.min(5, Math.max(0, Number(r.hold_end_s) || 0)) * F);
+      return t + Math.max(1, Math.round(keep / sp)) + held;
+    }, 0) / F;
+    songFrom = at - Math.max(0, Number(shot.trim_start_s) || 0);       // song time at clip time 0 (may be before the song)
+    const pre = Math.max(0, -songFrom);
+    await run("ffmpeg", ["-y", "-v", "error", "-ss", Math.max(0, songFrom).toFixed(3), "-i", voIn,
+                         "-af", `adelay=${Math.round(pre * 1000)}:all=1,apad`, "-t", secs.toFixed(3),
+                         "-ac", "1", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "128k", voice]);
+  } else
   await run("ffmpeg", ["-y", "-v", "error", "-i", voIn, "-af", `adelay=${Math.round(lead * 1000)}:all=1,apad`, "-t", secs.toFixed(3),
                        "-ac", "1", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "128k", voice]);
   // 2026-11-23 (Londi's push-in take: the face was too small to sync): free check before paying. A face too small or
@@ -186,11 +207,13 @@ async function submitLipsync(g, shot) {
   const input = { video_url: await storage.signedUrl(vPath, 7200), audio_url: await storage.signedUrl(aPath, 7200) };
   const sub = await providers[shot.provider].submit(shot.endpoint, input);
   await db.unlock(g.id, {
-    status: "running", request: JSON.stringify({ video_url: vPath, audio_url: aPath, endpoint: shot.endpoint, size: [W, H], voice_from_s: lead }),
+    status: "running", request: JSON.stringify({ video_url: vPath, audio_url: aPath, endpoint: shot.endpoint, size: [W, H], voice_from_s: lead,
+                              song_from_s: songFrom }),
     provider_request_id: sub.requestId, provider_status_url: sub.statusUrl, provider_response_url: sub.responseUrl,
     submitted_at: new Date(), next_poll_at: later(config.pollMs), tries: 0,
   });
-  log(g, `lip sync submitted (${sub.requestId}): ${secs.toFixed(2)} s at ${W}x${H}${W !== w ? ` (from ${w}x${h})` : ""}, voice from ${lead} s`);
+  log(g, `lip sync submitted (${sub.requestId}): ${secs.toFixed(2)} s at ${W}x${H}${W !== w ? ` (from ${w}x${h})` : ""}, ` +
+         (songFrom != null ? `song from ${songFrom.toFixed(2)} s` : `voice from ${lead} s`));
 }
 
 // The clip was checked when it was made and only the mouths change, so the lip-synced copy gets one check: does the

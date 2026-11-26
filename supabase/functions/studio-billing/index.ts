@@ -138,6 +138,42 @@ async function portalConfig(mode: Mode) {
   return cfg.id as string;
 }
 
+// Owner alert (2026-11-26, Londi: "I am not getting the emails when a new subscription is made"; the step had never
+// existed). A live new subscription or credit pack sends a short email to both of Londi's addresses through Resend (the
+// key studio-health uses). Never blocks or fails the webhook: it runs after the answer, errors are only logged, and
+// the event id is Resend's idempotency key, so a Stripe retry cannot send it twice.
+const OWNER_ALERT_TO = ["sysadmin@codeascent.online", "tlondi@gmail.com"];
+const OWNER_ALERT_FROM = "anlim.ai sales <alerts@mail.anlim.ai>";
+async function ownerAlert(event: any, result: string) {
+  try {
+    const key = Deno.env.get("RESEND_API_KEY");
+    if (!key) { console.error("owner alert: RESEND_API_KEY is not set"); return; }
+    const o = event?.data?.object ?? {};
+    const isSub = event.type === "customer.subscription.created" && /^subscription active/.test(result);
+    const isPack = /^pack /.test(result);
+    if (!isSub && !isPack) return;
+    const cust = typeof o.customer === "string" ? o.customer : o.customer?.id;
+    const [who] = await sql`select u.email, a.plan_id, a.balance from studio.accounts a join auth.users u on u.id = a.owner
+                             where ${cust ?? ""} <> '' and a.stripe_customer_id = ${cust ?? ""}
+                                or a.owner::text = ${String(o.metadata?.owner ?? o.client_reference_id ?? "")} limit 1`;
+    const cents = isSub ? Number(o.items?.data?.[0]?.price?.unit_amount ?? o.plan?.amount ?? 0) : Number(o.amount_total ?? 0);
+    const cur = String((isSub ? o.items?.data?.[0]?.price?.currency : o.currency) || "usd").toUpperCase();
+    const what = isSub ? `plan ${o.items?.data?.[0]?.price?.lookup_key || who?.plan_id || "?"}` : result.replace(/^pack /, "credit pack ");
+    const text = [`${isSub ? "New subscription" : "Credit pack bought"} on anlim.ai`, "",
+      `Customer: ${who?.email ?? "(account not found; Stripe customer " + (cust ?? "?") + ")"}`,
+      `What: ${what}`, `Amount: ${(cents / 100).toFixed(2)} ${cur}`, `Balance now: ${who?.balance ?? "?"} credits`,
+      `When: ${new Date((Number(event.created) || Date.now() / 1000) * 1000).toISOString()}`, `Stripe event: ${event.id}`].join("\n");
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "Idempotency-Key": `owner-alert-${event.id}` },
+      body: JSON.stringify({ from: OWNER_ALERT_FROM, to: OWNER_ALERT_TO,
+        subject: `${isSub ? "New subscription" : "Credit pack"}: ${who?.email ?? "a customer"} (${(cents / 100).toFixed(2)} ${cur})`, text }),
+    });
+    if (!r.ok) console.error(`owner alert resend ${r.status}: ${(await r.text()).slice(0, 200)}`);
+    else console.log(`owner alert sent for ${event.id}`);
+  } catch (e) { console.error(`owner alert failed: ${(e as Error).message}`); }
+}
+
 async function handleWebhook(req: Request) {
   const raw = await req.text(), header = req.headers.get("Stripe-Signature");
   // The secret that signed it says which mode it came from: live endpoint or sandbox endpoint.
@@ -149,6 +185,12 @@ async function handleWebhook(req: Request) {
   try {
     const [r] = await sql`select studio.apply_stripe_event_checked(${event}::jsonb, ${mode === "live"}) as result`;
     console.log(`stripe ${mode} ${event.type} ${event.id}: ${r.result}`);
+    // live sales only; the sandbox would mail Londi for every test checkout
+    if (mode === "live") {
+      const p = ownerAlert(event, String(r.result ?? ""));
+      // @ts-ignore EdgeRuntime is Supabase's runtime global: finish the email after the response
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(p); else await p;
+    }
     return json({ received: true, result: r.result });
   } catch (e) {
     console.error(`stripe ${event.type} ${event.id} failed: ${(e as Error).message}`);

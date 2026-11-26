@@ -824,16 +824,48 @@ async function handle(req: Request): Promise<Response> {
         const input = { text: body.text ?? null, voice_id: body.voice_id ?? null, voice_name: body.voice_name ?? null,
                         duration_s: body.duration_s ?? null, length_s: body.length_s ?? null, instrumental: body.instrumental ?? null,
                         styles: body.styles ?? null, sections: Array.isArray(body.sections) ? body.sections.slice(0, 30) : null,
-                        at_s: body.at_s ?? null };   // 2026-11-23: a voiceover with no shot is the scene's narration, from at_s
+                        at_s: body.at_s ?? null,     // 2026-11-23: a voiceover with no shot is the scene's narration, from at_s
+                        // 2026-11-26: songs (lyrics are sung); provider "anlim" makes it with anlim credits instead of ElevenLabs
+                        lyrics: typeof body.lyrics === "string" ? body.lyrics.slice(0, 3600) : null,
+                        provider: body.provider ?? null, model: body.model ?? null };
         const [r] = await asUser(uid, (tx) => tx`select studio.request_audio(${String(body.scene_id || "")}, ${body.shot_id ? String(body.shot_id) : null},
           ${String(body.kind || "")}, ${tx.json(input)}) as id`);
         return json({ ok: true, id: r.id });
       }
       case "audio_list": {
         const rows = await asUser(uid, (tx) => tx`
-          select id, shot_id, kind, input, status, in_cut, duration_s, error, output_path, created_at from studio.audio_jobs
+          select id, shot_id, kind, input, status, in_cut, duration_s, error, output_path, created_at, provider, credits_reserved, settled,
+                 meta->'sections' as sections from studio.audio_jobs
            where scene_id = ${String(body.scene_id || "")} order by created_at desc limit 200`);
         return json({ items: await Promise.all(rows.map(async ({ output_path, ...a }) => ({ ...a, url: await sign(output_path) }))) });
+      }
+      // ---- songs (2026-11-26): lyrics drafts (worker audio.js draft, checker /lyrics) and the music models' prices
+      case "lyrics_create": {
+        const [r] = await asUser(uid, (tx) => tx`select studio.request_lyrics(${String(body.brief ?? "")}, ${body.language ? String(body.language) : null},
+          ${body.styles ? String(body.styles) : null}, ${body.length_s == null ? null : Number(body.length_s)}::numeric,
+          ${body.scene_id ? String(body.scene_id) : null}::uuid) as id`);
+        return json({ ok: true, id: r.id });
+      }
+      case "lyrics_get": {
+        const [d] = await asUser(uid, (tx) => tx`select id, status, title, lyrics, error, brief, language, styles, length_s, created_at
+                                                   from studio.lyrics_drafts where id = ${String(body.id || "")}`);
+        return d ? json({ draft: d }) : json({ error: "not found" }, 404);
+      }
+      case "scene_characters": {   // 2026-11-26: who can sing the scene's song (its project's people)
+        const rows = await asUser(uid, (tx) => tx`select c.id, c.name from studio.characters c join studio.scenes sc on sc.series_id = c.series_id
+                                                    where sc.id = ${String(body.scene_id || "")} and coalesce(c.kind, 'person') = 'person' order by c.name`);
+        return json({ items: rows });
+      }
+      case "song_shots": {
+        const [r] = await asUser(uid, (tx) => tx`select studio.shots_from_song(${String(body.id || "")}::uuid, ${String(body.singer_id || "")}::uuid,
+          ${Math.round(Number(body.max_shot_s) || 10)}::int, ${body.camera ? String(body.camera) : null}) as r`);
+        return json(r.r);
+      }
+      case "music_models": {
+        const rows = await sql`select id, label, credits_per_minute, min_credits, min_duration_s, max_duration_s, active
+                                 from studio.models where kind = 'music' order by id`;
+        const [c] = await sql`select exists (select 1 from studio.connections where owner = ${uid}::uuid and provider = 'elevenlabs' and status = 'ok') as xi`;
+        return json({ models: rows, elevenlabs: !!c?.xi });
       }
       case "narration_start": {
         await asUser(uid, (tx) => tx`select studio.set_narration_start(${String(body.id || "")}, ${Number(body.at_s)})`);

@@ -35,6 +35,8 @@ Python standard library only (no installs beyond what frame_check already needs)
   POST /face_start {"still", "refs": {name: [local paths]}, "look"} -> frame_check/face_id.start_check: does each person in
                 a made start or end image look like their uploaded photo? {"verdict": "OK"|"FLAG"|"NOT CHECKED", "problems",
                 "notes", "people"}. Photoreal only; free, no API (2026-11-26, KAMK face test). A flag, never a block.
+  POST /lyrics {"brief", "language"?, "styles"?, "length_s"?} -> frame_check/lyrics.write: original song lyrics with
+                [Section] tags (Claude). {"verdict": "OK", "title", "lyrics", "usd", "model"} (2026-11-26, songs).
   GET  /health  -> {"ok": true, "mode": "real"|"fake", "frame_check": "<dir>"}
 
 Environment:
@@ -227,6 +229,20 @@ def run_face_start(body):
     return {"verdict": "FLAG" if r["flags"] else "OK" if checked else "NOT CHECKED", "problems": r["flags"],
             "notes": r["unchecked"], "people": r["people"], "drift": []}
 
+def run_lyrics(body):
+    """POST /lyrics: original lyrics from the creator's description (frame_check/lyrics.py, 2026-11-26). Fake mode: fixed
+    lyrics, so tests can see the round trip without the API."""
+    brief = (body.get("brief") or "").strip()
+    if len(brief) < 3: raise ValueError("brief is required")
+    if MODE == "fake":
+        return {"verdict": "OK", "title": "Fake song", "lyrics": "[Verse 1]\nfake line one\nfake line two\n[Chorus]\nfake chorus",
+                "usd": 0.0, "model": "fake", "drift": []}
+    if FC not in sys.path: sys.path.insert(0, FC)
+    import lyrics
+    r = lyrics.write(brief, body.get("language"), body.get("styles"), body.get("length_s"))
+    r["verdict"] = "OK"; r["drift"] = []
+    return r
+
 def run_motion_check(body):
     """POST /motion_check: one vision call over the render's shots against the source clip (2026-11-20). Never FAIL:
     PASS, FLAG with the swapped shots, or NOT_REVIEWED when the model was unsure or the call could not run."""
@@ -334,18 +350,18 @@ class H(BaseHTTPRequestHandler):
         self._send(404, {"error": "not found"})
 
     def do_POST(self):
-        if self.path not in ("/check", "/motion_check", "/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate", "/lipsync", "/translate", "/face_start"): return self._send(404, {"error": "not found"})
+        if self.path not in ("/check", "/motion_check", "/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate", "/lipsync", "/translate", "/face_start", "/lyrics"): return self._send(404, {"error": "not found"})
         if not self._authed(): return self._send(401, {"error": "unauthorized"})
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
         except json.JSONDecodeError:
             return self._send(400, {"error": "bad json"})
-        if self.path in ("/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate", "/lipsync", "/translate", "/face_start"):
+        if self.path in ("/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate", "/lipsync", "/translate", "/face_start", "/lyrics"):
             try:
                 r = {"/end_frame": run_end_frame, "/compose": run_compose, "/last_frame": run_last_frame,
                      "/cutouts": run_cutouts, "/height": run_height, "/reposition_fit": run_reposition_fit, "/still_check": run_still_check,
                      "/moderate": run_moderate, "/lipsync": run_lipsync, "/translate": run_translate,
-                     "/face_start": run_face_start}[self.path](body)
+                     "/face_start": run_face_start, "/lyrics": run_lyrics}[self.path](body)
                 name = body.get("end") or body.get("edited") or body.get("video") or body.get("image") or body.get("still") or ""
                 print(f"[{self.path[1:]}] {os.path.basename(name)}: {r['verdict']} ({len(r.get('drift', []))} drift)", flush=True)
                 return self._send(200, r)

@@ -26,7 +26,7 @@ const ISSUER = `${SUPABASE_URL}/auth/v1`;
 const CREATE_LIMIT = 5, CREATE_WINDOW_MIN = 10, SPEND_LIMIT = 10;
 // 2026-11-23 (review): sound runs on the creator's own ElevenLabs credits and cuts on anlim's worker; neither had a limit
 // from chat, so a looping agent could drain one or hold the other.
-const AUDIO_TOOLS = ["make_voiceover", "make_sound_effect", "make_score"], AUDIO_LIMIT = 15, CUT_LIMIT = 6;
+const AUDIO_TOOLS = ["make_voiceover", "make_sound_effect", "make_score", "make_song", "write_lyrics"], AUDIO_LIMIT = 15, CUT_LIMIT = 6;
 const SPEND_TOOLS = ["make_start_image", "make_end_image", "animate", "motion_transfer", "add_location", "lip_sync"];
 const APP = "https://anlim.ai";
 const ASPECTS = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
@@ -270,9 +270,10 @@ const TOOLS = [
       voice_id: { type: "string", description: "From list_voices" },
     }, required: ["text", "voice_id"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } },
-  { name: "lip_sync", title: "Lip-sync a shot to its voiceover",
-    description: "Makes a copy of the shot's kept clip with the mouths moved to the shot's voiceover (VEED Lipsync). Needs a kept " +
-      "clip of 2 to 10 s at normal speed and the shot's voiceover in the cut. Best results: make the voiceover BEFORE animate, so " +
+  { name: "lip_sync", title: "Lip-sync a shot to its voiceover or the song",
+    description: "Makes a copy of the shot's kept clip with the mouths moved to the shot's voiceover (VEED Lipsync), or, when the " +
+      "shot has no voiceover, to the part of the scene's song (make_song) that plays under the shot in the cut. Needs a kept " +
+      "clip of 2 to 10 s at normal speed and the voiceover or song in the cut. Best results: make the voiceover BEFORE animate, so " +
       "the clip is made with closed mouths, and use a close or medium shot facing the camera (a face too small is refused before " +
       "anything is charged). Paid accounts; 18 credits a second, rounded up (90 for 5 s; call without confirm to see the price and " +
       "whether it can be made). The new clip goes to Review with a check of whether the mouth follows the voice: keep it with " +
@@ -317,6 +318,44 @@ const TOOLS = [
       follow_shots: { type: "boolean", default: true },
     }, required: ["project_id", "styles"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } },
+  // 2026-11-26 (Londi: a composer "akin to Suno", inside anlim): songs, a lyrics writer, and a song that drives the video
+  { name: "write_lyrics", title: "Write song lyrics",
+    description: "Writes ORIGINAL lyrics from what the song is about, with [Verse 1] / [Chorus] / [Bridge] tags on their own " +
+      "lines, sized to the song's length, in the language asked (any language, e.g. Haitian Creole). Free; up to 30 a day. " +
+      "Waits up to 40 s for the draft; if it is not ready, call again with draft_id. Show the creator the lyrics to edit " +
+      "before make_song. Lyrics from existing songs and real singers' names are refused.",
+    inputSchema: { type: "object", properties: {
+      about: { type: "string", minLength: 3, maxLength: 1500, description: "What the song is about, its story or feeling" },
+      language: { type: "string", maxLength: 40 }, styles: { type: "string", maxLength: 500, description: "Genre and feel, for the writing" },
+      length_s: { type: "number", minimum: 10, maximum: 600 }, project_id: { type: "string" },
+      draft_id: { type: "string", description: "A draft asked for earlier, to read it" },
+    }, additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } },
+  { name: "make_song", title: "Make a song for the scene",
+    description: "Makes a SUNG song (the lyrics, with [Section] tags) as the scene's music; the cut uses it like the score " +
+      "(make_cut music true). styles: genre, tempo, instruments and voice, in English (no real artist's name). length_s: " +
+      "seconds. provider: elevenlabs (the creator's own ElevenLabs credits, up to 10 min, sung exactly in the sections' " +
+      "order and lengths) or anlim (anlim credits, MiniMax Music 3, up to 5 min; call with confirm left out to see the price). " +
+      "Left out: elevenlabs when connected, else anlim. Then list_audio; shots_from_song to plan the video on it.",
+    inputSchema: { type: "object", properties: {
+      project_id: { type: "string" }, lyrics: { type: "string", minLength: 10, maxLength: 3500 },
+      styles: { type: "string", minLength: 3, maxLength: 1000 }, length_s: { type: "number", minimum: 10, maximum: 600 },
+      provider: { type: "string", enum: ["elevenlabs", "anlim"] },
+      confirm: { type: "boolean", description: "anlim only: true to spend the credits; leave out to see the price" },
+    }, required: ["project_id", "lyrics", "styles"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } },
+  { name: "shots_from_song", title: "Plan shots on the song",
+    description: "Adds shots to the scene that follow its song (the song in the cut, from make_song): one or more shots per " +
+      "section (verse, chorus...), each 5 to max_shot_s seconds, so the cut lines up with the song. singer: the character " +
+      "who sings (their shots say what they sing). Then for each shot: make_start_image, animate (normal speed), review_clip, " +
+      "then lip_sync, which syncs the mouth to the part of the song that plays under that shot in the cut. Use a plain " +
+      "cut for lip-synced songs (edit_style story with beat sync moves the shot changes). Free.",
+    inputSchema: { type: "object", properties: {
+      project_id: { type: "string" }, singer: { type: "string" }, audio_id: { type: "string", description: "The song (default: the scene's song in the cut)" },
+      max_shot_s: { type: "integer", minimum: 5, maximum: 10, default: 10, description: "Longest shot; lip sync takes clips up to 10 s" },
+      camera: { type: "string", maxLength: 200, description: "Camera for the singing shots, e.g. 'medium close-up, facing the camera'" },
+    }, required: ["project_id", "singer"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
   { name: "list_audio", title: "Sound in a project",
     description: "The voiceovers, sound effects and scores of the project's latest scene: id, shot, length, start_s (seconds into its " +
       "shot where a shot's sound starts in the cut), which take is in the cut, status or error, and a link (one hour).",
@@ -888,16 +927,81 @@ async function callTool(uid: string, name: string, a: Args) {
       return text(`The score is being composed: ${total} s${n ? ` in ${n} section${n > 1 ? "s" : ""}, one per shot` : ""}, instrumental, ` +
         `on your ElevenLabs credits (usually a minute or two). audio_id ${r.id}. Check it with list_audio.`, { audio_id: r.id, seconds: total });
     }
+    case "write_lyrics": {
+      let id = String(a.draft_id || "");
+      if (id) { if (!UUID.test(id)) return text("draft_id must be an id write_lyrics gave.", undefined, true); }
+      else {
+        const gate = await audioGate(uid, "write_lyrics");
+        if (gate) return gate;
+        let scene: string | null = null;
+        if (a.project_id) { if (!UUID.test(String(a.project_id))) return text("project_id must be an id from list_projects.", undefined, true); scene = await latestScene(uid, String(a.project_id)); }
+        const [r] = await asUser(uid, (tx) => tx`select studio.request_lyrics(${String(a.about ?? "")}, ${a.language ? String(a.language) : null},
+          ${a.styles ? String(a.styles) : null}, ${a.length_s == null ? null : Number(a.length_s)}::numeric, ${scene}::uuid) as id`);
+        id = r.id;
+      }
+      for (let i = 0; i < 20; i++) {
+        const [d] = await asUser(uid, (tx) => tx`select status, title, lyrics, error from studio.lyrics_drafts where id = ${id}`);
+        if (!d) return text("Draft not found.", undefined, true);
+        if (d.status === "done") return text(`${d.title ? `"${d.title}"\n\n` : ""}${d.lyrics}\n\n(draft_id ${id}. Show these to the creator to edit, then make_song.)`,
+          { draft_id: id, title: d.title, lyrics: d.lyrics });
+        if (d.status === "failed") return text(`The lyrics could not be written: ${d.error}`, { draft_id: id }, true);
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      return text(`The lyrics are still being written. Call write_lyrics again with draft_id ${id} in a little while.`, { draft_id: id, status: "pending" });
+    }
+    case "make_song": {
+      const pid = String(a.project_id || "");
+      if (!UUID.test(pid)) return text("project_id must be an id from list_projects.", undefined, true);
+      const len = a.length_s == null ? 60 : Number(a.length_s);
+      const [m] = await sql`select id, label, credits_per_minute, min_credits, max_duration_s, active from studio.models where id = 'minimax-music-3'`;
+      const [c] = await sql`select exists (select 1 from studio.connections where owner = ${uid}::uuid and provider = 'elevenlabs' and status = 'ok') as xi`;
+      const prov = a.provider ? String(a.provider) : c?.xi ? "elevenlabs" : "anlim";
+      if (prov === "anlim") {
+        if (!m?.active) return text("Songs with anlim credits are not open yet. Connect ElevenLabs (Account > Connections) to make songs on your own ElevenLabs credits.", undefined, true);
+        const [q] = await sql`select studio.song_credits('minimax-music-3', ${len}::numeric) as c`;
+        if (a.confirm !== true) return text(`A ${Math.round(len)} s song with ${m.label}: ${q.c} credits (charged when it is delivered; nothing if it fails). Call again with confirm: true to make it.`,
+          { credits: q.c, model: m.id, seconds: len });
+      }
+      const gate = await audioGate(uid, "make_song");
+      if (gate) return gate;
+      const scene = await latestScene(uid, pid);
+      const input = { text: String(a.styles), styles: String(a.styles), lyrics: String(a.lyrics), length_s: len, provider: prov,
+                      model: prov === "anlim" ? "minimax-music-3" : null };
+      const [r] = await asUser(uid, (tx) => tx`select studio.request_audio(${scene}, ${null}, 'music', ${tx.json(input)}) as id`);
+      return text(`The song is being made: about ${Math.round(len)} s, ${prov === "anlim" ? `with ${m.label} on anlim credits` : "on your ElevenLabs credits"} ` +
+        `(usually one to three minutes). audio_id ${r.id}. Check it with list_audio; it becomes the scene's music in the cut.`, { audio_id: r.id, provider: prov });
+    }
+    case "shots_from_song": {
+      const pid = String(a.project_id || "");
+      if (!UUID.test(pid)) return text("project_id must be an id from list_projects.", undefined, true);
+      const scene = await latestScene(uid, pid);
+      const [song] = a.audio_id
+        ? await asUser(uid, (tx) => tx`select id from studio.audio_jobs where id = ${String(a.audio_id)} and scene_id = ${scene} and kind = 'music' and status = 'done'`)
+        : await asUser(uid, (tx) => tx`select id from studio.audio_jobs where scene_id = ${scene} and kind = 'music' and status = 'done' and in_cut
+                                          and coalesce(input->>'lyrics', '') <> '' order by created_at desc limit 1`);
+      if (!song) return text("This scene has no finished song in the cut. Make one with make_song first.", undefined, true);
+      const [ch] = await asUser(uid, (tx) => tx`select id from studio.characters where series_id = ${pid} and lower(name) = lower(${String(a.singer || "").trim()})`);
+      if (!ch) return text(`No character called ${a.singer} in this project.`, undefined, true);
+      // the plan is studio.shots_from_song (one or more 5-10 s shots per section, rounded on the running total)
+      const [r] = await asUser(uid, (tx) => tx`select studio.shots_from_song(${song.id}::uuid, ${ch.id}::uuid,
+        ${Math.round(Number(a.max_shot_s) || 10)}::int, ${a.camera ? String(a.camera) : null}) as r`);
+      const res = r.r as { shots: { shot_id: string; section: string; seconds: number }[]; seconds: number; song_s: number; timing: string };
+      return text(`${res.shots.length} shots added on the song (${res.seconds} s of shots for a ${Number(res.song_s).toFixed(0)} s song` +
+        `${res.timing === "estimated" ? "; this song's section timing is estimated, so check where the chorus lands" : ""}): ` +
+        res.shots.map((x, i) => `${i + 1}. ${x.section} ${x.seconds} s`).join(", ") +
+        `. For each shot: make_start_image, animate at normal speed, review_clip, then lip_sync. Make the cut with edit_style plain.`, res);
+    }
     case "list_audio": {
       const pid = String(a.project_id || "");
       if (!UUID.test(pid)) return text("project_id must be an id from list_projects.", undefined, true);
       const scene = await latestScene(uid, pid);
-      const rows = await asUser(uid, (tx) => tx`select a.id, a.kind, a.status, a.in_cut, a.duration_s, a.error, a.output_path, a.input, a.start_offset_s,
+      const rows = await asUser(uid, (tx) => tx`select a.id, a.kind, a.status, a.in_cut, a.duration_s, a.error, a.output_path, a.input, a.start_offset_s, a.provider, a.credits_reserved,
                                                        sh.ord as shot_ord from studio.audio_jobs a left join studio.shots sh on sh.id = a.shot_id
                                                  where a.scene_id = ${scene} order by a.created_at desc limit 30`);
-      if (!rows.length) return text("No sound yet: make_voiceover, make_sound_effect or make_score.");
+      if (!rows.length) return text("No sound yet: make_voiceover, make_sound_effect, make_score or make_song.");
       const items = await Promise.all(rows.map(async (x: any) => ({ id: x.id,
-        kind: x.kind === "voiceover" && x.shot_ord == null ? `narration from ${Number(x.input?.at_s ?? 0)} s` : x.kind,
+        kind: x.kind === "voiceover" && x.shot_ord == null ? `narration from ${Number(x.input?.at_s ?? 0)} s`
+          : x.kind === "music" && x.input?.lyrics ? `song${x.provider === "anlim" ? ` (${x.credits_reserved} anlim credits)` : ""}` : x.kind,
         shot: x.shot_ord ?? null, status: x.status, start_s: x.shot_ord == null ? null : Number(x.start_offset_s ?? 0),
         in_cut: x.in_cut, seconds: x.duration_s == null ? null : Number(x.duration_s), error: x.error,
         text: String(x.input?.text ?? "").slice(0, 80), url: x.status === "done" ? await sign(x.output_path) : null })));

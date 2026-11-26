@@ -58,3 +58,18 @@ export async function poll(gen) {
     return { state: "failed", error: e.message };    // COMPLETED with an error body (e.g. content blocked)
   }
 }
+
+// Music (2026-11-26, songs on anlim's account): MiniMax Music 3 returns { audio: { url } } (WAV); other music models
+// name it audio_file. -> { state: "pending" } | { state: "done", audioUrl } | { state: "failed", error }
+export async function pollAudio(job) {
+  const s = await call(job.provider_status_url);
+  if (s.status === "IN_QUEUE" || s.status === "IN_PROGRESS") return { state: "pending" };
+  if (s.status !== "COMPLETED") return { state: "failed", error: `unexpected status ${s.status}` };
+  try {
+    const res = await call(job.provider_response_url);
+    const url = res?.audio?.url || res?.audio_file?.url || (typeof res?.audio === "string" ? res.audio : null);
+    return url ? { state: "done", audioUrl: url } : { state: "failed", error: `no audio in result: ${JSON.stringify(res).slice(0, 200)}` };
+  } catch (e) {
+    return { state: "failed", error: e.message };
+  }
+}

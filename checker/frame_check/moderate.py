@@ -5,7 +5,7 @@ were the Terms ("Do not use anlim to make content that depicts real people witho
 involving minors, content that harasses or deceives people, or anything illegal") and the providers' own filters, which
 differ from model to model. This asks Claude once per job, with the job's words and the pictures it would send.
 
-  in code: moderate.check(text, images=[local paths], look="cartoon"|"photoreal", kind="clip"|"frame"|"audio")
+  in code: moderate.check(text, images=[local paths], look="cartoon"|"photoreal", kind="clip"|"frame"|"audio"|"song")
            -> {"verdict": "ALLOW"|"BLOCK", "category": "...", "reason": "...", "usd": 0.0x, "model": "..."}
   python moderate.py --text "..." [--image a.png ...] [--look photoreal]
 
@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 MODEL_TEXT = "claude-haiku-5-5"      # words only (audio scripts, prompts without pictures): fast and cheap
 MODEL_IMAGES = "claude-sonnet-5-5"   # with pictures: better at judging what a picture shows
-CATEGORIES = ["minors_sexual", "sexual", "real_person", "hate", "gore", "self_harm", "harassment"]
+CATEGORIES = ["minors_sexual", "sexual", "real_person", "hate", "gore", "self_harm", "harassment", "copyright"]
 
 SYSTEM = """You are the content check of anlim, an app where solo creators make cartoon and photoreal video. You get
 the words of ONE job (a picture, a video clip or a sound) and, for pictures and clips, the images it would be made from.
@@ -43,6 +43,10 @@ BLOCK only for these categories:
   injuries without graphic detail and war stories are ALLOWED.
 - self_harm: showing or encouraging suicide or self-harm as something to do.
 - harassment: threats, bullying or targeting of a real private person.
+- copyright (Job: song ONLY, 2026-11-26): the lyrics copy an existing song (more than a short common phrase, or its
+  recognisable hook); or the job asks for a real, named singer's or band's voice ("sounds like Drake", "in the voice
+  of Beyonce"), or names a real artist as the style. Genres, eras, instruments and vocal types ("80s soul", "raspy
+  male tenor", "konpa") are ALLOWED. Song lyrics may be in any language; judge them in that language.
 
 Everything else is ALLOW: drama, comedy, fights, monsters, sad or dark themes, kissing between adults, swimwear, etc.
 When unsure, ALLOW, unless it might involve a minor in a sexual way: then BLOCK.
