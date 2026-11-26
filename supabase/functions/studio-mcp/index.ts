@@ -394,6 +394,8 @@ const TOOLS = [
       "transitions between shots (blur flash, whip, zoom, spin, glitch, punch-in), a whoosh or hit under each change, the changes moved onto " +
       "the music's beats, serif captions (with captions on), an optional title over the first 3.5 s and a small handle tag. " +
       "The creator's own song: upload it at anlim.ai/upload (get_upload_link), then pass its upload id as music_upload_id. " +
+      "The creator's logo over the whole cut: logo_upload_id (a PNG or JPG upload), in a corner, 4% of the width in from the edges " +
+      "(in 9x16 also clear of TikTok's and Reels' buttons and captions); a square logo gets rounded app-icon corners. " +
       "Free like every cut. Follow it with get_cut.",
     inputSchema: { type: "object", properties: {
       project_id: { type: "string" }, format: { type: "string", enum: ["16x9", "9x16", "1x1", "4x5", "4x3", "3x4", "21x9"] },
@@ -403,6 +405,11 @@ const TOOLS = [
       music: { type: "boolean", default: true, description: "The scene's score in the cut (from make_score), if there is one" },
       // 2026-11-25 (Londi: "Unable to use an outside audio file in anlim.ai"): the creator's own song, uploaded at anlim.ai/upload
       music_upload_id: { type: "string", description: "The creator's own song or music (an audio upload from list_uploads) as the cut's music, in place of the score. A song longer than the cut is cut off at the end of the video; a shorter one leaves the rest silent." },
+      // 2026-11-25 (Londi): a logo watermark over the whole cut
+      logo_upload_id: { type: "string", description: "A PNG or JPG image upload from list_uploads, drawn over the whole cut" },
+      logo_corner: { type: "string", enum: ["top_left", "top_right", "bottom_left", "bottom_right"], default: "bottom_right" },
+      logo_size: { type: "number", minimum: 0.03, maximum: 0.4, default: 0.12, description: "The logo's width as a fraction of the video's width; its shape is kept" },
+      logo_opacity: { type: "number", minimum: 0, maximum: 1, default: 0.9 },
       // 2026-11-23: the edit style (worker editstyle.js)
       edit_style: { type: "string", enum: ["plain", "story"], default: "plain", description: "plain: the cut as before. story: the moody voiceover-edit look (see above)." },
       transitions: { type: "string", enum: ["mixed", "flash", "whip", "zoom", "spin", "glitch", "punch", "cut"], default: "mixed",
@@ -1058,6 +1065,17 @@ async function callTool(uid: string, name: string, a: Args) {
         own = await findUpload(uid, String(a.music_upload_id));
         if (!own || own.kind !== "audio") return text("music_upload_id must be an audio upload from list_uploads (MP3, WAV or M4A).", undefined, true);
       }
+      // 2026-11-25: the logo: an image upload, PNG or JPG
+      let logo: Record<string, unknown> | null = null;
+      if (a.logo_upload_id) {
+        const up = await findUpload(uid, String(a.logo_upload_id));
+        if (!up || up.kind !== "image" || !/\.(png|jpe?g)$/i.test(up.path)) return text("logo_upload_id must be a PNG or JPG image from list_uploads.", undefined, true);
+        const corners = ["top_left", "top_right", "bottom_left", "bottom_right"];
+        if (a.logo_corner != null && !corners.includes(String(a.logo_corner))) return text("logo_corner must be top_left, top_right, bottom_left or bottom_right.", undefined, true);
+        if (a.logo_size != null && !(typeof a.logo_size === "number" && a.logo_size >= 0.03 && a.logo_size <= 0.4)) return text("logo_size is the logo's width as a fraction of the video's width: 0.03 to 0.4.", undefined, true);
+        if (a.logo_opacity != null && !(typeof a.logo_opacity === "number" && a.logo_opacity >= 0 && a.logo_opacity <= 1)) return text("logo_opacity must be from 0 to 1.", undefined, true);
+        logo = { path: up.path, corner: a.logo_corner ?? "bottom_right", size: a.logo_size ?? 0.12, opacity: a.logo_opacity ?? 0.9 };
+      }
       const [score] = a.music === false || own ? [] : await asUser(uid, (tx) => tx`select id from studio.audio_jobs where scene_id = ${scene}
                                                     and kind = 'music' and in_cut and status = 'done' order by created_at desc limit 1`);
       // 2026-11-24: match this look: an uploaded picture, copied to the creator's stills
@@ -1068,14 +1086,14 @@ async function callTool(uid: string, name: string, a: Args) {
         lookRef = await copyUpload(uid, up, "stills");
       }
       const opts = { fade: a.fade !== false, end_card: a.end_card !== false, voice: a.voiceover !== false, sfx: a.sound_effects !== false,
-                     captions: a.captions === true,
+                     captions: a.captions === true, logo,
                      music_path: own ? own.path : score ? `${uid}/audio/music/${score.id}.mp3` : null,
                      style: a.edit_style === "story" ? { preset: "story", transitions: a.transitions ?? "mixed", rain: a.rain === true,
                        drops: a.drops === true, look_ref: lookRef,
                        hits: a.hits !== false, beat_sync: a.beat_sync !== false, grade: a.grade !== false,
                        title: typeof a.title === "string" ? a.title.slice(0, 60) : null, handle: typeof a.handle === "string" ? a.handle.slice(0, 30) : null } : null };
       const [r] = await asUser(uid, (tx) => tx`select studio.request_assembly(${scene}, ${format}, ${tx.json(opts)}) as id`);
-      return text(`The cut is being made (${format}${own ? `, with the creator's song${own.seconds ? ` (${own.seconds.toFixed(1)} s)` : ""}` : ""}${opts.style ? ", story edit style" : ""}${opts.end_card ? ", with Made with anlim.ai on the last shot" : ""}); ` +
+      return text(`The cut is being made (${format}${own ? `, with the creator's song${own.seconds ? ` (${own.seconds.toFixed(1)} s)` : ""}` : ""}${logo ? `, logo ${String(logo.corner).replace("_", " ")}` : ""}${opts.style ? ", story edit style" : ""}${opts.end_card ? ", with Made with anlim.ai on the last shot" : ""}); ` +
         `usually under a minute (longer with slowed shots${opts.style ? " or the story style" : ""}). ` +
         "Get it with get_cut.", { cut_id: r.id });
     }

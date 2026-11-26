@@ -94,9 +94,13 @@ async function part(src, dest, format, frames, fades, skip = 0, credit = false, 
   if (fades.out) fx.push(`fade=t=out:st=${(t - FADE_OUT).toFixed(3)}:d=${FADE_OUT}`);
   let fc = (sty?.s ? conform(format) + "[sty0];" + style.shotGraph("sty0", ...SIZES[format], frames, sty.s, sty.kIn, sty.kOut, "s", sty.curves || null) : conform(format)) +
            (fx.length ? "," + fx.join(",") : "");
+  let creditPng = null;
   if (credit) {
     const [W, H] = SIZES[format], mw = Math.round(Math.min(W, H) * 0.5 / 2) * 2, st = Math.max(0, t - CREDIT_S);
-    fc += `[pic];[1:v]scale=${mw}:-1,format=rgba,fade=t=in:st=${st.toFixed(3)}:d=0.6:alpha=1[m];` +
+    // 2026-11-25 (Londi): the credit in the app's brand colours and font on a pill, drawn at exactly mw pixels wide
+    // (brandimg.py); if it cannot be drawn, the previous picture is used, scaled
+    creditPng = await creditPicture(path.dirname(dest), credit, mw).catch(() => null);
+    fc += `[pic];[1:v]${creditPng ? "" : `scale=${mw}:-1,`}format=rgba,fade=t=in:st=${st.toFixed(3)}:d=0.6:alpha=1[m];` +
           `[pic][m]overlay=(W-w)/2:H*0.87-h/2:shortest=1,format=yuv420p[v]`;
   } else fc += ",format=yuv420p[v]";
   const sp = speed && Math.abs(speed - 1) > 0.001 ? `setpts=PTS/${speed.toFixed(4)},` +
@@ -104,7 +108,7 @@ async function part(src, dest, format, frames, fades, skip = 0, credit = false, 
   const hold = sty?.hold || 0;   // 2026-11-24: beat sync may run a shot a few frames past its clip: hold the last frame
   if (skip > 0 || sp || hold) fc = fc.replace(`fps=${FPS},`, `fps=${FPS},` + (skip > 0 ? `trim=start_frame=${skip},setpts=PTS-STARTPTS,` : "") + sp +
     (hold ? `tpad=stop_mode=clone:stop=${hold},` : ""));
-  const inputs = ["-i", src, ...(credit ? ["-loop", "1", "-framerate", String(FPS), "-t", (t + 2).toFixed(3), "-i", typeof credit === "string" ? credit : MADE_WITH] : [])];
+  const inputs = ["-i", src, ...(credit ? ["-loop", "1", "-framerate", String(FPS), "-t", (t + 2).toFixed(3), "-i", creditPng ?? credit.png ?? MADE_WITH] : [])];
   await ff([...inputs, "-filter_complex", fc, "-map", "[v]", "-frames:v", String(frames), "-an", "-c:v", "libx264",
             "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", String(FPS), dest]);
   const got = await probe(dest);
@@ -114,12 +118,51 @@ async function part(src, dest, format, frames, fades, skip = 0, credit = false, 
 // "Made with anlim.ai" end card: the words and the anlim mark on black, fading in. 2026-11-22 (Londi: "Video should end
 // with a clear Made with Anlim.ai"): the card said only "anlim.ai"; it now says "Made with", is larger and stays 3 s.
 const MADE_WITH = path.join(path.dirname(MARK), "made_with.png");
-// 2026-11-24 (languages): "Hecho con" / "Créé avec" for a creator who chose Spanish or French (made_with_es/fr.png)
+// 2026-11-24 (languages): "Hecho con" / "Créé avec" for a creator who chose Spanish or French. 2026-11-25: the words
+// are drawn (creditPicture); the pictures made_with[_es|_fr].png stay as the fallback.
+const LEADS = { en: "Made with", es: "Hecho con", fr: "Créé avec" };
 async function madeWithFor(owner) {
   const lang = await translate.ownerLang(owner).catch(() => "en");
-  return lang === "es" || lang === "fr" ? path.join(path.dirname(MARK), `made_with_${lang}.png`) : MADE_WITH;
+  const l = lang === "es" || lang === "fr" ? lang : "en";
+  return { lead: LEADS[l], png: l === "en" ? MADE_WITH : path.join(path.dirname(MARK), `made_with_${l}.png`) };
 }
 const ASSETS = path.dirname(MARK);
+const BRANDIMG = path.join(path.dirname(new URL(import.meta.url).pathname), "brandimg.py");
+const BRAND_FONT = path.join(ASSETS, "fonts", "SpaceGrotesk-Bold.ttf");
+async function brandImg(spec, png) {
+  const file = png.replace(/\.png$/, ".json");
+  await fs.writeFile(file, JSON.stringify(spec));
+  const { stdout } = await exec("python3", ["-I", BRANDIMG, file, png], { maxBuffer: 1 << 20, timeout: 60_000 });
+  return JSON.parse(stdout.trim().split("\n").pop());
+}
+async function creditPicture(dir, credit, width) {
+  const brand = JSON.parse(await fs.readFile(path.join(ASSETS, "brand.json"), "utf8"));
+  const png = path.join(dir, "credit.png");
+  await brandImg({ mode: "credit", width, lead: credit.lead || LEADS.en, font: BRAND_FONT, icon: MARK, brand }, png);
+  return png;
+}
+// 2026-11-25 (Londi): the creator's logo over the whole cut, in a corner, 4% of the width in from both edges. In 9x16
+// it also stays out of the parts of the frame that TikTok's and Reels' buttons and captions cover (on 1080x1920: TikTok
+// top 108, bottom 320, left 60, right 120 px; Reels top 210, bottom 310, right 84 px; the larger of each is used:
+// postplanify.com/blog/social-media-safe-zones-2026-complete-guide). Returns an overlay segment for the final pass.
+async function logoOverlay(dir, owner, logo, W, H) {
+  const p = String(logo.path || "");
+  if (!p.startsWith(`${owner}/`) || p.includes("..") || !/\.(png|jpe?g)$/i.test(p)) throw new Error("the logo must be a PNG or JPG you uploaded");
+  const src = path.join(dir, "logo_src" + path.extname(p).toLowerCase());
+  await storage.download(p, src);
+  if ((await fs.stat(src)).size > 20 * 1024 * 1024) throw new Error("the logo is over 20 MB");
+  const size = Math.min(0.4, Math.max(0.03, Number(logo.size) || 0.12));
+  const opacity = Math.min(1, Math.max(0, logo.opacity == null ? 0.9 : Number(logo.opacity)));
+  const png = path.join(dir, "logo.png");
+  const got = await brandImg({ mode: "logo", src, width: Math.round(W * size), opacity }, png);
+  const m = 0.04 * W, tall = W === 1080 && H === 1920;
+  const left = tall ? Math.max(m, W * 60 / 1080) : m, right = tall ? Math.max(m, W * 120 / 1080) : m;
+  const top = tall ? Math.max(m, H * 210 / 1920) : m, bottom = tall ? Math.max(m, H * 320 / 1920) : m;
+  const corner = ["top_left", "top_right", "bottom_left", "bottom_right"].includes(logo.corner) ? logo.corner : "bottom_right";
+  const x = corner.endsWith("left") ? Math.round(left) : Math.round(W - right - got.w);
+  const y = corner.startsWith("top") ? Math.round(top) : Math.round(H - bottom - got.h);
+  return { seg: textpic.overlay(png, "logo", { fps: FPS, x: String(x), y: String(y) }), corner, w: got.w, h: got.h, rounded: got.rounded };
+}
 
 // 2026-11-23 (Londi's promo: "actual words falling from him as the VO delivers them"): words drawn over a shot, each
 // appearing at a point in the frame at a moment of the shot (cut time, after the speed change), then falling with
@@ -538,6 +581,14 @@ async function build(a) {
     }
   }
   if (sty) over.push(...await style.overlays(sty, dir, ASSETS, W, H, total, notes));
+  // 2026-11-25: the creator's logo, last so it sits on top of the captions and the style's title
+  if (opts.logo?.path) {
+    try {
+      const lg = await logoOverlay(dir, a.owner, opts.logo, W, H);
+      over.push(lg.seg);
+      notes.push(`Logo: ${lg.w}x${lg.h} px in the ${lg.corner.replace("_", " ")} corner${lg.rounded ? ", corners rounded" : ""}.`);
+    } catch (e) { notes.push(`Logo: left out (${String(e.message || e).split("\n")[0].slice(0, 140)}).`); }
+  }
   if (over.length) {
     shown = path.join(dir, "picture_cc.mp4");
     await renew(a);

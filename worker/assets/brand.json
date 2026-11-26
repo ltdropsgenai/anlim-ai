@@ -1,0 +1,7 @@
+{
+  "_source": "app/src/lib/theme.ts (export const c), written by worker/scripts/sync-brand.mjs",
+  "ink": "#F4F4F5",
+  "accent": "#FF7A1A",
+  "pill": "#16161A",
+  "pill_alpha": 0.8
+}
