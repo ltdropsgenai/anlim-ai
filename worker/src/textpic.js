@@ -29,7 +29,7 @@ export async function undrawable(font, text) {
 }
 
 /** Draws `text` to `png`. opts: size (px), font (text font file), color [r,g,b], alpha 0..1, shadow {dx,dy,alpha},
- *  maxWidth (px: a longer line is drawn smaller to fit), style ("fire": flame gradient, ember edge, glow; 2026-11-25). */
+ *  maxWidth (px: a longer line is drawn smaller to fit), style ("flames": letters made of fire, a looping animation; 2026-11-25). Returns the picture's path, or for flames the frames' pattern (…_%02d.png). */
 export async function render(png, text, opts) {
   const spec = png.replace(/\.png$/, ".json");
   await fs.writeFile(spec, JSON.stringify({
@@ -38,8 +38,9 @@ export async function render(png, text, opts) {
     ...(opts.maxWidth ? { max_width: Math.round(opts.maxWidth) } : {}),
     ...(opts.style ? { style: opts.style } : {}),
   }));
-  await exec("python3", ["-I", WORDIMG, spec, png], { maxBuffer: 1 << 20, timeout: 60_000 });
-  return png;
+  await exec("python3", ["-I", WORDIMG, spec, png], { maxBuffer: 1 << 20, timeout: 120_000 });
+  // "flames" is a loop of frames (png_00.png, png_01.png...): its overlay reads them as an image sequence
+  return opts.style === "flames" ? png.replace(/\.png$/, "_%02d.png") : png;
 }
 
 /** A filter-chain segment that lays `png` over the picture: `x`/`y` are overlay expressions (w, h = the picture's size,
@@ -49,6 +50,8 @@ export function overlay(png, k, { x, y, t0 = 0, t1 = 1e6, fin = 0, fout = 0, fps
   const fades = (fin > 0 ? `,fade=t=in:st=${t0.toFixed(3)}:d=${fin.toFixed(3)}:alpha=1` : "") +
                 (fout > 0 ? `,fade=t=out:st=${Math.max(t0, t1 - fout).toFixed(3)}:d=${fout.toFixed(3)}:alpha=1` : "");
   const en = t1 < 1e5 ? `:enable='between(t,${t0.toFixed(3)},${t1.toFixed(3)})'` : "";
-  return `null[tpa${k}];movie=${png},loop=loop=-1:size=1:start=0,setpts=N/${fps}/TB,format=rgba${fades}[tpb${k}];` +
+  // one picture is held for ever; a sequence of frames (flames, 2026-11-25) plays and loops
+  const src = png.includes("%02d") ? `movie=${png}:f=image2:loop=0,setpts=N/${fps}/TB` : `movie=${png},loop=loop=-1:size=1:start=0,setpts=N/${fps}/TB`;
+  return `null[tpa${k}];${src},format=rgba${fades}[tpb${k}];` +
          `[tpa${k}][tpb${k}]overlay=shortest=1${en}:x='${x}':y='${y}'`;
 }
