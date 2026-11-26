@@ -79,7 +79,10 @@ export function scoreSections(shots: ShotRow[], moodOf: (r: ShotRow) => string) 
 export type HeightCheck = { verdict: "OK" | "WRONG" | "UNSURE" | "NOT CHECKED"; problems: string[]; notes: string[] };
 // 2026-11-17: is everyone physically doing what was asked (sitting ON the seat, feet on the floor, hands holding)?
 export type StagingCheck = { verdict: "OK" | "WRONG" | "UNSURE" | "NOT CHECKED"; problems: string[]; notes?: string[] };
+// 2026-11-26: does each person in a made photoreal start/end image look like their uploaded photo? (free; a flag, never a block)
+export type FacesCheck = { verdict: "OK" | "FLAG" | "NOT CHECKED"; problems: string[]; notes: string[] };
 export type EndCheck = { verdict: "PASS" | "FLAG"; drift: { box: number[]; area_pct: number }[]; why: string | null; height?: HeightCheck; staging?: StagingCheck;
+  faces?: FacesCheck; room_verdict?: "PASS" | "FLAG"; room_why?: string | null;
   revealed?: { box: number[]; area_pct: number; source: "plate" | "edit" }[]; plate_used?: boolean };
 export type FrameJob = {
   id: string; status: "queued" | "running" | "composing" | "ready" | "failed" | "approved" | "discarded";
@@ -104,7 +107,7 @@ export type Shot = {
   route_error: string | null; latest: { id: string; status: string } | null; owner: string;
   start_job: StartJob | null; context: ShotContext | null;
   // height check of an uploaded start still (frame_jobs kind 'height', 2026-11-16)
-  height_job: { id: string; status: FrameJob["status"]; check_result: { height?: HeightCheck } | null; error: string | null } | null;
+  height_job: { id: string; status: FrameJob["status"]; check_result: { height?: HeightCheck; faces?: FacesCheck } | null; error: string | null } | null;
 };
 export type LibCharacter = { id: string; name: string; kind: Kind; what: string | null; height_units: string | null; wardrobe: string | null; ref_front_path: string | null; ref_url: string | null };
 export type LibLocation = {

@@ -193,33 +193,72 @@ def _assign(faces, refs):
         used_f.add(i); used_n.add(n); out[n] = (faces[i], sc)
     return out
 
-def identity(clip, refs_in, start_frame=None, fps=2.0, thr=IDENTITY_THR, log=None):
-    """{"people": {name: {"median", "min", "seen", "samples", "against"}}, "drift": [msgs], "unchecked": [msgs], "error"?}"""
-    log = log or (lambda *x: None)
-    F = Faces(0.7); card = {}
+LOOKALIKE = 0.5        # two references this alike: the model may mix the two people up (KAMK Daughter/Son 0.657)
+CARTOONISH = 0.75      # references this alike: the model cannot tell them apart at all (drawn faces); no check
+# 2026-11-26 evaluation (identity_eval.py; per person; "today" = median vs the start frame < 0.40):
+#                          KAMK (fitted, 21 bad/11 good)   Kijan (8 bad/16 good)   SuperCool (38 good people)
+#   today alone            6 / 2                           6 / 1                   5 false alarms
+#   + clip vs photo < 0.30 13 / 2                          6 / 2                   6
+#   + start img < 0.40     17 / 2                          6 / 3 (one shot, s5)    7
+# Clip vs photo at 0.44 (the best fit on KAMK alone) flagged 7 of 16 good Kijan people: not used. Per clip, the 0.30
+# rule newly flags 1 approved clip (Kijan KL_s5), 3 SuperCool "minor" and 3 SuperCool fails (P029, P042, P049), and no
+# SuperCool pass. False alarms left on KAMK are Daughter/Son, whose photos score 0.657 against each other.
+CARD_THR = 0.30        # clip vs uploaded photo (median over the clip)
+START_CARD_THR = 0.40  # start image vs uploaded photo, before animate (KAMK: Best friend 0.27-0.37 in all 3 of his
+                       # shots, all 6 takes failed; Kijan s5 Her 0.33 and SuperCool P010 0.30 were approved anyway)
+
+def load_cards(F, refs_in):
+    card = {}
     for name, paths in refs_in.items():
         for path in ([paths] if isinstance(paths, str) else paths):
             im = cv2.imread(path)
             fs = sorted(_find_big(F, im, 1280), key=lambda f: -f["w_px"]) if im is not None else []
             if fs: card[name] = fs[0]["emb"]; break
+    return card
+
+def lookalikes(card):
+    return sorted(((round(float(card[a] @ card[b]), 3), a, b) for a in card for b in card if a < b and float(card[a] @ card[b]) > LOOKALIKE),
+                  reverse=True)
+
+def start_faces(F, start_img, card):
+    """Each person's face in the start image and its match with their uploaded photo: {name: (face, score)}."""
+    return _assign([f for f in _find_any(F, start_img) if f["frontal"]], card) if start_img is not None else {}
+
+def identity(clip, refs_in, start_frame=None, fps=2.0, thr=IDENTITY_THR, card_thr=None, log=None):
+    """{"people": {name: {"median", "min", "seen", "samples", "against", "start_card", "card_median", "card_min",
+    "card_seen"}}, "drift": [msgs], "unchecked": [msgs], "lookalike": [(score, a, b)], "error"?}
+
+    Two measures per person (2026-11-26, KAMK face test):
+    - median/min: their face in the clip vs their own face in the approved start frame (drift DURING the clip).
+    - card_median/card_min: their face in the clip vs their uploaded photo. Today's check missed failures whose start
+      image already had the wrong face (KAMK: 14 of 21 failures passed); this catches those.
+    card_thr None = the card measure is reported but not used to flag."""
+    log = log or (lambda *x: None)
+    card_thr = CARD_THR if card_thr is None else card_thr
+    F = Faces(0.7); card = load_cards(F, refs_in)
     if not card: return {"error": "no face found in any reference", "people": {}, "drift": [], "unchecked": []}
-    if len(card) > 1 and max(float(card[a] @ card[b]) for a in card for b in card if a < b) > 0.5:
+    look = lookalikes(card)
+    if look and look[0][0] > CARTOONISH:
         return {"error": "the face model cannot tell these references apart (cartoon?)", "people": {}, "drift": [], "unchecked": []}
-    base = dict(card); against = {n: "card" for n in card}
+    base = dict(card); against = {n: "card" for n in card}; start_card = {}
     sf = cv2.imread(start_frame) if start_frame else None
-    if sf is not None:
-        for n, (f, sc) in _assign([f for f in _find_any(F, sf) if f["frontal"]], card).items():
-            if sc >= 0.3: base[n] = f["emb"]; against[n] = "start frame"     # below 0.3 the start face is not clearly them
-    # Scored only against the start frame: against the card alone, good SuperCool clips scored -0.00 to 0.18
-    # (stylised grade, card drawn differently), i.e. noise. No clear start face = "not checked", said out loud.
-    scores = {n: [] for n in card}; samples = 0
+    for n, (f, sc) in start_faces(F, sf, card).items():
+        start_card[n] = round(sc, 3)
+        if sc >= 0.3: base[n] = f["emb"]; against[n] = "start frame"     # below 0.3 the start face is not clearly them
+    # Scored against the start frame: against the card alone, good SuperCool clips scored -0.00 to 0.18
+    # (stylised grade, card drawn differently). No clear start face = "not checked" for drift, said out loud.
+    scores = {n: [] for n in card}; cscores = {n: [] for n in card}; samples = 0
     for key, t, im in samples_iter(clip, fps):
         samples += 1
         for n, (f, sc) in _assign([f for f in _find_any(F, im) if f["frontal"]], base).items():
             if against[n] == "start frame": scores[n].append(sc)
-    rep = {"people": {}, "drift": [], "unchecked": [], "thr": thr}
+            cscores[n].append(float(f["emb"] @ card[n]))
+    rep = {"people": {}, "drift": [], "unchecked": [], "thr": thr, "card_thr": card_thr, "lookalike": look}
     for n, v in scores.items():
-        p = {"seen": len(v), "samples": samples, "against": against[n]}
+        p = {"seen": len(v), "samples": samples, "against": against[n], "start_card": start_card.get(n)}
+        cv = cscores[n]
+        if len(cv) >= IDENTITY_MIN_SEEN:
+            p["card_median"] = round(float(np.median(cv)), 3); p["card_min"] = round(float(min(cv)), 3); p["card_seen"] = len(cv)
         if len(v) >= IDENTITY_MIN_SEEN:
             p["median"] = round(float(np.median(v)), 3); p["min"] = round(float(min(v)), 3)
             if p["median"] < thr:
@@ -228,8 +267,43 @@ def identity(clip, refs_in, start_frame=None, fps=2.0, thr=IDENTITY_THR, log=Non
             rep["unchecked"].append(f"{n}'s face is not clear in the approved start frame: identity not checked")
         else:
             rep["unchecked"].append(f"{n}'s face was too small, turned away or hidden in {samples - len(v)} of {samples} samples: identity not checked")
+        if card_thr is not None and p.get("card_median") is not None and p["card_median"] < card_thr:
+            rep["drift"].append(f"{n} does not look like their uploaded photo in this clip (match {p['card_median']:.2f}, "
+                                f"below {card_thr}): compare their face with the photo")
         rep["people"][n] = p
+    for sc, a, b in look:
+        rep["unchecked"].append(f"{a} and {b} look alike to the face model ({sc:.2f}): it may not notice if they swap")
     log(f"identity: {rep['people']}")
+    return rep
+
+def start_check(start_frame, refs_in, thr=None, log=None):
+    """Before animate: does each person in the start image look like their uploaded photo? (2026-11-26, KAMK)
+    {"people": {name: {"score", "runner_up"?}}, "flags": [msgs], "unchecked": [msgs], "error"?}. A flag, never a block."""
+    log = log or (lambda *x: None)
+    thr = START_CARD_THR if thr is None else thr
+    F = Faces(0.7); card = load_cards(F, refs_in)
+    if not card: return {"error": "no face found in any reference", "people": {}, "flags": [], "unchecked": []}
+    look = lookalikes(card)
+    if look and look[0][0] > CARTOONISH:
+        return {"error": "the face model cannot tell these references apart (cartoon?)", "people": {}, "flags": [], "unchecked": []}
+    sf = cv2.imread(start_frame)
+    if sf is None: return {"error": "the start image could not be read", "people": {}, "flags": [], "unchecked": []}
+    got = start_faces(F, sf, card); rep = {"people": {}, "flags": [], "unchecked": [], "thr": thr, "lookalike": look}
+    for n in card:
+        if n not in got:
+            rep["unchecked"].append(f"{n}'s face is not clear in the start image (small, turned or hidden): not checked")
+            continue
+        f, sc = got[n]; p = {"score": round(sc, 3)}
+        others = [(float(f["emb"] @ card[o]), o) for o in card if o != n]
+        if others: p["runner_up"] = [round(max(others)[0], 3), max(others)[1]]
+        rep["people"][n] = p
+        if thr is not None and sc < thr:
+            more = f"; the face is closer to {p['runner_up'][1]}'s photo ({p['runner_up'][0]:.2f})" if others and max(others)[0] > sc else ""
+            rep["flags"].append(f"{n} in the start image does not look like their uploaded photo (match {sc:.2f}, below {thr}{more}): "
+                                "compare the face before animating, or make the start image again")
+    for sc, a, b in look:
+        rep["unchecked"].append(f"{a} and {b} look alike to the face model ({sc:.2f}): it may not tell them apart")
+    log(f"start check: {rep['people']}")
     return rep
 
 def samples_iter(target, fps):

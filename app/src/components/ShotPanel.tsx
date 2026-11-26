@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Link, router, useFocusEffect } from "expo-router";
-import { api, CutoutJob, END_FRAME_CREDITS, FRAME_CREDITS, EndCheck, HeightCheck, KIND_NAMES, StagingCheck, MODEL_NAMES, QUALITY_NAMES, ratioOf, Shot, StartMode, StartSource, startFrameCredits, uploadStill } from "../lib/api";
+import { api, CutoutJob, END_FRAME_CREDITS, FRAME_CREDITS, EndCheck, FacesCheck, HeightCheck, KIND_NAMES, StagingCheck, MODEL_NAMES, QUALITY_NAMES, ratioOf, Shot, StartMode, StartSource, startFrameCredits, uploadStill } from "../lib/api";
 import { c, font, pageBg } from "../lib/theme";
 import { autoNote, MODEL_NOTES } from "../lib/modelNotes";
 import { CROWD_TIP, wantsCrowd } from "../lib/shotStatus";
@@ -28,6 +28,10 @@ const SOURCE_TEXT: Record<StartSource, string> = trMap({
 const flagText = (ch: EndCheck | null | undefined, boxes: string) =>
   tr("Check: {what}", { what: !ch?.why || ch.why.startsWith("things outside the characters changed") ? tr(boxes)
     : tMsg(ch.why.charAt(0).toUpperCase() + ch.why.slice(1)) + ((ch.drift?.length ?? 0) > 0 ? tr(" (red boxes).") : ".") });
+// 2026-11-26: a face flag turns the whole image FLAG (so animate waits for the creator); the room badge keeps the room
+// check's own verdict and words.
+const roomCheck = (ch?: EndCheck | null): EndCheck | null | undefined =>
+  ch && ch.room_verdict ? { ...ch, verdict: ch.room_verdict, why: ch.room_why ?? null } : ch;
 const drawnAreas = (ch?: EndCheck | null) => (ch?.revealed ?? []).filter((r) => r.source === "edit").map((r) => r.box);
 function RevealedNote({ ch }: { ch?: EndCheck | null }) {
   const n = drawnAreas(ch).length;
@@ -48,6 +52,16 @@ function HeightBadge({ h, mode }: { h?: HeightCheck; mode: StartMode }) {
   </>);
   if (h.verdict === "UNSURE") return <Text style={[s.badge, { color: c.flag, borderColor: c.flag }]}>{tr("Heights: the check could not tell. Compare the characters' sizes yourself.")}</Text>;
   return <Text style={s.sub}>{h.notes[0] ? tr("Heights were not checked ({why}). Compare the characters' sizes yourself.", { why: tMsg(h.notes[0]) }) : tr("Heights were not checked. Compare the characters' sizes yourself.")}</Text>;
+}
+
+function FacesBadge({ f }: { f?: FacesCheck }) {
+  if (!f) return null;
+  if (f.verdict === "OK") return <Text style={[s.badge, { color: c.pass, borderColor: c.pass }]}>{tr("Faces: everyone looks like their uploaded photo")}</Text>;
+  if (f.verdict === "FLAG") return (<>
+    <Text style={[s.badge, { color: c.flag, borderColor: c.flag }]}>{tr("Faces: someone may not look like their uploaded photo. The video would keep this face; compare it with the photo, and make the frame again if it is wrong.")}</Text>
+    {f.problems.map((p, i) => <Text key={i} style={s.sub}>{p}</Text>)}
+  </>);
+  return f.notes?.[0] ? <Text style={s.sub}>{tr("Faces were not checked ({why}). Compare each face with the uploaded photo yourself.", { why: tMsg(f.notes[0]) })}</Text> : null;
 }
 
 function StagingBadge({ st }: { st?: StagingCheck }) {
@@ -341,7 +355,7 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
         <Frame ratio={ratioOf(shot.aspect)} label={!shot.start_url ? tr("Start frame") : shot.start_frame_approved ? tr("Start frame (approved)") : tr("Start frame (not approved yet)")} uri={shot.start_url} />
         {(startCandidate || startMaking) && (
           <Frame ratio={ratioOf(shot.aspect)} label={startMaking ? tr("New start frame (being made)") : tr("New start frame (not approved yet)")} uri={startCandidate?.composed_url ?? null}
-            boxes={startCandidate?.check_result?.verdict === "FLAG" ? startCandidate.check_result.drift.map((d) => d.box) : undefined}
+            boxes={roomCheck(startCandidate?.check_result)?.verdict === "FLAG" ? startCandidate!.check_result!.drift.map((d) => d.box) : undefined}
             look={drawnAreas(startCandidate?.check_result)} />
         )}
       </View>
@@ -349,7 +363,7 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
         <View style={s.panel}>
           {heightChecking ? <Text style={s.sub}>{tr("Checking the characters' heights in your uploaded start frame…")}</Text>
             : shot.height_job.status === "failed" ? <Text style={s.sub}>{tr("The height check could not run: {why}. Compare the characters' sizes yourself.", { why: tMsg(shot.height_job.error ?? "unknown error") })}</Text>
-            : <HeightBadge h={shot.height_job.check_result?.height} mode="reposition" />}
+            : <><HeightBadge h={shot.height_job.check_result?.height} mode="reposition" /><FacesBadge f={shot.height_job.check_result?.faces} /></>}
         </View>
       )}
       {startMaking && (
@@ -361,14 +375,17 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
           <Text style={s.sub}>{MODE_TEXT[startCandidate.mode]}{startCandidate.mode !== "continue" ? `: ${startCandidate.instruction}` : "."}</Text>
           {startCandidate.mode === "restyle" && <Text style={s.sub}>{tr("Redrawn from your picture in this project's look. The check below only looks at staging; compare it with your picture and judge the faces and the poses yourself.")}</Text>}
           {startCandidate.mode === "prompt" && <Text style={s.sub}>{tr("Drawn from your description. The check below only looks at staging (floating, sitting on nothing); judge the faces and whether it shows the moment the shot starts yourself.")}</Text>}
-          {startCandidate.mode !== "continue" && startCandidate.mode !== "prompt" && startCandidate.mode !== "restyle" && (startCandidate.check_result?.verdict === "PASS"
+          {startCandidate.mode !== "continue" && startCandidate.mode !== "prompt" && startCandidate.mode !== "restyle" && (roomCheck(startCandidate.check_result)?.verdict === "PASS"
             ? <Text style={[s.badge, { color: c.pass, borderColor: c.pass }]}>{startCandidate.check_result?.why?.startsWith("the room's layout")
                 ? tr("Check: the room's layout matches the location (lighting may differ slightly)") : tr("Check: the room is unchanged")}</Text>
-            : <Text style={[s.badge, { color: c.flag, borderColor: c.flag }]}>{flagText(startCandidate.check_result, "something in the room changed (red boxes). Look closely.")}</Text>)}
+            : <Text style={[s.badge, { color: c.flag, borderColor: c.flag }]}>{flagText(roomCheck(startCandidate.check_result), "something in the room changed (red boxes). Look closely.")}</Text>)}
           {startCandidate.mode !== "continue" && startCandidate.mode !== "prompt" && startCandidate.mode !== "restyle" && <RevealedNote ch={startCandidate.check_result} />}
           <HeightBadge h={startCandidate.check_result?.height} mode={startCandidate.mode} />
           <StagingBadge st={startCandidate.check_result?.staging} />
-          {startCandidate.mode !== "continue" && <Text style={s.sub}>{tr("Look at each character's face and clothes: the checks cannot judge those.")}</Text>}
+          <FacesBadge f={startCandidate.check_result?.faces} />
+          {startCandidate.mode !== "continue" && <Text style={s.sub}>{startCandidate.check_result?.faces && startCandidate.check_result.faces.verdict !== "NOT CHECKED"
+            ? tr("Look at each character's clothes: the checks cannot judge those. The face check can miss a wrong face, so look at the faces too.")
+            : tr("Look at each character's face and clothes: the checks cannot judge those.")}</Text>}
           {shot.end_url && <Text style={s.sub}>{tr("Using it removes the current end frame (it was drawn from the old start frame).")}</Text>}
           <View style={s.row}>
             <Pressable style={[s.btn, { backgroundColor: c.pass }]} disabled={busy} accessibilityRole="button"
@@ -430,7 +447,7 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
       <View style={s.frames}>
         <Frame ratio={ratioOf(shot.aspect)} label={tr("Start frame")} uri={shot.start_url} />
         <Frame ratio={ratioOf(shot.aspect)} label={candidate ? tr("New end frame (not approved yet)") : shot.end_url ? tr("End frame (approved)") : tr("End frame")}
-          uri={candidate?.composed_url ?? shot.end_url} boxes={check?.verdict === "FLAG" ? check.drift.map((d) => d.box) : undefined}
+          uri={candidate?.composed_url ?? shot.end_url} boxes={roomCheck(check)?.verdict === "FLAG" ? check!.drift.map((d) => d.box) : undefined}
           look={candidate ? drawnAreas(check) : undefined} />
       </View>
 
@@ -440,13 +457,16 @@ export function ShotPanel({ id, onRendered, onDeleted }: { id: string; onRendere
 
       {candidate && (
         <View style={s.panel}>
-          {check?.verdict === "PASS"
+          {roomCheck(check)?.verdict === "PASS"
             ? <Text style={[s.badge, { color: c.pass, borderColor: c.pass }]}>{tr("Check: only the characters changed")}</Text>
-            : <Text style={[s.badge, { color: c.flag, borderColor: c.flag }]}>{flagText(check, "something else changed (red boxes). Look closely.")}</Text>}
+            : <Text style={[s.badge, { color: c.flag, borderColor: c.flag }]}>{flagText(roomCheck(check), "something else changed (red boxes). Look closely.")}</Text>}
           <RevealedNote ch={check} />
           <HeightBadge h={check?.height} mode="reposition" />
           <StagingBadge st={check?.staging} />
-          <Text style={s.sub}>{tr("Look at each character's face and clothes: the checks cannot judge those.")}</Text>
+          <FacesBadge f={check?.faces} />
+          <Text style={s.sub}>{check?.faces && check.faces.verdict !== "NOT CHECKED"
+            ? tr("Look at each character's clothes: the checks cannot judge those. The face check can miss a wrong face, so look at the faces too.")
+            : tr("Look at each character's face and clothes: the checks cannot judge those.")}</Text>
           <View style={s.row}>
             <Pressable style={[s.btn, { backgroundColor: c.pass }]} disabled={busy} accessibilityRole="button"
               onPress={() => run(() => api.decideEndFrame(candidate.id, "approve"))}>

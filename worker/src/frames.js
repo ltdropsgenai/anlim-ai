@@ -255,6 +255,46 @@ async function stagingCheck(j, characters, still, look) {
   }
 }
 
+// 2026-11-26 (KAMK face test, Londi's labels): 13 of 21 face failures already had the wrong face in the start image, and
+// the clip check compares each clip with its own start image, so they passed. Before animate: does each person in a made
+// start or end image look like their uploaded photo? Photoreal only (the face model cannot tell drawn faces apart), the
+// shot's named cast only. Free (no API). A FLAG for the creator to look at, never a block: animate then needs their
+// explicit approval, as for any flagged start image.
+async function faceCheck(j, shot, characters, still, look) {
+  if (look !== "photoreal") return null;
+  if (!(shot?.cast_ids || []).length) return { verdict: "NOT CHECKED", problems: [], notes: ["the shot names no cast"] };
+  const cast = characters.filter((c) => (c.kind || "person") === "person" && c.ref_front_path);
+  if (!cast.length) return { verdict: "NOT CHECKED", problems: [], notes: ["no one in this shot has an uploaded photo"] };
+  const dir = path.join(config.workDir, "frames", j.id);
+  try {
+    const refs = {};
+    for (const c of cast) {
+      const ref = path.join(dir, `ref-${c.id}${ext(c.ref_front_path)}`);
+      try { await fs.access(ref); } catch { await storage.download(c.ref_front_path, ref); }
+      refs[c.name] = [ref];
+    }
+    const r = await checker("/face_start", { still, refs, look, fake_verdict: process.env.FAKE_FACES || undefined });
+    log(j, `faces ${r.verdict}`);
+    return { verdict: r.verdict, problems: r.problems || [], notes: r.notes || [], people: r.people || {} };
+  } catch (e) {
+    log(j, `face check skipped: ${e.message}`);
+    return { verdict: "NOT CHECKED", problems: [], notes: [`the face check did not run: ${e.message.slice(0, 200)}`] };
+  }
+}
+
+// A face flag makes the whole image FLAG (animate then waits for the creator's approval) and says why first.
+function withFaces(check, faces) {
+  if (!faces) return check;
+  check.faces = faces;
+  if (faces.verdict === "FLAG") {
+    // the room/layout check's own verdict and words stay for the app's room badge
+    check.room_verdict = check.verdict; check.room_why = check.why ?? null;
+    check.verdict = "FLAG";
+    check.why = [faces.problems.join("; "), check.why].filter(Boolean).join(". ");
+  }
+  return check;
+}
+
 // The location's plates (one per camera framing, latest first) on local disk; one that cannot be downloaded is skipped.
 async function localPlates(j, paths) {
   const dir = path.join(config.workDir, "frames", j.id), out = [];
@@ -309,7 +349,8 @@ async function stepQueued(j) {
     // an uploaded start still (2026-11-16): only the height check; nothing reserved, nothing charged
     const height = await heightCheck(j, characters, base, null, look);
     await db.settleFrame(j.id, "release");
-    await db.updateFrame(j.id, { status: "ready", check_result: JSON.stringify({ verdict: "PASS", drift: [], why: "height check only", height }),
+    const check = withFaces({ verdict: "PASS", drift: [], why: "height check only", height }, await faceCheck(j, shot, characters, base, look));
+    await db.updateFrame(j.id, { status: "ready", check_result: JSON.stringify(check),
       locked_by: null, locked_until: null });
     return log(j, `uploaded start still: height ${height.verdict}`);
   }
@@ -318,8 +359,9 @@ async function stepQueued(j) {
     const out = outPath(j);
     await storage.upload(base, out, "image/png");
     await db.settleFrame(j.id, "release");                       // nothing was reserved; marks it settled
-    const check = { verdict: "PASS", drift: [], why: "last frame of the previous approved clip",
-                    height: await heightCheck(j, characters, base, null, look) };
+    // the face check here catches drift carried from shot to shot (the previous clip's last face becomes this start)
+    const check = withFaces({ verdict: "PASS", drift: [], why: "last frame of the previous approved clip",
+                              height: await heightCheck(j, characters, base, null, look) }, await faceCheck(j, shot, characters, base, look));
     await db.updateFrame(j.id, { status: "ready", composed_path: out, check_result: JSON.stringify(check),
       locked_by: null, locked_until: null });
     return log(j, "start still = previous clip's last frame; ready");
@@ -417,7 +459,8 @@ async function stepComposing(j) {
     // no room or cast to compare against; the one check that applies is staging (anyone floating, sitting on
     // nothing, passing through furniture). Not a check of faces or of how well it matches the words.
     const staging = j.instruction ? await stagingCheck(j, characters, raw, look).catch((e) => ({ verdict: "NOT CHECKED", problems: [], error: e.message })) : null;
-    const check = { verdict: staging?.verdict === "OK" ? "PASS" : "FLAG", drift: [], why: j.mode === "restyle" ? "redrawn from your picture" : "drawn from your description", staging };
+    const check = withFaces({ verdict: staging?.verdict === "OK" ? "PASS" : "FLAG", drift: [], why: j.mode === "restyle" ? "redrawn from your picture" : "drawn from your description", staging },
+                            await faceCheck(j, shot, characters, raw, look));
     await db.updateFrame(j.id, { status: "ready", composed_path: composedPath, check_result: JSON.stringify(check),
       locked_by: null, locked_until: null });
     log(j, "start frame from the description ready");
@@ -451,6 +494,7 @@ async function stepComposing(j) {
   // 2026-11-17: is anyone sitting on nothing, floating, or passing through furniture? (frame_check still_check, ~$0.01)
   if ((j.kind === "start" || j.kind === "end") && j.instruction) check.staging = await stagingCheck(j, characters, out, look);
   if (res.room_diff) check.room_diff = res.room_diff;
+  if (j.kind === "start" || j.kind === "end") withFaces(check, await faceCheck(j, shot, characters, out, look));
   await db.updateFrame(j.id, { status: "ready", composed_path: composedPath, check_result: JSON.stringify(check),
     locked_by: null, locked_until: null });
   log(j, `${j.kind} frame ready (check ${res.verdict})`);

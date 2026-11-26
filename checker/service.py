@@ -32,6 +32,9 @@ Python standard library only (no installs beyond what frame_check already needs)
   POST /lipsync {"mode": "face" | "sync", "video", "voice", "from_s"?} -> frame_check/lipsync_check: before paying, is a
                 face big enough to sync ("OK" | "TOO_SMALL" | "NOT_CHECKED"); after, does the mouth follow the voice
                 ("PASS" | "FLAG" | "NOT_CHECKED"). Free, no API (2026-11-23).
+  POST /face_start {"still", "refs": {name: [local paths]}, "look"} -> frame_check/face_id.start_check: does each person in
+                a made start or end image look like their uploaded photo? {"verdict": "OK"|"FLAG"|"NOT CHECKED", "problems",
+                "notes", "people"}. Photoreal only; free, no API (2026-11-26, KAMK face test). A flag, never a block.
   GET  /health  -> {"ok": true, "mode": "real"|"fake", "frame_check": "<dir>"}
 
 Environment:
@@ -200,6 +203,30 @@ def run_still_check(body):
     r["drift"] = []
     return r
 
+def run_face_start(body):
+    """POST /face_start {"still", "refs": {name: [paths]}, "look"}: before animate, does each person in the image look like
+    their uploaded photo? Cartoon faces are not checked (the face model cannot tell drawn faces apart). Free (2026-11-26)."""
+    if not body.get("still"): raise ValueError("still is required")
+    if not os.path.exists(body["still"]): raise FileNotFoundError(body["still"])
+    refs = {n: [p for p in (v if isinstance(v, list) else [v]) if p and os.path.exists(p)] for n, v in (body.get("refs") or {}).items()}
+    refs = {n: v for n, v in refs.items() if v}
+    if (body.get("look") or "cartoon") != "photoreal":
+        return {"verdict": "NOT CHECKED", "problems": [], "notes": ["faces are checked on photoreal projects only"], "people": {}, "drift": []}
+    if not refs:
+        return {"verdict": "NOT CHECKED", "problems": [], "notes": ["no character in this shot has an uploaded photo"], "people": {}, "drift": []}
+    if MODE == "fake":
+        v = body.get("fake_verdict", "OK")
+        return {"verdict": v, "problems": [] if v == "OK" else ["fake: Him in the start image does not look like their uploaded photo"],
+                "notes": [], "people": {}, "drift": []}
+    if FC not in sys.path: sys.path.insert(0, FC)
+    import face_id
+    r = face_id.start_check(body["still"], refs)
+    if r.get("error"):
+        return {"verdict": "NOT CHECKED", "problems": [], "notes": [r["error"]], "people": {}, "drift": []}
+    checked = bool(r["people"])
+    return {"verdict": "FLAG" if r["flags"] else "OK" if checked else "NOT CHECKED", "problems": r["flags"],
+            "notes": r["unchecked"], "people": r["people"], "drift": []}
+
 def run_motion_check(body):
     """POST /motion_check: one vision call over the render's shots against the source clip (2026-11-20). Never FAIL:
     PASS, FLAG with the swapped shots, or NOT_REVIEWED when the model was unsure or the call could not run."""
@@ -307,17 +334,18 @@ class H(BaseHTTPRequestHandler):
         self._send(404, {"error": "not found"})
 
     def do_POST(self):
-        if self.path not in ("/check", "/motion_check", "/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate", "/lipsync", "/translate"): return self._send(404, {"error": "not found"})
+        if self.path not in ("/check", "/motion_check", "/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate", "/lipsync", "/translate", "/face_start"): return self._send(404, {"error": "not found"})
         if not self._authed(): return self._send(401, {"error": "unauthorized"})
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
         except json.JSONDecodeError:
             return self._send(400, {"error": "bad json"})
-        if self.path in ("/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate", "/lipsync", "/translate"):
+        if self.path in ("/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate", "/lipsync", "/translate", "/face_start"):
             try:
                 r = {"/end_frame": run_end_frame, "/compose": run_compose, "/last_frame": run_last_frame,
                      "/cutouts": run_cutouts, "/height": run_height, "/reposition_fit": run_reposition_fit, "/still_check": run_still_check,
-                     "/moderate": run_moderate, "/lipsync": run_lipsync, "/translate": run_translate}[self.path](body)
+                     "/moderate": run_moderate, "/lipsync": run_lipsync, "/translate": run_translate,
+                     "/face_start": run_face_start}[self.path](body)
                 name = body.get("end") or body.get("edited") or body.get("video") or body.get("image") or body.get("still") or ""
                 print(f"[{self.path[1:]}] {os.path.basename(name)}: {r['verdict']} ({len(r.get('drift', []))} drift)", flush=True)
                 return self._send(200, r)
