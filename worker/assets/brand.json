@@ -2,6 +2,11 @@
   "_source": "app/src/lib/theme.ts (export const c), written by worker/scripts/sync-brand.mjs",
   "ink": "#F4F4F5",
   "accent": "#FF7A1A",
-  "pill": "#16161A",
-  "pill_alpha": 0.8
+  "card_text": "#F6F5F8",
+  "card_dot": "#FF7919",
+  "card_fill_light": "#2C2B30",
+  "card_fill_dark": "#131217",
+  "card_tile": "#16151A",
+  "card_tile_border_alpha": 0.12,
+  "_card": "end card colours as Londi gave them (2026-11-25 mockup); card_text and card_dot are close to but not the theme's ink #F4F4F5 and accent #FF7A1A"
 }

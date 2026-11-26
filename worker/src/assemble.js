@@ -27,7 +27,6 @@ import * as storage from "./storage.js";
 import { watermark, VAULT, MARK } from "./watermark.js";
 import * as captions from "./captions.js";
 import * as style from "./editstyle.js";
-import * as translate from "./translate.js";
 import * as glyphs from "./glyphs.js";
 import * as textpic from "./textpic.js";
 
@@ -79,14 +78,13 @@ function conform(format) {
 }
 
 // skip: frames cut off the clip's start (the shot's trim, 2026-11-22); frames: how many are kept after that.
-// credit: "Made with anlim.ai" over the end of this (the last) shot. 2026-11-22 (Londi: "Made with anlim.ai belongs on
-// the end shot, not on an end card"): it fades in over the last CREDIT_S seconds and stays while the picture fades out.
+// (the "Made with anlim.ai" credit used to be drawn here; since 2026-11-25 the end cards are a second pass: endCards)
 // speed: below 1 slows the shot down with motion interpolation (2026-11-22, Londi chose it over frame blending for the
 // promo: the voiceover needed more time than the dissolve took); above 1 speeds it up by dropping frames. frames is the
 // count after the speed change.
 // sty (2026-11-23): the cut's edit style and the changes into and out of this shot ({ s, kIn, kOut }), or null. Its
 // filters come after the picture is in place and before the words, so the words stay sharp through a transition.
-async function part(src, dest, format, frames, fades, skip = 0, credit = false, speed = 1, words = [], srcSize = null, sty = null) {
+async function part(src, dest, format, frames, fades, skip = 0, _unused = false, speed = 1, words = [], srcSize = null, sty = null) {
   const t = frames / FPS;
   const fx = [];
   if (words.length) fx.push(...await wordFilters(words, path.dirname(dest), path.basename(dest, ".mp4"), ...SIZES[format], picRect(format, srcSize)));
@@ -94,53 +92,86 @@ async function part(src, dest, format, frames, fades, skip = 0, credit = false, 
   if (fades.out) fx.push(`fade=t=out:st=${(t - FADE_OUT).toFixed(3)}:d=${FADE_OUT}`);
   let fc = (sty?.s ? conform(format) + "[sty0];" + style.shotGraph("sty0", ...SIZES[format], frames, sty.s, sty.kIn, sty.kOut, "s", sty.curves || null) : conform(format)) +
            (fx.length ? "," + fx.join(",") : "");
-  let creditPng = null;
-  if (credit) {
-    const [W, H] = SIZES[format], mw = Math.round(Math.min(W, H) * 0.5 / 2) * 2, st = Math.max(0, t - CREDIT_S);
-    // 2026-11-25 (Londi): the credit in the app's brand colours and font on a pill, drawn at exactly mw pixels wide
-    // (brandimg.py); if it cannot be drawn, the previous picture is used, scaled
-    creditPng = await creditPicture(path.dirname(dest), credit, mw).catch(() => null);
-    fc += `[pic];[1:v]${creditPng ? "" : `scale=${mw}:-1,`}format=rgba,fade=t=in:st=${st.toFixed(3)}:d=0.6:alpha=1[m];` +
-          `[pic][m]overlay=(W-w)/2:H*0.87-h/2:shortest=1,format=yuv420p[v]`;
-  } else fc += ",format=yuv420p[v]";
+  fc += ",format=yuv420p[v]";
   const sp = speed && Math.abs(speed - 1) > 0.001 ? `setpts=PTS/${speed.toFixed(4)},` +
     (speed < 1 ? `minterpolate=fps=${FPS}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1,` : `fps=${FPS},`) : "";
   const hold = sty?.hold || 0;   // 2026-11-24: beat sync may run a shot a few frames past its clip: hold the last frame
   if (skip > 0 || sp || hold) fc = fc.replace(`fps=${FPS},`, `fps=${FPS},` + (skip > 0 ? `trim=start_frame=${skip},setpts=PTS-STARTPTS,` : "") + sp +
     (hold ? `tpad=stop_mode=clone:stop=${hold},` : ""));
-  const inputs = ["-i", src, ...(credit ? ["-loop", "1", "-framerate", String(FPS), "-t", (t + 2).toFixed(3), "-i", creditPng ?? credit.png ?? MADE_WITH] : [])];
+  const inputs = ["-i", src];
   await ff([...inputs, "-filter_complex", fc, "-map", "[v]", "-frames:v", String(frames), "-an", "-c:v", "libx264",
             "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", String(FPS), dest]);
   const got = await probe(dest);
   if (got.frames !== frames) throw new Error(`part ${path.basename(dest)} has ${got.frames} frames, expected ${frames}`);
 }
 
-// "Made with anlim.ai" end card: the words and the anlim mark on black, fading in. 2026-11-22 (Londi: "Video should end
-// with a clear Made with Anlim.ai"): the card said only "anlim.ai"; it now says "Made with", is larger and stays 3 s.
-const MADE_WITH = path.join(path.dirname(MARK), "made_with.png");
-// 2026-11-24 (languages): "Hecho con" / "Créé avec" for a creator who chose Spanish or French. 2026-11-25: the words
-// are drawn (creditPicture); the pictures made_with[_es|_fr].png stay as the fallback.
-const LEADS = { en: "Made with", es: "Hecho con", fr: "Créé avec" };
-async function madeWithFor(owner) {
-  const lang = await translate.ownerLang(owner).catch(() => "en");
-  const l = lang === "es" || lang === "fr" ? lang : "en";
-  return { lead: LEADS[l], png: l === "en" ? MADE_WITH : path.join(path.dirname(MARK), `made_with_${l}.png`) };
-}
 const ASSETS = path.dirname(MARK);
 const BRANDIMG = path.join(path.dirname(new URL(import.meta.url).pathname), "brandimg.py");
-const BRAND_FONT = path.join(ASSETS, "fonts", "SpaceGrotesk-Bold.ttf");
+const FONT_SEMI = path.join(ASSETS, "fonts", "SpaceGrotesk-SemiBold.ttf"), FONT_BOLD = path.join(ASSETS, "fonts", "SpaceGrotesk-Bold.ttf");
 async function brandImg(spec, png) {
   const file = png.replace(/\.png$/, ".json");
   await fs.writeFile(file, JSON.stringify(spec));
   const { stdout } = await exec("python3", ["-I", BRANDIMG, file, png], { maxBuffer: 1 << 20, timeout: 60_000 });
   return JSON.parse(stdout.trim().split("\n").pop());
 }
-async function creditPicture(dir, credit, width) {
+
+// The end card (2026-11-25, Londi's mockup): end_card plays three cards across the final shot, one language after
+// another: "Made with", "Créé avec", "Hecho con", each with the anlim icon and anlim.ai. The shot's length in the cut is
+// split into three equal slots; in each a card (42% of the width, 2.25:1) comes in from off the right with an ease-out,
+// holds near the middle for half the slot, and leaves off the left with an ease-in, tilting up to 3 degrees while it
+// moves. One card at a time: the next comes in as the previous has gone. In the upper third, so the people in the shot
+// stay in view (in 9x16 also below TikTok's and Reels' top bar). Each card's fill is #2C2B30 over light footage and
+// #131217 over dark, from the average brightness of the band it crosses during its slot. The picture is the final shot
+// itself (rendered first without its fade-out); this pass lays the cards over it and then applies the fade-out, so the
+// fade takes the cards with it. Returns notes.
+const END_LEADS = ["Made with", "Créé avec", "Hecho con"];
+async function endCards(src, dest, format, frames, fadeOut) {
+  const [W, H] = SIZES[format], t = frames / FPS, slot = t / 3, dir = path.dirname(dest), tag = path.basename(dest, ".mp4");
   const brand = JSON.parse(await fs.readFile(path.join(ASSETS, "brand.json"), "utf8"));
-  const png = path.join(dir, "credit.png");
-  await brandImg({ mode: "credit", width, lead: credit.lead || LEADS.en, font: BRAND_FONT, icon: MARK, brand }, png);
-  return png;
+  const cw = Math.round(W * 0.42), ch = cw / 2.25;
+  const topSafe = W === 1080 && H === 1920 ? H * 210 / 1920 : H * 0.04;
+  const cy = Math.max(H / 6, topSafe + ch / 2);                  // the card's centre: upper third
+  const band = [Math.max(0, Math.round(cy - ch / 2)), Math.min(H, Math.round(ch))];
+  const cards = [];
+  for (let k = 0; k < 3; k++) {
+    const t0 = k * slot;
+    const luma = await bandLuma(src, t0, slot, W, band[0], band[1]).catch(() => 0);   // unreadable: treat as dark
+    const fill = luma >= 0.5 ? brand.card_fill_light : brand.card_fill_dark;
+    const png = path.join(dir, `${tag}_card${k}.png`);
+    const got = await brandImg({ mode: "card", width: cw, lead: END_LEADS[k], fill, fonts: { semi: FONT_SEMI, bold: FONT_BOLD }, icon: MARK, brand }, png);
+    cards.push({ png, t0, luma, fill, h: got.h });
+  }
+  // x for the card's (rotated) picture, w = its width: in from W to the middle, hold, out to -w
+  const enter = 0.25, hold = 0.5;
+  const parts = [], ins = ["-i", src];
+  let last = "0:v";
+  cards.forEach((c, k) => {
+    const a = c.t0, b = a + slot * enter, cc = b + slot * hold, e = a + slot;
+    const pIn = `((t-${a.toFixed(4)})/${(b - a).toFixed(4)})`, pOut = `((t-${cc.toFixed(4)})/${(e - cc).toFixed(4)})`;
+    const mid = "(W-w)/2";
+    const x = `if(lt(t,${b.toFixed(4)}),W+(${mid}-W)*(1-pow(1-${pIn},3)),if(lt(t,${cc.toFixed(4)}),${mid},${mid}+(-w-(${mid}))*pow(${pOut},3)))`;
+    // tilt follows the speed: 3 degrees at the fastest, level while it holds (leaning into the move to the left)
+    const ang = `-(3*PI/180)*if(lt(t,${b.toFixed(4)}),pow(1-${pIn},2),if(lt(t,${cc.toFixed(4)}),0,pow(${pOut},2)))`;
+    ins.push("-loop", "1", "-framerate", String(FPS), "-t", (t + 1).toFixed(3), "-i", c.png);
+    parts.push(`[${k + 1}:v]format=rgba,rotate=a='${ang}':c=none:ow='hypot(iw,ih)':oh='hypot(iw,ih)'[c${k}]`);
+    const out = k === cards.length - 1 ? "cards" : `v${k}`;
+    parts.push(`[${last}][c${k}]overlay=x='${x}':y='${Math.round(cy)}-h/2':eval=frame:enable='between(t,${a.toFixed(4)},${e.toFixed(4)})':eof_action=pass[${out}]`);
+    last = out;
+  });
+  const fade = fadeOut ? `,fade=t=out:st=${(t - FADE_OUT).toFixed(3)}:d=${FADE_OUT}` : "";
+  await ff([...ins, "-filter_complex", `${parts.join(";")};[cards]format=yuv420p${fade}[v]`, "-map", "[v]", "-frames:v", String(frames), "-an",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", String(FPS), dest]);
+  return cards.map((c, k) => `${END_LEADS[k]} ${(c.t0).toFixed(2)}-${(c.t0 + slot).toFixed(2)} s on ${c.luma >= 0.5 ? "light" : "dark"} (band ${(c.luma * 100).toFixed(0)}%)`);
 }
+// The average brightness (0..1) of a horizontal band of a video over [t0, t0 + d]: a few frames a second, the band
+// shrunk to one grey pixel each.
+async function bandLuma(src, t0, d, W, y, h) {
+  const { stdout } = await exec("ffmpeg", ["-v", "error", "-ss", t0.toFixed(3), "-t", d.toFixed(3), "-i", src, "-vf",
+    `fps=4,crop=${W}:${h}:0:${y},scale=1:1:flags=area,format=gray`, "-f", "rawvideo", "-"], { encoding: "buffer", maxBuffer: 1 << 20 });
+  if (!stdout.length) throw new Error("no frames");
+  return stdout.reduce((s, v) => s + v, 0) / stdout.length / 255;
+}
+
 // 2026-11-25 (Londi): the creator's logo over the whole cut, in a corner, 4% of the width in from both edges. In 9x16
 // it also stays out of the parts of the frame that TikTok's and Reels' buttons and captions cover (on 1080x1920: TikTok
 // top 108, bottom 320, left 60, right 120 px; Reels top 210, bottom 310, right 84 px; the larger of each is used:
@@ -216,14 +247,6 @@ async function wordFilters(words, dir, tag, W, H, pic = { x: 0, y: 0, w: W, h: H
       `:alpha='if(lt(${T},0.25),${T}/0.25,if(gt(${T},${(d - 0.8).toFixed(3)}),max(0,(${d.toFixed(3)}-${T})/0.8),1))'`);
   }
   return out;
-}
-async function endCard(dest, format) {
-  const [W, H] = SIZES[format], frames = Math.round(CARD_S * FPS), mw = Math.round(Math.min(W, H) * 0.66 / 2) * 2;
-  await ff(["-f", "lavfi", "-i", `color=c=0x08080A:s=${W}x${H}:r=${FPS}:d=${CARD_S}`, "-i", MADE_WITH, "-filter_complex",
-            `[1:v]scale=${mw}:-1[m];[0:v][m]overlay=(W-w)/2:(H-h)/2,fade=t=in:st=0:d=0.4,setsar=1,format=yuv420p[v]`,
-            "-map", "[v]", "-frames:v", String(frames), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-            "-pix_fmt", "yuv420p", "-r", String(FPS), dest]);
-  return frames;
 }
 
 // One fixed gain to the target, a brickwall limiter only for peaks that would pass -1.5 dBTP, then measured again: when
@@ -512,8 +535,8 @@ async function build(a) {
     if (from || keep < p.frames) notes.push(`Shot ${it.ord}: trimmed to ${(keep / FPS).toFixed(2)} s (from ${(from / FPS).toFixed(2)} s).`);
     if (out !== moved || out !== keep) notes.push(`Shot ${it.ord}: ${speed !== 1 ? `at ${Math.round(speed * 100)}% speed, ` : ""}${(out / FPS).toFixed(2)} s in the cut` +
       (hold ? `, the last frame held ${(hold / FPS).toFixed(2)} s` : "") + ".");
-    // 2026-11-22: end_card puts the credit over the last 2 s of the last shot
-    const credit = !!opts.end_card && last ? await madeWithFor(a.owner) : false;
+    // 2026-11-25: end_card plays the three end cards over the last shot (endCards, a second pass after the shot)
+    const cardsHere = !!opts.end_card && last;
     await renew(a);                                                // slowed shots take minutes each: keep the lease
     const words = Array.isArray(it.words) ? it.words : [];
     // without an edit style the hold still goes in (part() reads it from here)
@@ -523,12 +546,28 @@ async function build(a) {
       catch (e) { notes.push(`Edit style: shot ${it.ord} keeps the default grade (${String(e.message || e).slice(0, 100)}).`); }
     }
     try {
-      await part(src, dest, a.format, out, fades, from, credit, speed, words, { w: p.w, h: p.h }, look);
+      await part(src, cardsHere ? dest.replace(/\.mp4$/, "_pre.mp4") : dest, a.format, out, cardsHere ? { ...fades, out: false } : fades,
+                 from, false, speed, words, { w: p.w, h: p.h }, look);
     } catch (e) {
       if (!look?.s) throw e;
       // the style is a finish: a shot it fails on goes in without it rather than failing the cut
       notes.push(`Edit style: shot ${it.ord} is in the cut without the style (${String(e.message || e).split("\n")[0].slice(0, 160)}).`);
-      await part(src, dest, a.format, out, fades, from, credit, speed, words, { w: p.w, h: p.h }, hold ? { s: null, hold } : null);
+      await part(src, cardsHere ? dest.replace(/\.mp4$/, "_pre.mp4") : dest, a.format, out, cardsHere ? { ...fades, out: false } : fades,
+                 from, false, speed, words, { w: p.w, h: p.h }, hold ? { s: null, hold } : null);
+    }
+    if (cardsHere) {
+      const pre = dest.replace(/\.mp4$/, "_pre.mp4");
+      try {
+        const got = await endCards(pre, dest, a.format, out, fades.out);
+        notes.push(`End cards over shot ${it.ord}: ${got.join("; ")}.`);
+      } catch (e) {
+        // the cut goes on without them rather than failing; the shot keeps its fade-out
+        notes.push(`End cards: left out (${String(e.message || e).split("\n")[0].slice(0, 140)}).`);
+        await ff(["-i", pre, "-vf", `${fades.out ? `fade=t=out:st=${(out / FPS - FADE_OUT).toFixed(3)}:d=${FADE_OUT},` : ""}format=yuv420p`,
+                  "-frames:v", String(out), "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", String(FPS), dest]);
+      }
+      const got = await probe(dest);
+      if (got.frames !== out) throw new Error(`the last shot with its end cards has ${got.frames} frames, expected ${out}`);
     }
     if ((it.words || []).length) notes.push(`Shot ${it.ord}: ${it.words.length} word${it.words.length > 1 ? "s" : ""} drawn over it.`);
     // 2026-11-24: a character the font lacks is drawn as a box, silently; say so (glyphs.js)

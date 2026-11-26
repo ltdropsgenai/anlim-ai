@@ -122,7 +122,7 @@ export default function SceneCut() {
             <Text style={fade ? { color: c.onAccent } : { color: c.ink }}>{tr("Fade in and out")}</Text>
           </Pressable>
           <Pressable onPress={() => setCard(!card)} style={[s.chip, card && s.chipOn]} accessibilityRole="checkbox" accessibilityState={{ checked: card }}>
-            <Text style={card ? { color: c.onAccent } : { color: c.ink }}>{tr("\"Made with anlim.ai\" on the last shot")}</Text>
+            <Text style={card ? { color: c.onAccent } : { color: c.ink }}>{tr("anlim.ai end cards on the last shot")}</Text>
           </Pressable>
           <Pressable onPress={() => setCaptionsOn(!captionsOn)} style={[s.chip, captionsOn && s.chipOn]} accessibilityRole="checkbox" accessibilityState={{ checked: captionsOn }}>
             <Text style={captionsOn ? { color: c.onAccent } : { color: c.ink }}>{tr("Captions")}</Text>

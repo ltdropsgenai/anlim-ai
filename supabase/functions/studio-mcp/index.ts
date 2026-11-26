@@ -389,7 +389,8 @@ const TOOLS = [
     annotations: { readOnlyHint: true, openWorldHint: false } },
   { name: "make_cut", title: "Make the scene's cut",
     description: "Joins the kept clips of the project's latest scene, in shot order, into one video (free). Formats: 16x9, 9x16, 1x1, " +
-      "4x5, 4x3, 3x4, 21x9 (default: the project's shape). end_card puts 'Made with anlim.ai' over the last 2 s of the final shot. " +
+      "4x5, 4x3, 3x4, 21x9 (default: the project's shape). end_card plays three anlim.ai end cards across the final shot, one after another (Made with, Créé avec, Hecho con), " +
+      "flying in from the right and out to the left in the upper third, over the shot itself. " +
       "edit_style 'story' gives the cut the look of a moody voiceover edit: a darker teal grade, a slow push-in on every shot, " +
       "transitions between shots (blur flash, whip, zoom, spin, glitch, punch-in), a whoosh or hit under each change, the changes moved onto " +
       "the music's beats, serif captions (with captions on), an optional title over the first 3.5 s and a small handle tag. " +
@@ -1093,7 +1094,7 @@ async function callTool(uid: string, name: string, a: Args) {
                        hits: a.hits !== false, beat_sync: a.beat_sync !== false, grade: a.grade !== false,
                        title: typeof a.title === "string" ? a.title.slice(0, 60) : null, handle: typeof a.handle === "string" ? a.handle.slice(0, 30) : null } : null };
       const [r] = await asUser(uid, (tx) => tx`select studio.request_assembly(${scene}, ${format}, ${tx.json(opts)}) as id`);
-      return text(`The cut is being made (${format}${own ? `, with the creator's song${own.seconds ? ` (${own.seconds.toFixed(1)} s)` : ""}` : ""}${logo ? `, logo ${String(logo.corner).replace("_", " ")}` : ""}${opts.style ? ", story edit style" : ""}${opts.end_card ? ", with Made with anlim.ai on the last shot" : ""}); ` +
+      return text(`The cut is being made (${format}${own ? `, with the creator's song${own.seconds ? ` (${own.seconds.toFixed(1)} s)` : ""}` : ""}${logo ? `, logo ${String(logo.corner).replace("_", " ")}` : ""}${opts.style ? ", story edit style" : ""}${opts.end_card ? ", with the anlim.ai end cards over the last shot" : ""}); ` +
         `usually under a minute (longer with slowed shots${opts.style ? " or the story style" : ""}). ` +
         "Get it with get_cut.", { cut_id: r.id });
     }

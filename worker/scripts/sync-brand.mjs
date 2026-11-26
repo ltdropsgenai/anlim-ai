@@ -13,13 +13,13 @@ const tok = (k) => {
   if (!m) throw new Error(`theme.ts: no colour ${k}`);
   return m[1].toUpperCase();
 };
-const brand = {
+// the theme's tokens are refreshed; the end card's own colours (card_*, as Londi gave them in his 2026-11-25 mockup) are kept
+const file = path.join(root, "worker", "assets", "brand.json");
+const old = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
+const brand = { ...old,
   _source: "app/src/lib/theme.ts (export const c), written by worker/scripts/sync-brand.mjs",
-  ink: tok("ink"),          // text
-  accent: tok("accent"),    // the dot in anlim.ai
-  // the end card's pill: Londi gave #16161A at about 80% (2026-11-25); it is not a theme token (between card #111114
-  // and card2 #18181C), so it is kept here as given
-  pill: "#16161A", pill_alpha: 0.8,
+  ink: tok("ink"),          // the app's text colour
+  accent: tok("accent"),    // the app's accent
 };
-fs.writeFileSync(path.join(root, "worker", "assets", "brand.json"), JSON.stringify(brand, null, 2) + "\n");
+fs.writeFileSync(file, JSON.stringify(brand, null, 2) + "\n");
 console.log(brand);
