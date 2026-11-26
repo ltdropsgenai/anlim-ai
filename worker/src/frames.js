@@ -501,7 +501,20 @@ async function stepComposing(j) {
 
 const steps = { queued: stepQueued, running: stepRunning, composing: stepComposing };
 
+// 2026-11-26 (Atud Clinton's end image, job dcedf786): the claim's 300 s lease was never renewed, so a compose that ran
+// past 5 min was claimed again by the other machine and matted twice at once (app_errors showed each try twice). While
+// a step runs, the lease is pushed 5 min ahead every minute, only while this worker still holds it.
+function keepLease(j) {
+  const t = setInterval(() => {
+    db.q("update studio.frame_jobs set locked_until = now() + interval '300 seconds' where id = $1 and locked_by = $2",
+         [j.id, config.workerId]).catch(() => {});
+  }, 60000);
+  t.unref?.();
+  return () => clearInterval(t);
+}
+
 export async function handle(j) {
+  const stop = keepLease(j);
   try {
     await steps[j.status](j);
   } catch (e) {
@@ -511,6 +524,8 @@ export async function handle(j) {
     const backoff = Math.min(300000, 5000 * 2 ** tries);
     await db.updateFrame(j.id, { tries, error: e.message.slice(0, 1000), next_poll_at: later(backoff), locked_by: null, locked_until: null });
     log(j, `step ${j.status} error (try ${tries}): ${e.message}; again in ${backoff / 1000}s`);
+  } finally {
+    stop();
   }
 }
 
