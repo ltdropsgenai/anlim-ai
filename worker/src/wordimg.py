@@ -84,50 +84,46 @@ def _blur(a, r):
 
 
 def flames(spec, fc, families, text, size, out):
+    # 2026-11-25 (Londi chose "3" of three versions): the flames themselves form the letters. Every stroke is a row of
+    # vertical flame tongues rising from the whole stroke (not only its top); the letter's outline is where the flames
+    # burn, with only a faint glow holding the stroke between tongues. Looks most like real fire; small words read less
+    # easily, so it is meant for large sizes.
     import numpy as np
     p = layout(fc, families, text, size, [255, 255, 255])
     lw, lh = int(p.LongestLine), int(p.Height)
-    padx, top, bottom = int(size * 0.3), int(size * 0.75), int(size * 0.25)   # room for the tongues above
+    padx, top, bottom = int(size * 0.3), int(size * 0.6), int(size * 0.2)     # room for the tongues above
     w, h = lw + 2 * padx, lh + top + bottom
     surf = skia.Surface(w, h); cv = surf.getCanvas(); cv.clear(skia.ColorTRANSPARENT)
     layout(fc, families, text, size, None, skia.Paint(AntiAlias=True, Color=skia.ColorWHITE,
-           Style=skia.Paint.kStrokeAndFill_Style, StrokeWidth=size * 0.03)).paint(cv, padx, top)
-    m = surf.makeImageSnapshot().toarray()[:, :, 3].astype(np.float32) / 255.0    # the letters' shape
-    H_, W_ = np.arange(h)[:, None], np.arange(w)[None, :]
-    # where each pixel sits inside its stroke, bottom (1) to top (0), for the colour: hot at the base, red at the tips
-    rows = np.where(m > 0.5, H_, h)
-    ink_top, ink_bottom = top + lh * 0.12, top + lh * 0.80
-    up = np.clip((H_ - ink_top) / max(1, ink_bottom - ink_top), 0, 1)          # 0 at the cap height, 1 at the baseline
-    # tongues: the shape smeared upward and fading
-    plume = np.zeros_like(m); rise = int(size * 0.75); step = max(1, rise // 30)
-    for k in range(step, rise, step):
-        shifted = np.zeros_like(m); shifted[: h - k] = m[k:]
-        plume = np.maximum(plume, shifted * (1 - k / rise) ** 1.4)
-    halo = _blur(m, max(2, int(size * 0.09)))
+           Style=skia.Paint.kStrokeAndFill_Style, StrokeWidth=size * 0.09)).paint(cv, padx, top)
+    m = surf.makeImageSnapshot().toarray()[:, :, 3].astype(np.float32) / 255.0    # the letters' shape (a little bolder)
+    H_, X_ = np.arange(h)[:, None], np.arange(w)[None, :]
+    fuel = _blur(m, max(1, int(size * 0.03)))
+    rise = int(size * 0.6); plume = np.zeros_like(fuel)                         # tongues rise off every part of a stroke
+    for k in range(1, rise, max(1, rise // 24)):
+        sh = np.zeros_like(fuel); sh[: h - k] = fuel[k:]
+        plume = np.maximum(plume, sh * (1 - k / rise) ** 1.1)
+    plume = np.maximum(plume, fuel)
+    halo = np.clip(_blur(m, max(2, int(size * 0.1))) * 0.5, 0, 0.5)[..., None]    # faint dark glow behind, for contrast
     stops = np.array([0.0, 0.18, 0.4, 0.62, 0.85, 1.0])
-    cols = np.array([[0.30, 0.02, 0.0], [0.75, 0.06, 0.0], [1.0, 0.32, 0.0], [1.0, 0.62, 0.05], [1.0, 0.88, 0.35], [1.0, 0.98, 0.82]])
-    gw, gh = max(6, w // max(6, int(size * 0.16))), 5
+    cols = np.array([[0.30, 0.02, 0.0], [0.78, 0.08, 0.0], [1.0, 0.35, 0.0], [1.0, 0.66, 0.08], [1.0, 0.90, 0.42], [1.0, 0.99, 0.86]])
+    gw = max(8, w // max(4, int(size * 0.09)))
     for f in range(FLAME_FRAMES):
-        t = f / FLAME_FRAMES
-        sway = _tile_noise(11, max(3, gw // 3), gh, w, h, 0, t * gh) - 0.5                 # slow sideways sway
-        lick = _tile_noise(23, gw, gh * 2, w, h, 0, t * gh * 2)                            # rising tongues and texture
-        grain = _tile_noise(37, gw * 2, gh * 4, w, h, 0, t * gh * 4)                       # fine flicker
-        # the letters' edges move a little (at most ~4% of the size), the tongues much more
-        dx_core = np.rint(sway * size * 0.035).astype(int)
-        core = m[H_, np.clip(W_ + dx_core, 0, w - 1)]
-        dx_tip = (sway * size * 0.30 + (lick - 0.5) * size * 0.12).astype(int)
-        tips = plume[H_, np.clip(W_ + dx_tip, 0, w - 1)] * (0.35 + 1.1 * lick)
-        tips = np.clip(tips - 0.18, 0, 1) * 1.35
-        # heat inside the letters: always hot (that is what keeps them readable), hotter low in the stroke, flickering
-        inside = core * (0.66 + 0.28 * up + 0.16 * (grain - 0.5) + 0.12 * (lick - 0.5))
-        heat = np.clip(np.maximum(inside, tips * (0.85 - 0.3 * (1 - up))), 0, 1)
-        heat = _blur(heat, max(1, int(size * 0.012)))
+        t = f / FLAME_FRAMES                     # each noise scrolls up a whole number of tiles per loop: no seam
+        n1 = _tile_noise(5, gw, 4, w, h, 0, t * 4)              # tall cells: vertical tongues
+        n2 = _tile_noise(9, gw * 2, 8, w, h, 0, t * 8)          # finer flicker
+        sway = _tile_noise(13, max(3, gw // 4), 3, w, h, 0, t * 3) - 0.5
+        dx = np.rint(sway * size * 0.10 + (n2 - 0.5) * size * 0.05).astype(int)
+        pl = plume[H_, np.clip(X_ + dx, 0, w - 1)]
+        heat = pl * np.clip(0.55 * n1 + 0.45 * n2, 0, 1) ** 1.7 * 1.9
+        heat = np.clip((heat - 0.16) * 1.25, 0, 0.97)
+        core = m[H_, np.clip(X_ + np.rint(sway * size * 0.04).astype(int), 0, w - 1)]
+        heat = np.maximum(heat, core * (0.20 + 0.25 * n2 + 0.10 * n1))   # a low glow keeps each stroke's shape
+        heat = _blur(heat, max(1, int(size * 0.01)))
         rgb = np.stack([np.interp(heat, stops, cols[:, i]) for i in range(3)], axis=-1)
-        alpha = np.clip(heat * 2.2, 0, 1)
+        alpha = np.clip(heat * 2.4, 0, 1)
         fire = np.concatenate([rgb * alpha[..., None], alpha[..., None]], axis=-1)           # premultiplied
-        dark = np.clip(halo * 0.7, 0, 0.6)[..., None]                                     # dark glow behind
-        back = np.concatenate([np.zeros((h, w, 3)) + np.array([0.08, 0.01, 0.0]) * dark, dark], axis=-1)
-        frame = fire + back * (1 - fire[..., 3:4])
+        frame = fire + np.concatenate([np.zeros((h, w, 3)), halo], axis=-1) * (1 - fire[..., 3:4])
         out8 = np.clip(frame * 255 + 0.5, 0, 255).astype(np.uint8)
         a8 = out8[..., 3:4].astype(np.float32)
         rgb8 = np.where(a8 > 0, np.clip(out8[..., :3] * 255.0 / np.maximum(a8, 1), 0, 255), 0).astype(np.uint8)
