@@ -6,7 +6,10 @@ did no better (DINOv2 0.57-0.60, CLIP 0.48-0.77 on 11-14 clips). So the comparis
 start frame and four later frames, plus each character's uploaded picture only to say who is who.
 
   python cartoon_id_ai.py judge --clip C.mp4 --start S.png --cast "Anlim=photo.png" --cast "Partner=" [--model ...]
-  python cartoon_id_ai.py eval --cases cases.json --labels labels.txt [--model claude-sonnet-5-5] [--max-usd 2] [--yes]
+  python cartoon_id_ai.py eval --cases cases.json --labels labels.txt [--model claude-sonnet-5-5] [--max-usd 2] [--yes] [--faces]
+
+v1 (four frames, whole-frame view) caught 0 of 10 KAMK failures and flagged 0 of 18 held, $0.26 with Sonnet: it read the
+clothes and hair as the same character ("same bearded man... cream henley"). v2 (--faces) adds face crops and says so.
 
 cases.json: [{"name": "C_FT1_kling", "clip": path, "start": path or null (null = the clip's first frame),
               "cast": {name: photo path or null}}]; labels.txt: lines "C_FT1_kling|Anlim = held|drifted|swapped|unsure".
@@ -54,16 +57,41 @@ def frames(clip, n=4, width=1280):
         else: out.append((round(i / fps, 2), p))
     return first, out
 
-def judge(clip, start, cast, model="claude-sonnet-5-5", k=None):
-    first, later = frames(clip)
+FACES_NOTE = """
+FACE CROPS: after each frame come enlarged crops of every face found in it (drawn faces are found well enough; who is
+who is for you to decide). Judge identity from the FACE: shape of the face and jaw, eyes, eyebrows, nose, mouth, facial
+hair, skin tone, apparent age. Clothes, hairstyle and position are NOT evidence that it is the same character: a video
+model often keeps the clothes and hair while the face becomes someone else's. If the face in a later crop would not pass
+for the same drawn character as in the start-frame crops, say drifted."""
+
+def face_crops(path, n=6, size=384):
+    """Enlarged crops of the biggest faces in a frame (YuNet), saved next to it."""
+    import face_id
+    im = cv2.imread(path); F = face_id.Faces(0.6); h, w = im.shape[:2]; k = 1280 / max(h, w)
+    sm = cv2.resize(im, (int(w * k), int(h * k)), interpolation=cv2.INTER_AREA if k < 1 else cv2.INTER_CUBIC)
+    F.det.setInputSize((sm.shape[1], sm.shape[0])); _, f = F.det.detect(sm); out = []
+    rows = sorted((r for r in (f if f is not None else []) if r[2] / k >= 14), key=lambda r: -r[2])[:n]
+    for i, r in enumerate(sorted(rows, key=lambda r: r[0])):
+        x, y, bw, bh = [float(v / k) for v in r[:4]]; pad = 0.45
+        x0, y0 = max(0, int(x - pad * bw)), max(0, int(y - pad * bh)); x1, y1 = min(w, int(x + bw * (1 + pad))), min(h, int(y + bh * (1 + pad)))
+        c = im[y0:y1, x0:x1]; s = size / max(c.shape[:2]); c = cv2.resize(c, (int(c.shape[1] * s), int(c.shape[0] * s)), interpolation=cv2.INTER_CUBIC)
+        p = f"{path[:-4]}_face{i}.jpg"; cv2.imwrite(p, c, [cv2.IMWRITE_JPEG_QUALITY, 92]); out.append(p)
+    return out
+
+def judge(clip, start, cast, model="claude-sonnet-5-5", k=None, faces=False):
+    first, later = frames(clip, n=6 if faces else 4)
     content = [{"type": "text", "text": "Image 1: START FRAME."}, A.img_block(start or first, 1600)[0]]
+    if faces:
+        for c in face_crops(start or first): content += [{"type": "text", "text": "Start-frame face crop:"}, A.img_block(c, 400)[0]]
     for j, (t, p) in enumerate(later):
         content += [{"type": "text", "text": f"Later frame {j + 2} (at {t} s):"}, A.img_block(p, 1600)[0]]
+        if faces:
+            for c in face_crops(p): content += [{"type": "text", "text": f"Face crop from frame {j + 2}:"}, A.img_block(c, 400)[0]]
     for n, ph in cast.items():
         if ph: content += [{"type": "text", "text": f"Uploaded picture of {n} (who is who only):"}, A.img_block(ph, 512)[0]]
     names = ", ".join(cast)
     content.append({"type": "text", "text": f"Characters in this clip: {names}. Judge each one as described."})
-    txt, usage = A._call(model, k or key(), SYSTEM, content, max_tokens=800)
+    txt, usage = A._call(model, k or key(), SYSTEM + (FACES_NOTE if faces else ""), content, max_tokens=800)
     pi, _, _, po = A.PRICES.get(model, (4.0, 5.0, 0.2, 20.0))
     usd = usage.get("input_tokens", 0) * pi / 1e6 + usage.get("output_tokens", 0) * po / 1e6
     try: r = A.first_json(txt) or {}
@@ -78,14 +106,14 @@ def cmd_eval(a):
     cases = json.load(open(a.cases)); labels = {}
     for line in open(a.labels, encoding="utf-8"):
         if " = " in line: kk, v = line.strip().split(" = "); t, n = kk.split("|"); labels[(t, n)] = v
-    est = len(cases) * 0.03 if "sonnet" in a.model else len(cases) * 0.003
+    est = (len(cases) * 0.03 if "sonnet" in a.model else len(cases) * 0.003) * (2.5 if a.faces else 1)
     if not a.yes:
         sys.exit(f"about ${est:.2f} for {len(cases)} clips with {a.model} (rough: ~10k tokens a clip); add --yes to run")
     k = key(); spent = 0.0; out = []
-    res_path = os.path.splitext(a.cases)[0] + f"_ai_{a.model}.json"
+    res_path = os.path.splitext(a.cases)[0] + f"_ai_{a.model}{'_faces' if a.faces else ''}.json"
     for c in cases:
         if spent > a.max_usd: print("stopped: --max-usd reached"); break
-        r = judge(c["clip"], c.get("start"), c["cast"], a.model, k); spent += r["usd"]
+        r = judge(c["clip"], c.get("start"), c["cast"], a.model, k, faces=a.faces); spent += r["usd"]
         for n in c["cast"]:
             lab = labels.get((c["name"], n)); got = (r["characters"].get(n) or {}).get("verdict")
             out.append({"take": c["name"], "name": n, "label": lab, "ai": got, "why": (r["characters"].get(n) or {}).get("why")})
@@ -104,4 +132,6 @@ if __name__ == "__main__":
     j.add_argument("--model", default="claude-sonnet-5-5")
     e = sub.add_parser("eval"); e.add_argument("--cases", required=True); e.add_argument("--labels", required=True)
     e.add_argument("--model", default="claude-sonnet-5-5"); e.add_argument("--max-usd", type=float, default=2.0); e.add_argument("--yes", action="store_true")
+    e.add_argument("--faces", action="store_true", help="v2 (2026-11-26): six later frames plus enlarged face crops, and judge the face only "
+                   "(v1 judged by clothes and hair: 0 of 10 failures caught on KAMK)")
     a = ap.parse_args(); (cmd_judge if a.cmd == "judge" else cmd_eval)(a)
