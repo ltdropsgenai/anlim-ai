@@ -21,6 +21,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { config } from "./config.js";
+import { postChecker } from "./checker_post.js";
 import * as db from "./db.js";
 import * as storage from "./storage.js";
 import * as moderate from "./moderate.js";
@@ -182,12 +183,10 @@ async function fail(j, error) {
 const ext = (p) => (path.extname(p || "").toLowerCase() || ".png");
 const isClip = (p) => /\.(mp4|mov|webm)$/i.test(p || "");
 
+// 2026-11-26: no 300 s fetch timeout (checker_post.js); /compose on a busy cartoon group shot can take over 5 min.
 async function checker(route, body) {
-  const r = await fetch(`${config.checkerUrl}${route}`, {
-    method: "POST", headers: { Authorization: `Bearer ${config.checkerToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const res = await r.json().catch(() => ({ verdict: "ERROR", error: `checker HTTP ${r.status}` }));
+  const r = await postChecker(route, body);
+  const res = r.json || { verdict: "ERROR", error: `checker HTTP ${r.status}` };
   if (!r.ok || res.verdict === "ERROR") throw new Error(`${route.slice(1)}: ${res.error || r.status}`);
   return res;
 }

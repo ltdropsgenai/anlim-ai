@@ -12,9 +12,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
-import http from "node:http";
 import { promisify } from "node:util";
 import { config } from "./config.js";
+import { postChecker } from "./checker_post.js";
 import * as db from "./db.js";
 import * as storage from "./storage.js";
 import * as compile from "./compile.js";
@@ -34,23 +34,6 @@ const run = promisify(execFile);
 const providers = { fal, mock, higgsfield };
 const log = (g, msg) => console.log(`${new Date().toISOString()} [${String(g.id).slice(0, 8)}] ${msg}`);
 const later = (ms) => new Date(Date.now() + ms);
-
-// POST to the checker without Node fetch's 300 s headers timeout (undici): a check that waited in the checker's queue
-// past 5 min came back as "fetch failed" and was retried from scratch (2026-11-19, 100-clip held-out run). 20 min cap.
-function postChecker(route, body) {
-  return new Promise((resolve, reject) => {
-    const u = new URL(`${config.checkerUrl}${route}`);
-    const data = Buffer.from(JSON.stringify(body));
-    const req = http.request({ hostname: u.hostname, port: u.port, path: u.pathname, method: "POST", timeout: 20 * 60000,
-      headers: { Authorization: `Bearer ${config.checkerToken}`, "Content-Type": "application/json", "Content-Length": data.length } },
-      (res) => { const chunks = []; res.on("data", (c) => chunks.push(c)); res.on("end", () => {
-        const text = Buffer.concat(chunks).toString("utf8"); let json; try { json = JSON.parse(text); } catch { json = null; }
-        resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, json }); }); });
-    req.on("timeout", () => req.destroy(new Error("checker timeout after 20 min")));
-    req.on("error", reject);
-    req.end(data);
-  });
-}
 
 async function fetchTo(url, dest) {
   await fs.mkdir(path.dirname(dest), { recursive: true });
@@ -100,11 +83,9 @@ async function endFrameGate(g, shot, characters = []) {
   const end = path.join(dir, "end" + path.extname(shot.end_frame_path));
   await storage.download(shot.start_frame_path, start);
   await storage.download(shot.end_frame_path, end);
-  const r = await fetch(`${config.checkerUrl}/end_frame`, {
-    method: "POST", headers: { Authorization: `Bearer ${config.checkerToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ start, end, out: dir, fake_verdict: process.env.FAKE_END_FRAME || undefined }),
-  });
-  const res = await r.json().catch(() => ({ verdict: "ERROR", error: `checker HTTP ${r.status}` }));
+  // 2026-11-26: no 300 s fetch timeout here either (the same matting as /compose; checker_post.js)
+  const r = await postChecker("/end_frame", { start, end, out: dir, fake_verdict: process.env.FAKE_END_FRAME || undefined });
+  const res = r.json || { verdict: "ERROR", error: `checker HTTP ${r.status}` };
   if (!r.ok || res.verdict === "ERROR") throw new Error(`end-frame check: ${res.error || r.status}`);
   if (res.verdict === "PASS") { log(g, "end frame: only the characters change"); return null; }
   const where = (res.drift || []).slice(0, 3).map((d) => `[${d.box.map((v) => Number(v).toFixed(2)).join(",")}]`).join(" ");
