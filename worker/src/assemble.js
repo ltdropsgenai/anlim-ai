@@ -272,9 +272,10 @@ async function mix(dir, a, opts, starts, lens, total, notes, hits = null) {
   const shotPaths = [...vo, ...fx].map((x) => x.path);
   if (shotPaths.length) {
     try {
-      const r = await db.q("select output_path, coalesce(start_offset_s, 0)::float8 as s from studio.audio_jobs where owner = $1 and output_path = any($2)",
-                           [a.owner, shotPaths]);
-      for (const x of r.rows) offs.set(x.output_path, Math.max(0, Number(x.s) || 0));
+      // db.q returns the rows themselves (2026-11-25 fix: this read r.rows, failed, and every sound started with its shot)
+      const rows = await db.q("select output_path, coalesce(start_offset_s, 0)::float8 as s from studio.audio_jobs where owner = $1 and output_path = any($2)",
+                              [a.owner, shotPaths]);
+      for (const x of rows) offs.set(x.output_path, Math.max(0, Number(x.s) || 0));
     } catch (e) { notes.push(`The sounds' start delays could not be read (${String(e.message || e).slice(0, 100)}); they start with their shots.`); }
   }
   const placed = (kind) => (v) => {
