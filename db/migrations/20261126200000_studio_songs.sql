@@ -12,9 +12,12 @@
 -- 2. music models and what a song costs
 alter table studio.models add column if not exists credits_per_minute integer;
 alter table studio.models add column if not exists min_credits integer;
+-- a music model: priced per minute (credits_per_minute, min_credits); credits_per_second must be > 0 and is not used
+alter table studio.models drop constraint if exists models_kind_check;
+alter table studio.models add constraint models_kind_check check (kind in ('clip', 'motion', 'lipsync', 'music'));
 insert into studio.models(id, provider, endpoint, resolution, credits_per_second, usd_per_second, active, min_duration_s, max_duration_s,
                           label, kind, bill_step_s, credits_per_minute, min_credits)
-values ('minimax-music-3', 'fal', 'minimax/music-3', null, 0, 0.0020, false, 10, 300, 'MiniMax Music 3', 'music', 1, 30, 15)
+values ('minimax-music-3', 'fal', 'minimax/music-3', 'audio', 1, 0.0020, false, 10, 300, 'MiniMax Music 3', 'music', 1, 30, 15)
 on conflict (id) do nothing;
 
 alter table studio.audio_jobs add column if not exists model_id text references studio.models(id);
