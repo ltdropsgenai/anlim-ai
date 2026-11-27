@@ -5,13 +5,14 @@
 // Home prompt's (CreationCard, which polls "creation"). Layout from the canvas "anlim Motion transfer screen". @anlim
 import { useEffect, useMemo, useState } from "react";
 import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { api, Look, MotionModel, uploadMotionFile } from "../lib/api";
 import { c, font, pageBg } from "../lib/theme";
 import { MOTION_NOTES, MOTION_USES, motionFamily } from "../lib/modelNotes";
 import { StillPicker } from "../components/StillPicker";
 import { MediaView } from "../components/MediaView";
 import { CreationCard } from "../components/CreationCard";
+import { ReplaceForm } from "../components/ReplaceForm";
 import { tr, locale, tMsg } from "../lib/i18n";
 
 const VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
@@ -48,6 +49,9 @@ export default function Motion() {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [made, setMade] = useState<string | null>(null);   // shot id of the clip being made
+  // 2026-11-27: two modes. "recast" redraws everyone from the clip's motion; "replace" swaps ONE person, the rest as filmed
+  const params = useLocalSearchParams<{ mode?: string }>();
+  const [mode, setMode] = useState<"recast" | "replace">(params.mode === "replace" ? "replace" : "recast");
 
   useEffect(() => {
     api.motionModels().then((r) => { setModels(r.models); setPaid(r.paid); }).catch((e) => setErr((e as Error).message));
@@ -115,16 +119,29 @@ export default function Motion() {
           <Text style={s.lead}>{tr("The motion, camera moves and cuts stay exactly as shot. The cast, the place and the look come from your images: cartoon, or real-looking people.")}</Text>
         </View>
 
-        <View style={[s.uses, narrow && { flexDirection: "column" }]}>
+        {mode === "recast" && <View style={[s.uses, narrow && { flexDirection: "column" }]}>
           {MOTION_USES.map((u) => (
             <View key={u.title} style={s.use}>
               <Text style={s.useTitle}>{u.title}</Text>
               <Text style={s.useText}>{u.text}</Text>
             </View>
           ))}
-        </View>
+        </View>}
 
-        {made ? <CreationCard shotId={made} output="video" onAgain={reset} /> : (
+        <View style={[s.seg, { alignSelf: "flex-start" }]} accessibilityRole="radiogroup" accessibilityLabel={tr("Mode")}>
+          {([["recast", tr("Recast everyone")], ["replace", tr("Replace a person")]] as const).map(([m, label]) => (
+            <Pressable key={m} onPress={() => setMode(m)} accessibilityRole="radio" accessibilityState={{ checked: m === mode }}
+              style={[s.segBtn, m === mode && s.segOn]}>
+              <Text style={{ color: m === mode ? c.ink : c.sub, fontSize: 14, fontWeight: m === mode ? "600" : "500" }}>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
+        {mode === "replace" ? (
+          <View style={{ gap: 18 }}>
+            <Text style={s.lead}>{tr("Put yourself into a famous moment: one person in your clip becomes you, and everything else, the place, the other people, the camera and the sound, stays exactly as filmed.")}</Text>
+            <ReplaceForm narrow={narrow} />
+          </View>
+        ) : made ? <CreationCard shotId={made} output="video" onAgain={reset} /> : (
           <View style={[s.cols, narrow && { flexDirection: "column" }]}>
             <View style={{ flex: 2, minWidth: 0, gap: 18 }}>
               <View style={s.card}>

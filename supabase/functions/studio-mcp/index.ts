@@ -27,7 +27,7 @@ const CREATE_LIMIT = 5, CREATE_WINDOW_MIN = 10, SPEND_LIMIT = 20;   // 10 -> 20 
 // 2026-11-23 (review): sound runs on the creator's own ElevenLabs credits and cuts on anlim's worker; neither had a limit
 // from chat, so a looping agent could drain one or hold the other.
 const AUDIO_TOOLS = ["make_voiceover", "make_sound_effect", "make_score", "make_song", "write_lyrics"], AUDIO_LIMIT = 15, CUT_LIMIT = 6;
-const SPEND_TOOLS = ["make_start_image", "make_end_image", "animate", "motion_transfer", "add_location", "lip_sync"];
+const SPEND_TOOLS = ["make_start_image", "make_end_image", "animate", "motion_transfer", "replace_person", "add_location", "lip_sync"];
 const APP = "https://anlim.ai";
 const ASPECTS = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
 const PROTOCOLS = ["2025-11-25", "2025-06-18", "2025-03-26"];
@@ -421,6 +421,26 @@ const TOOLS = [
       project_id: { type: "string" },
       likeness_consent: { type: "boolean", description: "Set true only after the creator said, in this chat, that any real person in the photo or video is them or agreed to it. Not needed if they ticked that box on anlim.ai/upload." },
     }, required: ["source_upload_id", "reference_upload_ids", "model"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
+  { name: "replace_person", title: "Replace a person in a video",
+    description: "Replaces ONE person in an uploaded video (5-30 s) with the person in a photo, usually the creator: the place, the " +
+      "other people, the camera, the cuts and the sound stay as filmed (unlike motion_transfer, which redraws everything). " +
+      "Models (list_models, kind replace): MiniMax Recast is told who to replace in words (who); Wan Animate Replace replaces " +
+      "the clip's main person and suits clips with one clear subject. Paid accounts; credits per second of the clip. Every " +
+      "result carries a visible 'AI-edited' label. Before calling, ask the creator two things and pass their answers: is the " +
+      "person in the photo them, or someone who agreed (likeness_consent), and do they own or have the right to use the clip, " +
+      "and will they not pass the result off as real footage or use it to deceive anyone (rights_confirmed). News, political, " +
+      "crime or disaster footage and putting a real public figure into a clip are refused. Follow it with get_creation.",
+    inputSchema: { type: "object", properties: {
+      source_upload_id: { type: "string", description: "The video, from list_uploads (5-30 s)" },
+      reference_upload_id: { type: "string", description: "The photo of the person who goes in, from list_uploads (a clear face)" },
+      character: { type: "string", description: "Or: the name of a character in project_id whose photo is used" },
+      who: { type: "string", maxLength: 300, description: "Who in the clip is replaced, e.g. 'the player in the red number 10 shirt'. Required for MiniMax Recast" },
+      model: { type: "string", description: "A replace model id from list_models" },
+      project_id: { type: "string", description: "Optional: an existing project (a new photoreal project is made otherwise)" },
+      likeness_consent: { type: "boolean", description: "Set true only after the creator said, in this chat, that the person in the photo is them or agreed to it" },
+      rights_confirmed: { type: "boolean", description: "Set true only after the creator said, in this chat, that they own or may use the clip and will not present the result as real footage or use it to deceive, defame or harass" },
+    }, required: ["source_upload_id", "model", "rights_confirmed"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
   { name: "list_models", title: "Models and prices",
     description: "The video models anlim uses, with credits per second and lengths: clip models (for animate) and motion transfer models.",
@@ -1161,10 +1181,42 @@ async function callTool(uid: string, name: string, a: Args) {
       return text(`Motion transfer started: ${q.seconds} s, about ${q.credits} credits, in "${q.series_name}". shot_id ${q.shot_id}; ` +
         `project_id ${q.series_id}. It usually takes 8 to 15 minutes; follow it with get_creation.`, q);
     }
+    case "replace_person": {
+      const src = await findUpload(uid, String(a.source_upload_id || ""));
+      if (!src || src.kind !== "video") return text("source_upload_id must be a video from list_uploads.", undefined, true);
+      if (!src.seconds) return text("The video's length is unknown; upload it again at anlim.ai/upload.", undefined, true);
+      if (a.rights_confirmed !== true) return text("Ask the creator first: do they own this clip or have the right to use it, and will they " +
+        "keep from passing the result off as real footage or using it to deceive, defame or harass anyone? Only if they say yes, call " +
+        "again with rights_confirmed: true.", undefined, true);
+      const pid = a.project_id ? String(a.project_id) : null;
+      if (pid && !UUID.test(pid)) return text("project_id must be an id from list_projects.", undefined, true);
+      let refPath: string | null = null, refOriginal: string | null = null, fromCharacter = false;
+      if (a.reference_upload_id) {
+        const u = await findUpload(uid, String(a.reference_upload_id));
+        if (!u || u.kind !== "image") return text("reference_upload_id must be an image from list_uploads.", undefined, true);
+        refPath = refOriginal = u.path;
+      } else if (a.character && pid) {
+        const [c] = await asUser(uid, (tx) => tx`select ref_front_path from studio.characters where series_id = ${pid} and name = ${String(a.character)}`);
+        if (!c?.ref_front_path) return text(`No character named "${a.character}" with a photo in that project.`, undefined, true);
+        refPath = refOriginal = c.ref_front_path; fromCharacter = true;   // a character's photo already has its consent
+      } else return text("Give reference_upload_id (a photo from list_uploads), or character with project_id.", undefined, true);
+      const gate = await spendGate(uid, "replace_person");
+      if (gate) return gate;
+      const rows = await asUser(uid, async (tx) => {
+        if (!fromCharacter) await carryConsent(tx, uid, [refOriginal!], [refPath!], "upload", a.likeness_consent);
+        return tx`select studio.replace_create(${src.path}, ${refPath}, ${String(a.who || "")}, ${src.seconds}::numeric,
+          ${String(a.model || "")}, ${pid}::uuid, true, 'connector') as r`;
+      }).catch((e) => { if (/likeness consent/.test(String(e?.message))) return null; throw e; });
+      if (!rows) return text("Ask the creator first: is the person in the photo them, or someone who agreed to be used? Only if they " +
+        "say yes, call again with likeness_consent: true.", undefined, true);
+      const q = rows[0].r as Record<string, unknown>;
+      return text(`Started: ${q.seconds} s, about ${q.credits} credits, in "${q.series_name}". shot_id ${q.shot_id}; project_id ${q.series_id}. ` +
+        "The result carries an 'AI-edited' label. It usually takes several minutes; follow it with get_creation.", q);
+    }
     case "list_models": {
       const rows = await sql`select id, kind, label, credits_per_second, min_duration_s, max_duration_s, looks from studio.models
-                              where active and provider <> 'mock' and kind in ('clip', 'motion') order by kind, credits_per_second desc`;
-      return text(rows.map((m) => `${m.kind === "motion" ? "motion transfer" : "clip"}: ${m.id} (${m.label}) ${m.credits_per_second} credits/s, ` +
+                              where active and provider <> 'mock' and kind in ('clip', 'motion', 'replace') order by kind, credits_per_second desc`;
+      return text(rows.map((m) => `${m.kind === "motion" ? "motion transfer" : m.kind === "replace" ? "replace a person" : "clip"}: ${m.id} (${m.label}) ${m.credits_per_second} credits/s, ` +
         `${m.min_duration_s}-${m.max_duration_s} s${m.looks ? `, ${m.looks.join("/")} only` : ""}`).join("\n"), { models: rows });
     }
     case "make_cut": {
@@ -1284,7 +1336,7 @@ const copyUpload = (uid: string, u: Upload, folder: "characters" | "locations" |
 // box on anlim.ai/upload (kept for the uploaded file) or from the chat (likeness_consent: true, which the tool
 // descriptions say to set only after the creator said so). Recorded for the copies the app's functions use.
 async function carryConsent(tx: postgres.TransactionSql, uid: string, originals: string[], paths: string[],
-                            kind: "character" | "start_still" | "motion", confirmed: unknown) {
+                            kind: "character" | "start_still" | "motion" | "upload", confirmed: unknown) {
   let ok = confirmed === true;
   if (!ok) {
     const rows = await tx`select bool_and(studio.has_likeness_consent(${uid}::uuid, p)) as ok from unnest(${originals}::text[]) p`;

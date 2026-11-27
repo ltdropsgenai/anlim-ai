@@ -233,7 +233,7 @@ async function checkLipsync(g) {
 // Higgsfield a copy cut to exactly that length. Untrusted video: only the container formats an upload can be, local file
 // only (same rule as the audio in assemble.js).
 const SAFE_VIDEO_IN = ["-format_whitelist", "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm", "-protocol_whitelist", "file,pipe"];
-async function motionSource(g, shot) {
+async function motionSource(g, shot, maxFps = 0) {
   const dir = path.join(config.workDir, g.id);
   await fs.mkdir(dir, { recursive: true });
   const src = path.join(dir, "source-in" + (path.extname(shot.motion_source_path) || ".mp4"));
@@ -245,35 +245,65 @@ async function motionSource(g, shot) {
   } catch { /* not a readable video */ }
   if (!isFinite(secs) || secs <= 0) throw Object.assign(new Error("the source clip could not be read as a video; nothing was charged"), { permanent: true });
   const billed = Number(shot.duration_s) || 0;
-  if (secs <= billed + 0.05) return shot.motion_source_path;        // within what was charged: send as uploaded
+  // 2026-11-27 (Replace a person, Wan Animate Replace bills frames at 16 a second): its credits assume at most 24 fps
+  let fps = 0;
+  if (maxFps) {
+    try {
+      const { stdout } = await run("ffprobe", ["-v", "error", ...SAFE_VIDEO_IN, "-select_streams", "v:0", "-show_entries", "stream=avg_frame_rate", "-of", "csv=p=0", src]);
+      const [a, b] = String(stdout).trim().split("/").map(Number); fps = b ? a / b : a;
+    } catch { fps = 0; }
+  }
+  const tooFast = maxFps && (!isFinite(fps) || fps <= 0 || fps > maxFps + 0.5);
+  if (secs <= billed + 0.05 && !tooFast) return shot.motion_source_path;        // within what was charged: send as uploaded
   const cut = `${g.owner}/motion/billed-${g.id}.mp4`;
   const out = path.join(dir, "source-cut.mp4");
   await run("ffmpeg", ["-y", "-v", "error", ...SAFE_VIDEO_IN, "-i", src, "-t", String(billed), "-map", "0:v:0", "-map", "0:a?",
+    ...(tooFast ? ["-r", String(maxFps)] : []),
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", out],
     { maxBuffer: 1 << 20 });
   await storage.upload(out, cut, "video/mp4");
-  log(g, `source is ${secs.toFixed(2)} s, charged ${billed} s: sending a copy cut to ${billed} s`);
+  log(g, `source is ${secs.toFixed(2)} s${fps ? ` at ${fps.toFixed(1)} fps` : ""}, charged ${billed} s: sending a copy cut to ${billed} s` +
+         `${tooFast ? ` at ${maxFps} fps` : ""}`);
   return cut;
+}
+
+// Replace a person (2026-11-27, studio.replace_create): one person in the creator's clip becomes the person in the
+// reference photo; everything else stays as filmed. MiniMax H3 Max Recast (fal minimax/h3-max/recast: video_url,
+// reference_image_urls, prompt, resolution "768P" | "1080P", enable_safety_checker; llms.txt read 2026-11-27) is told who
+// in words; Wan 2.2 Animate Replace (fal-ai/wan/v2.2-14b/animate/replace: video_url, image_url, resolution, no prompt)
+// replaces the clip's main person. Both providers' safety checkers are on.
+const isReplace = (shot) => shot?.model_kind === "replace";
+const AI_LABEL_FONT = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "assets", "fonts", "SpaceGrotesk-SemiBold.ttf");
+const replaceWho = (shot) => String(shot.action || "").replace(/^Replace: /, "") || "the main person";
+function replaceInput(shot, videoUrl, refUrl) {
+  if (/^minimax\//.test(shot.endpoint))
+    return { video_url: videoUrl, reference_image_urls: [refUrl], resolution: shot.resolution, enable_safety_checker: true,
+             prompt: `Replace ${replaceWho(shot)} with the person in the reference photo, in every shot where they appear. ` +
+                     "Keep everyone else, the place, the camera, the cuts and the sound exactly as in the video." };
+  return { video_url: videoUrl, image_url: refUrl, resolution: shot.resolution, enable_safety_checker: true,
+           enable_output_safety_checker: true };
 }
 
 async function submitMotion(g, shot) {
   let source;
-  try { source = await motionSource(g, shot); }
+  const wan = isReplace(shot) && !/^minimax\//.test(shot.endpoint);
+  try { source = await motionSource(g, shot, wan ? 24 : 0); }
   catch (e) { if (e.permanent) return fail(g, e.message); throw e; }
   const videoUrl = await storage.signedUrl(source, 7200);
   const imageUrls = [];
   for (const p of shot.motion_ref_paths || []) imageUrls.push(await storage.signedUrl(p, 7200));
-  const input = { video_url: videoUrl, image_urls: imageUrls, prompt: shot.action === "Motion transfer" ? "" : (shot.action || ""),
-                  resolution: shot.resolution };
+  const input = isReplace(shot) ? replaceInput(shot, videoUrl, imageUrls[0])
+    : { video_url: videoUrl, image_urls: imageUrls, prompt: shot.action === "Motion transfer" ? "" : (shot.action || ""),
+        resolution: shot.resolution };
   const sub = await providers[shot.provider].submit(shot.endpoint, input);
   const saved = { video_url: source, image_urls: shot.motion_ref_paths, prompt: input.prompt,
-                  resolution: input.resolution, endpoint: shot.endpoint };
+                  resolution: input.resolution, endpoint: shot.endpoint, replace: isReplace(shot) || undefined };
   await db.unlock(g.id, {
     status: "running", request: JSON.stringify(saved), provider_request_id: sub.requestId,
     provider_status_url: sub.statusUrl, provider_response_url: sub.responseUrl,
     submitted_at: new Date(), next_poll_at: later(config.pollMs), tries: 0,
   });
-  log(g, `motion transfer submitted to ${shot.provider} (${sub.requestId}), ${imageUrls.length} reference image(s)`);
+  log(g, `${isReplace(shot) ? "replace a person" : "motion transfer"} submitted to ${shot.provider} (${sub.requestId}), ${imageUrls.length} reference image(s)`);
 }
 
 async function stepQueued(g) {
@@ -283,6 +313,14 @@ async function stepQueued(g) {
   if (isMotion(g)) {
     if (!ctx.shot.motion_source_path) return fail(g, "the source clip is missing; nothing was charged");
     // content check (2026-11-23): the words and what the provider would get (the source clip's frames, the references)
+    if (isReplace(ctx.shot)) {
+      // 2026-11-27: its own rules (moderate.py Job: replace): no public figure put in, no news/political/crime footage
+      await moderate.guard({ kind: "replace", ref: g.id, owner: g.owner, look: "photoreal", dir: modDir,
+        text: `Replace a person: in the source video (first picture(s)), ${replaceWho(ctx.shot)} is replaced by the person in the ` +
+              "reference photo (last picture; the creator confirmed this is them or someone who agreed). Everything else stays as filmed.",
+        paths: [ctx.shot.motion_source_path, ...(ctx.shot.motion_ref_paths || [])] });
+      return submitMotion(g, ctx.shot);
+    }
     await moderate.guard({ kind: "clip", ref: g.id, owner: g.owner, look: ctx.shot.look, dir: modDir,
       text: moderate.shotWords({ ...ctx.shot, action: ctx.shot.action === "Motion transfer" ? "" : ctx.shot.action }, [], "Motion transfer: the source video is recast with the reference pictures"),
       paths: [ctx.shot.motion_source_path, ...(ctx.shot.motion_ref_paths || [])] });
@@ -334,7 +372,15 @@ async function stepRunning(g) {
   const dir = path.join(config.workDir, g.id);
   const raw = path.join(dir, "raw.mp4"), clip = path.join(dir, "clip.mp4");
   await fetchTo(p.videoUrl, raw);
-  if (isMotion(g)) {      // motion transfer keeps the source clip's own sound (the creator's audio)
+  if (isMotion(g) && isReplace(shot)) {
+    // Replace a person (2026-11-27, safety 4): a visible "AI-edited" label in the picture for the whole clip, on every
+    // account, so the result is not passed off as the original footage. Bottom left, about 2.6 % of the height.
+    await run("ffmpeg", ["-y", "-v", "error", ...SAFE_VIDEO_IN, "-i", raw, "-map", "0:v:0", "-map", "0:a?",
+      "-vf", `drawtext=fontfile='${AI_LABEL_FONT}':text='AI-edited · anlim.ai':fontcolor=white@0.92:fontsize=h*0.026:` +
+             "box=1:boxcolor=black@0.45:boxborderw=h*0.008:x=w*0.025:y=h-th-h*0.04",
+      "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", clip],
+      { maxBuffer: 1 << 20 });
+  } else if (isMotion(g)) {      // motion transfer keeps the source clip's own sound (the creator's audio)
     await run("ffmpeg", ["-y", "-v", "error", "-i", raw, "-map", "0:v:0", "-map", "0:a?", "-c", "copy", clip]);
   } else if (isLipsync(g)) {
     // 2026-11-23 (Londi: "There was no sound on the lip-sync?"): a lip-synced take carries the voice it was synced to
@@ -386,6 +432,34 @@ async function stepRunning(g) {
 // Motion transfer (2026-11-20): the clip checker reads the source's camera cuts as faults, so these clips get their own
 // check instead: does each shot keep who is who against the source clip (checker /motion_check, one vision call)?
 // Never a FAIL; the clip is charged like any made clip and a flag only tells the creator where to look.
+// Replace a person (2026-11-27, safety 6): is the person from the reference photo really in the clip? Three frames
+// (20 %, 50 %, 80 %) against the photo with the face model (checker /face_start, photoreal; the KAMK-tuned 0.40 rule).
+// A frame where no face is found or it does not match is only a FLAG (the creator looks), never a FAIL.
+async function replaceFaceCheck(g, shot, dir, clip) {
+  const ref = path.join(dir, "rref" + (path.extname(shot.motion_ref_paths?.[0] || "") || ".png"));
+  try { await fs.access(ref); } catch { await storage.download(shot.motion_ref_paths[0], ref); }
+  let secs = Number(shot.duration_s) || 5;
+  try {
+    const { stdout } = await run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", clip]);
+    secs = parseFloat(stdout) || secs;
+  } catch { /* keep the shot length */ }
+  const frames = [], problems = [], notes = [];
+  for (const f of [0.2, 0.5, 0.8]) {
+    const png = path.join(dir, `rcheck-${Math.round(f * 100)}.png`);
+    await run("ffmpeg", ["-y", "-v", "error", "-ss", (secs * f).toFixed(2), "-i", clip, "-frames:v", "1", png]);
+    const r = await postChecker("/face_start", { still: png, refs: { "the creator": [ref] }, look: "photoreal",
+                                                 fake_verdict: process.env.FAKE_FACES || undefined });
+    const j = r.json || {};
+    frames.push({ at_s: +(secs * f).toFixed(2), verdict: j.verdict || "ERROR" });
+    if (j.verdict === "FLAG") problems.push(`at ${(secs * f).toFixed(1)} s: ${(j.problems || [])[0] || "the face does not match the photo"}`);
+    if (j.verdict === "NOT CHECKED") notes.push(`at ${(secs * f).toFixed(1)} s: ${(j.notes || [])[0] || "no face found"}`);
+  }
+  const ok = frames.filter((x) => x.verdict === "OK").length;
+  const verdict = problems.length ? "FLAG" : ok ? "PASS" : "NOT_REVIEWED";
+  return { verdict, reasons: problems.length ? problems : ok ? [] : notes.length ? notes : ["the face check could not run"],
+           usd: 0, detail: { model: "sface", frames } };
+}
+
 async function checkMotion(g) {
   const { shot } = await db.shotContext(g);
   const dir = path.join(config.workDir, g.id);
@@ -395,6 +469,11 @@ async function checkMotion(g) {
   const saved = path.join(dir, "motion_check.json");
   let res;
   try { res = JSON.parse(await fs.readFile(saved, "utf8")); } catch { res = null; }
+  if (!res && isReplace(shot)) {
+    try { res = await replaceFaceCheck(g, shot, dir, clip); }
+    catch (e) { res = { verdict: "NOT_REVIEWED", reasons: [`the face check could not run (${String(e.message).slice(0, 120)})`], usd: 0 }; }
+    await fs.writeFile(saved, JSON.stringify(res));
+  }
   if (!res) {
     try {
       const source = path.join(dir, "source" + (path.extname(shot.motion_source_path || "") || ".mp4"));
@@ -422,6 +501,7 @@ async function checkMotion(g) {
   const reasons = (res.reasons || []).slice(0, 3).join(" | ");
   const error = res.verdict === "PASS" ? null
     : res.verdict === "FLAG" ? `checker found: ${reasons}`.slice(0, 1000)
+    : isReplace(shot) ? `face not confirmed: ${reasons || "no face found"}; check that the right person was replaced`.slice(0, 1000)
     : `not checked: ${reasons || "the swap check could not run"}; look for swapped faces or costumes`.slice(0, 1000);
   await db.unlock(g.id, { status: res.verdict === "PASS" ? "succeeded" : "review", finished_at: new Date(), error });
   await db.setShot(g.shot_id, "review");

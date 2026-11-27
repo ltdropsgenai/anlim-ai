@@ -292,6 +292,8 @@ export type Creation = { shot_id: string; action: string; duration_s: number; sc
 // Motion transfer (2026-11-20): a model the creator picks to recast their own clip (studio.models kind 'motion')
 export type MotionModel = { id: string; label: string | null; resolution: string; credits_per_second: number;
   min_duration_s: number; max_duration_s: number };
+// Replace a person (2026-11-27): needs_who = the model is told in words who is replaced (MiniMax Recast)
+export type ReplaceModel = MotionModel & { needs_who: boolean; active: boolean };
 
 export type AppNotification = { id: string; kind: string; title: string; body: string | null; link: string | null; created_at: string };
 export type AdminRefund = { id: string; generation_id: string; owner: string; email: string | null; reasons: string[]; note: string;
@@ -392,6 +394,11 @@ export const api = {
                  consent = false) =>
     call<{ series_id: string; scene_id: string; shot_id: string; generation_id: string; series_name: string; seconds: number; credits: number }>(
       { op: "motion_create", source_path: sourcePath, ref_paths: refPaths, prompt, seconds, model, series_id: seriesId, look, consent }),
+  replaceModels: () => call<{ paid: boolean; models: ReplaceModel[]; statement: string }>({ op: "replace_models" }),
+  replaceCreate: (sourcePath: string, refPath: string, who: string, seconds: number, model: string, likenessConsent: boolean, rightsOk: boolean) =>
+    call<{ series_id: string; scene_id: string; shot_id: string; generation_id: string; series_name: string; seconds: number; credits: number }>(
+      { op: "replace_create", source_path: sourcePath, ref_path: refPath, who, seconds, model, series_id: null,
+        likeness_consent: likenessConsent, rights_ok: rightsOk }),
   exportCreate: (seriesId: string) => call<{ ok: boolean; id: string }>({ op: "export_create", series_id: seriesId }),
   exportLatest: (seriesId: string) => call<{ export: ProjectExport | null }>({ op: "export_latest", series_id: seriesId }).then((r) => r.export),
   setEmailReady: (on: boolean) => call<{ ok: boolean }>({ op: "email_ready", on }),

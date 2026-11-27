@@ -361,6 +361,29 @@ async function handle(req: Request): Promise<Response> {
         });
         return json(r.r);
       }
+      // Replace a person (2026-11-27): one person in the creator's clip becomes the person in a photo; the rest stays as
+      // filmed. Models start inactive: admins see them (to test) until Londi turns them on.
+      case "replace_models": {
+        const [{ paid }] = await sql`select studio.has_paid(${uid}) as paid`;
+        const [{ admin }] = await sql`select exists (select 1 from studio.admins where user_id = ${uid}) as admin`;
+        const models = await sql`select id, label, resolution, credits_per_second, min_duration_s, max_duration_s,
+                                        endpoint like 'minimax/%' as needs_who, active
+                                   from studio.models where kind = 'replace' and (active or ${admin})
+                                  order by endpoint like 'minimax/%' desc, credits_per_second desc`;
+        const [{ statement }] = await sql`select studio.replace_statement() as statement`;
+        return json({ paid, models, statement });
+      }
+      case "replace_create": {
+        const ref = String(body.ref_path || "");
+        const [r] = await asUser(uid, async (tx) => {
+          // the photo of the person put in: the same likeness consent as a character's photo (ticked in the app)
+          if (body.likeness_consent === true) await tx`select studio.record_likeness_consent(${[ref]}::text[], 'upload', 'app')`;
+          return tx`select studio.replace_create(${String(body.source_path || "")}, ${ref}, ${String(body.who || "")},
+            ${Number(body.seconds || 0)}::numeric, ${String(body.model || "")},
+            ${body.series_id ? String(body.series_id) : null}::uuid, ${body.rights_ok === true}, 'app') as r`;
+        });
+        return json(r.r);
+      }
       case "prompt_models": {
         // the video models a paid account may pick at the Home prompt (2026-11-20); free accounts use Auto
         const [{ paid }] = await sql`select studio.has_paid(${uid}) as paid`;

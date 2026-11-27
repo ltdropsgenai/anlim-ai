@@ -5,7 +5,7 @@ were the Terms ("Do not use anlim to make content that depicts real people witho
 involving minors, content that harasses or deceives people, or anything illegal") and the providers' own filters, which
 differ from model to model. This asks Claude once per job, with the job's words and the pictures it would send.
 
-  in code: moderate.check(text, images=[local paths], look="cartoon"|"photoreal", kind="clip"|"frame"|"audio"|"song")
+  in code: moderate.check(text, images=[local paths], look="cartoon"|"photoreal", kind="clip"|"frame"|"audio"|"song"|"replace")
            -> {"verdict": "ALLOW"|"BLOCK", "category": "...", "reason": "...", "usd": 0.0x, "model": "..."}
   python moderate.py --text "..." [--image a.png ...] [--look photoreal]
 
@@ -43,6 +43,15 @@ BLOCK only for these categories:
   injuries without graphic detail and war stories are ALLOWED.
 - self_harm: showing or encouraging suicide or self-harm as something to do.
 - harassment: threats, bullying or targeting of a real private person.
+- Job: replace (2026-11-27, "Replace a person"): the first pictures are frames of REAL footage the creator uploaded;
+  ONE person in it is replaced by the person in the last picture (the creator, or someone who agreed, confirmed by the
+  creator). Here the real_person rule reads differently: real people who STAY in the footage as filmed (players,
+  crowd, actors) are ALLOWED, including public figures, when the footage is sport, entertainment, a performance, or the
+  creator's own life. BLOCK as real_person when: the words name a real public figure as the person put INTO the clip;
+  the person to be replaced is the clip's subject in news, political, protest, crime, accident, disaster, war or court
+  footage (a swap there makes a false record of a real event); or the swap would show someone in a sexual,
+  humiliating, violent or deceptive way (a fake confession, statement, endorsement or crime). Every other category
+  applies as usual (a minor in any sexual way: always BLOCK).
 - copyright (Job: song ONLY, 2026-11-26): the lyrics copy an existing song (more than a short common phrase, or its
   recognisable hook); or the job asks for a real, named singer's or band's voice ("sounds like Drake", "in the voice
   of Beyonce"), or names a real artist as the style. Genres, eras, instruments and vocal types ("80s soul", "raspy
