@@ -288,8 +288,12 @@ const replaceWho = (shot) => String(shot.action || "").replace(/^Replace: /, "")
 function replaceInput(shot, videoUrl, refUrl) {
   if (/^minimax\//.test(shot.endpoint))
     return { video_url: videoUrl, reference_image_urls: [refUrl], resolution: shot.resolution, enable_safety_checker: true,
+             // 2026-11-27 (first live run, gen 84dc969e): Recast dressed the player in the photo's clothes (white) in the
+             // close shot while the wide shots kept the yellow kit. Londi: "Keep the kit". Only face, head and skin change.
              prompt: `Replace ${replaceWho(shot)} with the person in the reference photo, in every shot where they appear. ` +
-                     "Keep everyone else, the place, the camera, the cuts and the sound exactly as in the video." };
+                     "Change only their face, head, hair and skin to match the reference photo. Keep the clothes, kit, number, " +
+                     "boots and accessories they wear in the video exactly as they are, in every shot. Do not use the clothes " +
+                     "from the reference photo. Keep everyone else, the place, the camera, the cuts and the sound exactly as in the video." };
   return { video_url: videoUrl, image_url: refUrl, resolution: shot.resolution, enable_safety_checker: true,
            enable_output_safety_checker: true };
 }

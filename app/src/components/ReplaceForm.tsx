@@ -44,7 +44,7 @@ export function ReplaceForm({ narrow }: { narrow: boolean }) {
   const [made, setMade] = useState<string | null>(null);
 
   useEffect(() => {
-    api.replaceModels().then((r) => { setModels(r.models); setPaid(r.paid); setStatement(r.statement); setModelId(r.models[0]?.id ?? null); })
+    api.replaceModels().then((r) => { setModels(r.models); setPaid(r.paid); setStatement(r.statement); setModelId((r.models.find((m) => m.id === "recast-768p") ?? r.models[0])?.id ?? null); })
       .catch((e) => setErr((e as Error).message));
     api.me().then(setMe).catch(() => {});
   }, []);
