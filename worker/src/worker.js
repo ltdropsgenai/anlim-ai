@@ -274,6 +274,16 @@ async function motionSource(g, shot, maxFps = 0) {
 // replaces the clip's main person. Both providers' safety checkers are on.
 const isReplace = (shot) => shot?.model_kind === "replace";
 const AI_LABEL_FONT = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "assets", "fonts", "SpaceGrotesk-SemiBold.ttf");
+export async function aiLabelFilter(video) {
+  let h = 720;
+  try {
+    const { stdout } = await run("ffprobe", ["-v", "error", ...SAFE_VIDEO_IN, "-select_streams", "v:0", "-show_entries", "stream=height", "-of", "csv=p=0", video]);
+    h = parseInt(String(stdout).trim(), 10) || 720;
+  } catch { /* keep 720 */ }
+  const size = Math.max(14, Math.round(h * 0.026)), pad = Math.max(4, Math.round(h * 0.008)), low = Math.round(h * 0.04);
+  return `drawtext=fontfile='${AI_LABEL_FONT}':text='AI-edited · anlim.ai':fontcolor=white@0.92:fontsize=${size}:` +
+         `box=1:boxcolor=black@0.45:boxborderw=${pad}:x=w*0.025:y=h-th-${low}`;
+}
 const replaceWho = (shot) => String(shot.action || "").replace(/^Replace: /, "") || "the main person";
 function replaceInput(shot, videoUrl, refUrl) {
   if (/^minimax\//.test(shot.endpoint))
@@ -375,9 +385,10 @@ async function stepRunning(g) {
   if (isMotion(g) && isReplace(shot)) {
     // Replace a person (2026-11-27, safety 4): a visible "AI-edited" label in the picture for the whole clip, on every
     // account, so the result is not passed off as the original footage. Bottom left, about 2.6 % of the height.
+    // The size is worked out here in whole pixels: the ffmpeg on Fly refuses expressions for boxborderw (first live
+    // run, gen 84dc969e: "Undefined constant or missing '(' in 'h*0.008'"), though newer builds take them.
     await run("ffmpeg", ["-y", "-v", "error", ...SAFE_VIDEO_IN, "-i", raw, "-map", "0:v:0", "-map", "0:a?",
-      "-vf", `drawtext=fontfile='${AI_LABEL_FONT}':text='AI-edited · anlim.ai':fontcolor=white@0.92:fontsize=h*0.026:` +
-             "box=1:boxcolor=black@0.45:boxborderw=h*0.008:x=w*0.025:y=h-th-h*0.04",
+      "-vf", await aiLabelFilter(raw),
       "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", clip],
       { maxBuffer: 1 << 20 });
   } else if (isMotion(g)) {      // motion transfer keeps the source clip's own sound (the creator's audio)
