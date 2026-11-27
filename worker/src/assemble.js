@@ -86,14 +86,19 @@ function conform(format) {
 // sty (2026-11-23): the cut's edit style and the changes into and out of this shot ({ s, kIn, kOut }), or null. Its
 // filters come after the picture is in place and before the words, so the words stay sharp through a transition.
 // shotFx (2026-11-27, fx.js): the shot's title and stickers, timed in the cut like the words and drawn with them.
-async function part(src, dest, format, frames, fades, skip = 0, _unused = false, speed = 1, words = [], srcSize = null, sty = null, shotFx = null) {
+// pieces (2026-11-27, two-shot transitions: dissolve, morph): { head, tail } frames. The shot is rendered tail frames
+// longer than its place in the cut (the clip's own continuation, or its last frame held), and written as three files:
+// dest (the frames the cut shows on their own, [head, frames - tail)), dest_head ([0, head): what the joining part into
+// this shot fades or morphs to) and dest_tail ([frames - tail, frames + tail): what the joining part out of it starts
+// from). Returns the main file's frame count.
+async function part(src, dest, format, frames, fades, skip = 0, _unused = false, speed = 1, words = [], srcSize = null, sty = null, shotFx = null, pieces = null) {
   const t = frames / FPS;
   const fx = [];
   if (words.length) fx.push(...await wordFilters(words, path.dirname(dest), path.basename(dest, ".mp4"), ...SIZES[format], picRect(format, srcSize)));
   if (shotFx) fx.push(...await fxm.overlays(shotFx, path.dirname(dest), path.basename(dest, ".mp4"), ...SIZES[format], picRect(format, srcSize)));
   if (fades.in) fx.push(`fade=t=in:st=0:d=${FADE_IN}`);
   if (fades.out) fx.push(`fade=t=out:st=${(t - FADE_OUT).toFixed(3)}:d=${FADE_OUT}`);
-  let fc = (sty?.s ? conform(format) + "[sty0];" + style.shotGraph("sty0", ...SIZES[format], frames, sty.s, sty.kIn, sty.kOut, "s", sty.curves || null) : conform(format)) +
+  let fc = (sty?.s ? conform(format) + "[sty0];" + style.shotGraph("sty0", ...SIZES[format], frames, sty.s, sty.kIn, sty.kOut, "s", sty.curves || null, sty.leak || null) : conform(format)) +
            (fx.length ? "," + fx.join(",") : "");
   fc += ",format=yuv420p[v]";
   const sp = speed && Math.abs(speed - 1) > 0.001 ? `setpts=PTS/${speed.toFixed(4)},` +
@@ -102,10 +107,66 @@ async function part(src, dest, format, frames, fades, skip = 0, _unused = false,
   if (skip > 0 || sp || hold) fc = fc.replace(`fps=${FPS},`, `fps=${FPS},` + (skip > 0 ? `trim=start_frame=${skip},setpts=PTS-STARTPTS,` : "") + sp +
     (hold ? `tpad=stop_mode=clone:stop=${hold},` : ""));
   const inputs = ["-i", src];
-  await ff([...inputs, "-filter_complex", fc, "-map", "[v]", "-frames:v", String(frames), "-an", "-c:v", "libx264",
-            "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", String(FPS), dest]);
+  const head = pieces?.head || 0, tail = pieces?.tail || 0;
+  if (!head && !tail) {
+    await ff([...inputs, "-filter_complex", fc, "-map", "[v]", "-frames:v", String(frames), "-an", "-c:v", "libx264",
+              "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", String(FPS), dest]);
+    const got = await probe(dest);
+    if (got.frames !== frames) throw new Error(`part ${path.basename(dest)} has ${got.frames} frames, expected ${frames}`);
+    return frames;
+  }
+  // one render, split three ways (each piece starts at time 0 so it joins and mixes cleanly)
+  const outs = [["m", dest, head, frames - tail]];
+  // (the last shot with end cards renders to p..._pre.mp4 first; its pieces keep the plain p... name)
+  if (head) outs.push(["h", dest.replace(/(_pre)?\.mp4$/, "_head.mp4"), 0, head]);
+  if (tail) outs.push(["t", dest.replace(/(_pre)?\.mp4$/, "_tail.mp4"), frames - tail, frames + tail]);
+  fc = fc.replace(/\[v\]$/, `,trim=end_frame=${frames + tail},split=${outs.length}${outs.map(([k]) => `[x${k}]`).join("")}`) + ";" +
+       outs.map(([k, , a, b]) => `[x${k}]trim=start_frame=${a}:end_frame=${b},setpts=PTS-STARTPTS[o${k}]`).join(";");
+  const args = [...inputs, "-filter_complex", fc];
+  for (const [k, file, a, b] of outs) args.push("-map", `[o${k}]`, "-frames:v", String(b - a), "-an", "-c:v", "libx264", "-preset", "veryfast",
+    "-crf", k === "m" ? "18" : "14", "-pix_fmt", "yuv420p", "-r", String(FPS), file);
+  await ff(args);
+  for (const [, file, a, b] of outs) {
+    const got = await probe(file);
+    if (got.frames !== b - a) throw new Error(`part ${path.basename(file)} has ${got.frames} frames, expected ${b - a}`);
+  }
+  return frames - head - tail;
+}
+
+// 2026-11-27: the joining part of a two-shot transition: 2 x h frames centred on the change. The shot going out shows
+// its own frames running on past the change (its _tail); the shot coming in shows its first frame held, then its first
+// h frames (its _head), so the cut keeps every frame where it was and the sound stays in sync. dissolve: a cross-fade
+// (xfade, in ffmpeg since 4.3); morph: morph.py's face warp and noise-wave reveal between the two, frame by frame.
+const MORPH = path.join(path.dirname(new URL(import.meta.url).pathname), "morph.py");
+async function joinPart(kind, aTail, bHead, dest, h, notes, label) {
+  const n = 2 * h;
+  const bFull = dest.replace(/\.mp4$/, "_b.mp4");
+  await ff(["-i", bHead, "-vf", `tpad=start=${h}:start_mode=clone,format=yuv420p`, "-frames:v", String(n), "-an", "-c:v", "libx264",
+            "-preset", "veryfast", "-crf", "14", "-pix_fmt", "yuv420p", "-r", String(FPS), bFull]);
+  if (kind === "morph") {
+    try {
+      const { stdout } = await exec("python3", ["-I", MORPH, aTail, bFull, dest, "--video", "--fps", String(FPS), "--glow", "0.35"],
+        { maxBuffer: 1 << 20, timeout: 5 * 60_000 });
+      const r = JSON.parse(stdout.trim().split("\n").pop());
+      if (!r.warp) notes.push(`${label}: the morph is the reveal wave only (${r.why || "no face on both sides"}).`);
+    } catch (e) {
+      notes.push(`${label}: the morph could not be made (${String(e.message || e).split("\n")[0].slice(0, 120)}); a dissolve is used.`);
+      kind = "dissolve";
+    }
+  }
+  if (kind === "dissolve") {
+    await ff(["-i", aTail, "-i", bFull, "-filter_complex", `[0:v]settb=1/${FPS},setpts=N[a];[1:v]settb=1/${FPS},setpts=N[b];` +
+              `[a][b]xfade=transition=fade:duration=${(n / FPS).toFixed(4)}:offset=0,format=yuv420p[v]`,
+              "-map", "[v]", "-frames:v", String(n), "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", String(FPS), dest]);
+  } else {
+    // morph.py writes its own H.264; make it match the other parts so the concat can copy it
+    const raw = dest.replace(/\.mp4$/, "_raw.mp4");
+    await fs.rename(dest, raw);
+    await ff(["-i", raw, "-vf", "format=yuv420p", "-frames:v", String(n), "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+              "-pix_fmt", "yuv420p", "-r", String(FPS), dest]);
+  }
   const got = await probe(dest);
-  if (got.frames !== frames) throw new Error(`part ${path.basename(dest)} has ${got.frames} frames, expected ${frames}`);
+  if (got.frames !== n) throw new Error(`the ${kind} into ${label.toLowerCase()} has ${got.frames} frames, expected ${n}`);
 }
 
 const ASSETS = path.dirname(MARK);
@@ -471,7 +532,7 @@ async function renew(a) {
   if (!r.length) throw Object.assign(new Error("the cut's lease was lost (claimed again or cancelled)"), { leaseLost: true });
 }
 
-async function build(a) {
+export async function build(a) {   // exported for the local cut tests (2026-11-27)
   const dir = path.join(config.workDir, "cuts", a.id);
   await fs.mkdir(dir, { recursive: true });
   const opts = a.options || {}, notes = [];
@@ -515,7 +576,6 @@ async function build(a) {
     plan.push({ it, src, p, keep, from, speed, out: moved + held, hold: held, moved, sfx });
   }
   const sty = style.normalize(opts.style);
-  const changes = sty ? style.kinds(plan.length, sty.transitions) : [];
   // 2026-11-24 (match this look): the creator's picture, read once; each shot's curves are made from its own clip below
   let lookRef = null;
   if (sty?.look_ref) {
@@ -545,6 +605,66 @@ async function build(a) {
       if (synced) notes.push(`Edit style: ${synced} shot change${synced > 1 ? "s" : ""} moved to land on a beat of the music (up to 0.33 s earlier${r.held ? `, or up to 0.25 s later with the last frame held` : ""}).`);
     } catch (e) { notes.push(`Edit style: the music's beats could not be found (${String(e.message || e).slice(0, 120)}); the shots change where they end.`); }
   }
+  // 2026-11-27 (Buzzy ad): the narration's words, timed in the cut, for word_sync and for "clean"'s section changes. The
+  // timing is the one the captions use (ElevenLabs forced alignment, kept on the take); it is only asked for here when
+  // captions are on (the same request, made once per take), so word_sync never spends anything on its own.
+  let narWords = null;
+  if (sty && opts.voice !== false && opts.narration?.path && plan.length > 1 && (sty.word_sync || sty.transitions === "clean")) {
+    try {
+      const src = path.join(dir, "narration_words" + (path.extname(opts.narration.path) || ".mp3"));
+      await storage.download(opts.narration.path, src);
+      const w = await captions.takeWords(a.owner, opts.narration.path, src, notes, { cachedOnly: !opts.captions });
+      const at = Math.max(0, Number(opts.narration.at_s) || 0);
+      if (w?.length) narWords = w.map((x) => ({ ...x, start: x.start + at, end: x.end + at }));
+      else if (!opts.captions) notes.push("Edit style: the narration's words are not timed yet, so the changes stay where they are. Make one cut with captions on and later cuts change on the words.");
+    } catch (e) { notes.push(`Edit style: the narration's words could not be read (${String(e.message || e).slice(0, 120)}).`); }
+  }
+  let wordMoved = 0;
+  if (sty?.word_sync && narWords) {
+    const r = style.wordSnap(plan.map((x) => x.out), narWords, FPS);
+    r.lens.forEach((n, i) => {
+      const x = plan[i];
+      if (n === x.out) return;
+      // a shot that grows shows more of its clip; past the clip's end its last frame is held
+      const avail = Math.round((x.p.frames - x.from) / x.speed);
+      x.out = n; x.hold = Math.max(x.hold || 0, n - avail);
+    });
+    wordMoved = r.moved;
+    if (r.moved) notes.push(`Edit style: ${r.moved} shot change${r.moved > 1 ? "s" : ""} moved to land just before a spoken word (at most a third of a second; the cut keeps its length).`);
+  }
+  // the kind of each change, now that the changes are where they will be
+  let sections = null;
+  if (sty?.transitions === "clean") {
+    let at = 0;
+    const times = plan.slice(0, -1).map((x) => (at += x.out) / FPS);
+    sections = style.sectionChanges(narWords, times);
+  }
+  const changes = sty ? style.kinds(plan.length, sty.transitions, sections) : [];
+  if (sty?.transitions === "clean") {
+    const n = changes.filter((k) => k === "leak").length;
+    notes.push(`Edit style (clean): hard cuts, with a light leak at ${n} change${n === 1 ? "" : "s"}` +
+      (sections ? " where the narration starts a new sentence or pauses." : ` (every ${3}rd; with a timed narration, where its sentences turn).`));
+  }
+  // two-shot changes need room on both sides: each shot keeps at least 6 frames of its own
+  const half = changes.map((k) => (style.TWO_SHOT[k] || 0) / 2);
+  for (let i = 0; i < changes.length; i++) {
+    if (!half[i]) continue;
+    const roomA = plan[i].out - (half[i - 1] || 0) - half[i], roomB = plan[i + 1].out - half[i] - (half[i + 1] || 0);
+    if (roomA < 6 || roomB < 6) {
+      notes.push(`Edit style: the ${changes[i]} into shot ${plan[i + 1].it.ord} is a plain cut (a shot on one side is too short for it).`);
+      changes[i] = "cut"; half[i] = 0;
+    }
+  }
+  // the light leak's frames, once per direction used (the directions take turns from one leak to the next)
+  const leakDir = [], leakSets = {};
+  let leaks = 0;
+  for (let i = 0; i < changes.length; i++) if (changes[i] === "leak") leakDir[i] = leaks++;
+  if (leaks) {
+    try {
+      for (const d of new Set(leakDir.filter((x) => x !== undefined).map((x) => x % 4))) leakSets[d] = await style.leakFrames(dir, ...SIZES[a.format], d);
+    } catch (e) { notes.push(`Edit style: the light leak could not be made (${String(e.message || e).slice(0, 120)}); those changes are plain cuts.`); }
+  }
+  const leakAt = (i) => (changes[i] === "leak" ? leakSets[leakDir[i] % 4] : null) || null;
   for (let i = 0; i < plan.length; i++) {
     const { it, src, p, keep, from, speed, out, hold = 0, moved, sfx } = plan[i];
     const first = i === 0, last = i === plan.length - 1;
@@ -558,34 +678,38 @@ async function build(a) {
     await renew(a);                                                // slowed shots take minutes each: keep the lease
     const words = Array.isArray(it.words) ? it.words : [];
     // without an edit style the hold still goes in (part() reads it from here)
-    const look = sty ? { s: sty, kIn: first ? null : changes[i - 1], kOut: last ? null : changes[i], hold } : (hold ? { s: null, hold } : null);
+    const look = sty ? { s: sty, kIn: first ? null : changes[i - 1], kOut: last ? null : changes[i], hold,
+                         leak: { in: first ? null : leakAt(i - 1)?.in, out: last ? null : leakAt(i)?.out } } : (hold ? { s: null, hold } : null);
+    // two-shot changes: this shot's own frames run into the joining parts on either side
+    const pieces = sty && ((!first && half[i - 1]) || (!last && half[i])) ? { head: first ? 0 : half[i - 1], tail: last ? 0 : half[i] } : null;
+    let own = out;
     if (look && lookRef) {
       try { look.curves = await style.matchCurves(lookRef, src, p.frames); }
       catch (e) { notes.push(`Edit style: shot ${it.ord} keeps the default grade (${String(e.message || e).slice(0, 100)}).`); }
     }
     try {
-      await part(src, cardsHere ? dest.replace(/\.mp4$/, "_pre.mp4") : dest, a.format, out, cardsHere ? { ...fades, out: false } : fades,
-                 from, false, speed, words, { w: p.w, h: p.h }, look, sfx);
+      own = await part(src, cardsHere ? dest.replace(/\.mp4$/, "_pre.mp4") : dest, a.format, out, cardsHere ? { ...fades, out: false } : fades,
+                 from, false, speed, words, { w: p.w, h: p.h }, look, sfx, pieces);
     } catch (e) {
       if (!look?.s) throw e;
       // the style is a finish: a shot it fails on goes in without it rather than failing the cut
       notes.push(`Edit style: shot ${it.ord} is in the cut without the style (${String(e.message || e).split("\n")[0].slice(0, 160)}).`);
-      await part(src, cardsHere ? dest.replace(/\.mp4$/, "_pre.mp4") : dest, a.format, out, cardsHere ? { ...fades, out: false } : fades,
-                 from, false, speed, words, { w: p.w, h: p.h }, hold ? { s: null, hold } : null, sfx);
+      own = await part(src, cardsHere ? dest.replace(/\.mp4$/, "_pre.mp4") : dest, a.format, out, cardsHere ? { ...fades, out: false } : fades,
+                 from, false, speed, words, { w: p.w, h: p.h }, hold ? { s: null, hold } : null, sfx, pieces);
     }
     if (cardsHere) {
       const pre = dest.replace(/\.mp4$/, "_pre.mp4");
       try {
-        const got = await endCards(pre, dest, a.format, out, fades.out);
+        const got = await endCards(pre, dest, a.format, own, fades.out);
         notes.push(`End cards over shot ${it.ord}: ${got.join("; ")}.`);
       } catch (e) {
         // the cut goes on without them rather than failing; the shot keeps its fade-out
         notes.push(`End cards: left out (${String(e.message || e).split("\n")[0].slice(0, 140)}).`);
-        await ff(["-i", pre, "-vf", `${fades.out ? `fade=t=out:st=${(out / FPS - FADE_OUT).toFixed(3)}:d=${FADE_OUT},` : ""}format=yuv420p`,
-                  "-frames:v", String(out), "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", String(FPS), dest]);
+        await ff(["-i", pre, "-vf", `${fades.out ? `fade=t=out:st=${(own / FPS - FADE_OUT).toFixed(3)}:d=${FADE_OUT},` : ""}format=yuv420p`,
+                  "-frames:v", String(own), "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", String(FPS), dest]);
       }
       const got = await probe(dest);
-      if (got.frames !== out) throw new Error(`the last shot with its end cards has ${got.frames} frames, expected ${out}`);
+      if (got.frames !== own) throw new Error(`the last shot with its end cards has ${got.frames} frames, expected ${own}`);
     }
     if ((it.words || []).length) notes.push(`Shot ${it.ord}: ${it.words.length} word${it.words.length > 1 ? "s" : ""} drawn over it.`);
     if (sfx?.title || sfx?.stickers) notes.push(`Shot ${it.ord}: ${[sfx.title ? `the title "${sfx.title.text}"` : null,
@@ -597,6 +721,20 @@ async function build(a) {
     starts.push(frames / FPS); lens.push(out / FPS);
     frames += out;
     if (fades.out) quiet.push([frames / FPS - FADE_OUT, frames / FPS]);
+    // the joining part into this shot goes between the previous shot's own frames and this one's
+    if (!first && half[i - 1]) {
+      const prev = path.join(dir, `p${String(i - 1).padStart(3, "0")}.mp4`), join = path.join(dir, `j${String(i - 1).padStart(3, "0")}.mp4`);
+      try {
+        await joinPart(changes[i - 1], prev.replace(/\.mp4$/, "_tail.mp4"), dest.replace(/\.mp4$/, "_head.mp4"), join, half[i - 1], notes, `Shot ${it.ord}`);
+      } catch (e) {
+        // the change still has to fill its frames: the two sides as they are (a cut in the middle of the join)
+        notes.push(`Edit style: the ${changes[i - 1]} into shot ${it.ord} is a plain cut (${String(e.message || e).split("\n")[0].slice(0, 120)}).`);
+        await ff(["-i", prev.replace(/\.mp4$/, "_tail.mp4"), "-i", dest.replace(/\.mp4$/, "_head.mp4"), "-filter_complex",
+                  `[0:v]trim=end_frame=${half[i - 1]},setpts=PTS-STARTPTS[a];[a][1:v]concat=n=2:v=1:a=0,format=yuv420p[v]`, "-map", "[v]",
+                  "-frames:v", String(2 * half[i - 1]), "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", String(FPS), join]);
+      }
+      parts.push(join);
+    }
     parts.push(dest);
   }
   const list = path.join(dir, "list.txt");
@@ -667,7 +805,7 @@ async function build(a) {
                    music: !opts.music_path ? null : /\/audio\/music\//.test(opts.music_path) ? "score" : "track", fps: FPS, size: SIZES[a.format],
                    captions: cc,
                    style: sty ? { preset: sty.preset, changes: changes.reduce((m, k) => ({ ...m, [k]: (m[k] || 0) + 1 }), {}),
-                                  on_beat: synced, hits: sound.hits ? hitCount : 0, grade: sty.grade, rain: sty.rain, drops: !!sty._drops, look_matched: !!lookRef } : null };
+                                  on_beat: synced, on_words: wordMoved, hits: sound.hits ? hitCount : 0, grade: sty.grade, rain: sty.rain, drops: !!sty._drops, look_matched: !!lookRef } : null };
   return { final, total, report, dir };
 }
 

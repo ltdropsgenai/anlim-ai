@@ -12,10 +12,12 @@ const XI = "https://api.elevenlabs.io";
 export const spokenText = (t) => String(t || "").replace(/\[[^\]]*\]/g, " ").replace(/\s+/g, " ").trim();
 
 /** Words of one voiceover take: [{text, start, end}] in the take's own seconds, or null with the reason in notes. */
-export async function takeWords(owner, outputPath, localFile, notes) {
+// cachedOnly (2026-11-27, the edit style's word_sync): only the words already kept on the take; never asks ElevenLabs.
+export async function takeWords(owner, outputPath, localFile, notes, { cachedOnly = false } = {}) {
   const [row] = await db.q("select id, input, meta from studio.audio_jobs where owner = $1 and output_path = $2 limit 1", [owner, outputPath]);
   if (!row) return null;
   if (Array.isArray(row.meta?.words)) return row.meta.words;
+  if (cachedOnly) return null;
   const text = spokenText(row.input?.text);
   if (!text) return null;
   const [k] = await db.q("select studio.connection_key($1, 'elevenlabs') as k", [owner]);

@@ -26,7 +26,12 @@ import { promisify } from "node:util";
 const exec = promisify(execFile);
 const ff = (args) => exec("ffmpeg", ["-nostdin", "-y", "-v", "error", ...args], { maxBuffer: 256 << 20 });
 
-export const TRANSITIONS = ["mixed", "flash", "whip", "zoom", "spin", "glitch", "punch", "cut"];
+// 2026-11-27 (Buzzy ad analysis, claude/anlim-backlog-fixes-2026-11-27.md): "leak" (a warm light-leak burn at the change),
+// "clean" (hard cuts, a leak only where the story turns), and two transitions that need both shots at once: "dissolve" and
+// "morph" (rendered as a small part of their own between the two shots; assemble.js, TWO_SHOT).
+export const TRANSITIONS = ["mixed", "flash", "whip", "zoom", "spin", "glitch", "punch", "leak", "clean", "dissolve", "morph", "cut"];
+// changes made from both shots: frames the joining part takes from each side of the change (half before, half after it)
+export const TWO_SHOT = { dissolve: 12, morph: 18 };
 // the reference's 16 shot changes: 3 flashes, 3 whips (one sideways, one zooming, one spinning), 1 glitch, 1 punch, 6-8
 // straight cuts; "mixed" keeps that feel. 2026-11-24: "zoom" and "spin" added (the reference's whips at 23 s and 26.6 s).
 // 2026-11-24 (Londi, first end-to-end story cut): "I didn't see the camera swings". A 5-shot cut has 4 changes and the
@@ -45,19 +50,74 @@ export function normalize(style) {
   return { preset: "story", transitions: TRANSITIONS.includes(style.transitions) ? style.transitions : "mixed",
            grade: b(style.grade, true), push: b(style.push, true), rain: b(style.rain, false), hits: b(style.hits, true),
            beat_sync: b(style.beat_sync, true), title: clean(style.title, 60), handle: clean(style.handle, 30),
-           drops: b(style.drops, false), look_ref: ref };
+           drops: b(style.drops, false), look_ref: ref, word_sync: b(style.word_sync, true) };
 }
 
-/** The kind of each shot change (n shots, n-1 changes). */
-export function kinds(n, mode) {
-  return Array.from({ length: Math.max(0, n - 1) }, (_, i) => (mode === "mixed" ? MIXED[i % MIXED.length] : mode));
+/** The kind of each shot change (n shots, n-1 changes). sections (for "clean"): indexes of the changes where the story
+ *  turns (a new sentence after a pause in the narration); without them every CLEAN_EVERY-th change gets the leak. */
+const CLEAN_EVERY = 3;
+export function kinds(n, mode, sections = null) {
+  return Array.from({ length: Math.max(0, n - 1) }, (_, i) => {
+    if (mode === "mixed") return MIXED[i % MIXED.length];
+    if (mode === "clean") return (sections ? sections.includes(i) : (i + 1) % CLEAN_EVERY === 0) ? "leak" : "cut";
+    return mode;
+  });
+}
+
+/**
+ * "clean": the changes that land where the speech turns: a sentence ends (with a breath of 0.3 s or more after it) or a
+ * pause of 0.6 s or more spans the change. The strongest turns win, with at least two plain cuts between two leaks and
+ * at most one leak for every three changes, so the cut stays clean. words: [{text, start, end}] in the cut's seconds;
+ * changes: their times. Returns the indexes, or null when there are no words to go by.
+ */
+export function sectionChanges(words, changes) {
+  if (!words?.length) return null;
+  const w = [...words].sort((a, b) => a.start - b.start), cand = [];
+  changes.forEach((t, i) => {
+    const bi = w.findLastIndex((x) => x.end <= t + 0.1), before = w[bi], after = w[bi + 1];
+    if (!before || before.end < t - 0.8) return;                       // the change is not near the end of a word
+    const gap = (after ? after.start : Infinity) - before.end;
+    const sentence = /[.!?…]["»”)]?$/.test(before.text) && gap >= 0.3;
+    if ((sentence || gap >= 0.6) && (!after || after.start >= t - 0.1)) cand.push({ i, score: Math.min(gap, 3) + (sentence ? 1 : 0) });
+  });
+  const most = Math.max(1, Math.ceil(changes.length / 3)), out = [];
+  for (const c of cand.sort((a, b) => b.score - a.score)) {
+    if (out.length >= most) break;
+    if (out.every((j) => Math.abs(j - c.i) >= 3)) out.push(c.i);
+  }
+  return out.sort((a, b) => a - b);
+}
+
+/**
+ * word_sync (2026-11-27, Buzzy ad: its shots change 2 to 5 frames before a spoken word starts): each shot change moves
+ * to land `lead` frames before the nearest word start, if that is at most maxMove frames away. The change between shots
+ * i and i+1 moves; nothing else does, so the cut keeps its length and the narration stays where it was. A change already
+ * 2 to 5 frames before a word stays. Every shot keeps at least minF frames. lens: frames per shot; words: cut seconds.
+ */
+export function wordSnap(lens, words, fps = 24, { lead = 3, maxMove = 8, minF = 24 } = {}) {
+  const out = [...lens], starts = (words || []).map((w) => Math.round(w.start * fps)).sort((a, b) => a - b);
+  let at = 0, moved = 0;
+  for (let i = 0; i < out.length - 1; i++) {
+    const b = at + out[i], next = b + out[i + 1];
+    if (!starts.some((s) => s - b >= 2 && s - b <= 5)) {
+      let best = null;
+      for (const s of starts) {
+        const to = s - lead;
+        if (Math.abs(to - b) > maxMove || to - at < minF || next - to < minF) continue;
+        if (best === null || Math.abs(to - b) < Math.abs(best - b)) best = to;
+      }
+      if (best !== null && best !== b) { out[i] = best - at; out[i + 1] = next - best; moved++; }
+    }
+    at += out[i];
+  }
+  return { lens: out, moved };
 }
 
 /**
  * The style's part of one shot's filter graph. Starts at [inLabel], ends unlabeled so assemble.js can chain on (words,
  * fades). W x H: the cut's size; frames: the shot's length in the cut; kIn / kOut: the change into and out of this shot.
  */
-export function shotGraph(inLabel, W, H, frames, s, kIn, kOut, tag = "s", curves = null) {
+export function shotGraph(inLabel, W, H, frames, s, kIn, kOut, tag = "s", curves = null, leak = null) {
   const L = (x) => `${tag}${x}`, f = [];
   let cur = `[${inLabel}]`, chain = [];
   // a matched look (matchCurves) takes the place of the default grade; the vignette stays with the grade setting
@@ -138,6 +198,28 @@ export function shotGraph(inLabel, W, H, frames, s, kIn, kOut, tag = "s", curves
   // the 2 frames each side of the change move fastest: a heavy smear there, which also hides the wrap seam of the slide
   const wh2 = [kIn === "whip" ? "lt(n,2)" : null, kOut === "whip" ? `gte(n,${frames - 2})` : null].filter(Boolean);
   if (wh2.length) chain.push(`avgblur=sizeX=${Math.round(W / 10)}:sizeY=1:enable='${wh2.length > 1 ? `bitor(${wh2.join(",")})` : wh2[0]}'`);
+  // leak (2026-11-27): the warm light-leak burn, drawn over each side of the change (leakFrames): the last LEAK_OUT
+  // frames of the shot going out burn up to near-white, the first LEAK_IN frames of the next come out of it through a
+  // red-orange glow at the edges. The frames are pictures with alpha, laid over only where they belong.
+  const lkOut = kOut === "leak" && leak?.out, lkIn = kIn === "leak" && leak?.in;
+  if (lkOut || lkIn) {
+    f.push(`${cur}${chain.length ? chain.join(",") : "null"}[${L("lk0")}]`);
+    cur = `[${L("lk0")}]`; chain = [];
+    if (lkIn) {
+      f.push(`movie=${leak.in}:f=image2,settb=1/24,setpts=N,format=rgba[${L("lki")}]`);
+      f.push(`${cur}[${L("lki")}]overlay=0:0:eof_action=pass:enable='lt(n,${LEAK_IN})'[${L("lk1")}]`);
+      cur = `[${L("lk1")}]`;
+    }
+    if (lkOut) {
+      const from = Math.max(0, frames - LEAK_OUT);
+            // (image2 reads at 25 fps, so the frames are put on the 1/24 time base. They start at the shot's frame "from" by
+      // padding transparent frames in front: a layer that only starts late was sometimes not waited for by overlay and
+      // two of the three frames were missed, tested 2026-11-27)
+      f.push(`movie=${leak.out}:f=image2,settb=1/24,setpts=N,format=rgba,tpad=start=${from}:color=black@0[${L("lko")}]`);
+      f.push(`${cur}[${L("lko")}]overlay=0:0:eof_action=pass:enable='gte(n,${from})'[${L("lk2")}]`);
+      cur = `[${L("lk2")}]`;
+    }
+  }
   // flash: mixes towards a blurred, brighter copy: fully at the change, nothing EDGE frames from it
   const fIn = kIn === "flash", fOut = kOut === "flash";
   if (fIn || fOut) {
@@ -198,6 +280,69 @@ export async function dropMaps(dir, W, H, seed = 7) {
   await fs.writeFile(raw, shade);
   await ff(["-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${W}x${H}`, "-i", raw, "-frames:v", "1", out.shade]);
   return out;
+}
+
+// ---- the light leak (2026-11-27, from the Buzzy ad at 12.5 s, measured frame by frame: 2 frames of an orange band
+// sweeping up from the bottom edge, 2 frames washed to pale yellow-white across the change, then 4 frames in which the
+// next shot clears from the middle out while a red-orange glow burns off at the edges). Made once per cut and direction
+// at a quarter of the size (the light is soft, so nothing is lost) and scaled up into PNGs with alpha.
+export const LEAK_OUT = 3, LEAK_IN = 5;
+const LEAK_DIRS = ["bottom", "left", "right", "bottomleft"];
+const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const mixc = (c1, c2, t) => c1.map((v, i) => v + (c2[i] - v) * t);
+const WHITE = [255, 247, 226], YELLOW = [255, 214, 120], ORANGE = [255, 128, 28], RED = [214, 34, 8], DARKRED = [120, 10, 4];
+export function leakPixel(k, u, v, r, n) {
+  // k: frame 0..7 (0-2 before the change, 3-7 after); u: 0 at the edge the light comes from, 1 at the far edge;
+  // v: across (0..1); r: distance from the middle (0) to the corners (1); n: soft noise 0..1. Returns [r, g, b, a] 0..1.
+  if (k < LEAK_OUT) {
+    const front = [0.42, 0.95, 1.6][k] + (n - 0.5) * 0.18;             // the band's leading edge, rising
+    const e = sm(0, 0.45, front - u);                                  // 0 at the front, 1 well behind it
+    if (front - u <= 0) return [0, 0, 0, 0];
+    const col = e < 0.5 ? mixc(RED, ORANGE, e * 2) : mixc(ORANGE, WHITE, (e - 0.5) * 2);
+    const a = Math.min(0.96, sm(0, 0.06, front - u) * (0.35 + 0.6 * e) * (k === 2 ? 1.05 : 1));
+    return [...col.map((c) => c / 255), a];
+  }
+  const j = k - LEAK_OUT;                                              // 0: still washed out; 1-4: burning off
+  if (j === 0) return [...mixc(WHITE, YELLOW, 0.35 * r + 0.15 * u).map((c) => c / 255), 0.9 - 0.12 * (1 - r)];
+  const clear = [0, 0.12, 0.42, 0.62, 0.78][j];                          // how far out from the middle the shot shows
+  const edge = r + 0.32 * (1 - u) + (n - 0.5) * 0.14;                  // the side the light came from burns longest
+  const g = sm(clear, clear + 0.38, edge);
+  const amp = [0, 0.86, 0.78, 0.58, 0.3][j];
+  // the first frame out of the wash still holds its yellow-white towards the far side; then orange, red, dark red
+  const col = j === 1 ? mixc(mixc(WHITE, YELLOW, 0.6), ORANGE, Math.min(1, 0.25 + 0.9 * (1 - u))) : j === 2 ? mixc(ORANGE, RED, 0.35 + 0.5 * g)
+    : mixc(RED, DARKRED, Math.min(1, (j - 3) * 0.6 + 0.3 * g));
+  return [...col.map((c) => c / 255), Math.min(0.95, g * amp)];
+}
+export async function leakFrames(dir, W, H, which = 0) {
+  const d = LEAK_DIRS[((which % LEAK_DIRS.length) + LEAK_DIRS.length) % LEAK_DIRS.length];
+  const lw = Math.max(16, Math.round(W / 4)), lh = Math.max(16, Math.round(H / 4));
+  const r0 = rng(31 + which * 7), noise = new Float32Array(lw * lh);
+  // soft noise: a few random values per side, smoothed by bilinear interpolation
+  const gx = 6, gy = 10, grid = Array.from({ length: (gx + 1) * (gy + 1) }, () => r0());
+  for (let y = 0; y < lh; y++) for (let x = 0; x < lw; x++) {
+    const fx = (x / lw) * gx, fy = (y / lh) * gy, ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy;
+    const at = (a, b) => grid[Math.min(gy, b) * (gx + 1) + Math.min(gx, a)];
+    noise[y * lw + x] = (at(ix, iy) * (1 - tx) + at(ix + 1, iy) * tx) * (1 - ty) + (at(ix, iy + 1) * (1 - tx) + at(ix + 1, iy + 1) * tx) * ty;
+  }
+  const files = { out: path.join(dir, `leak_${d}_out_%02d.png`), in: path.join(dir, `leak_${d}_in_%02d.png`) };
+  for (const [side, ks] of [["out", [0, 1, 2]], ["in", [3, 4, 5, 6, 7]]]) {
+    const raw = Buffer.alloc(lw * lh * 4 * ks.length);
+    ks.forEach((k, fi) => {
+      for (let y = 0; y < lh; y++) for (let x = 0; x < lw; x++) {
+        const nx = x / (lw - 1), ny = y / (lh - 1);
+        const u = d === "bottom" ? 1 - ny : d === "left" ? nx : d === "right" ? 1 - nx : ((1 - ny) + nx) / 2;
+        const v = d === "bottom" ? nx : ny;
+        const r = Math.min(1, Math.hypot(nx - 0.5, ny - 0.5) / Math.SQRT1_2);
+        const p = leakPixel(k, u, v, r, noise[y * lw + x]), o = (fi * lw * lh + y * lw + x) * 4;
+        for (let c = 0; c < 4; c++) raw[o + c] = Math.round(Math.min(1, Math.max(0, p[c])) * 255);
+      }
+    });
+    const rawFile = path.join(dir, `leak_${d}_${side}.rgba`);
+    await fs.writeFile(rawFile, raw);
+    await ff(["-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${lw}x${lh}`, "-r", "24", "-i", rawFile,
+              "-vf", `scale=${W}:${H}:flags=bicubic,format=rgba`, "-start_number", "0", files[side]]);
+  }
+  return files;
 }
 
 // ---- match this look (2026-11-24): every shot's colours matched to a picture the creator chose. In YUV: the brightness
@@ -344,20 +489,24 @@ const HIT = {
   // glitch: a short digital buzz
   glitch: { lead: 0, src: "aevalsrc='0.5*sgn(sin(2*PI*1400*t))*lt(mod(t,0.06),0.03)*exp(-8*t)':d=0.25:s=48000", af: "highpass=f=300" },
 };
-const HIT_FOR = { flash: "impact", punch: "impact", whip: "whoosh", zoom: "whoosh", spin: "whoosh", glitch: "glitch" };
+// 2026-11-27: a leak gets the whoosh rising into it and the impact on the change (the Buzzy ad's leak has both); a
+// dissolve and a morph get the whoosh only
+const HIT_FOR = { flash: "impact", punch: "impact", whip: "whoosh", zoom: "whoosh", spin: "whoosh", glitch: "glitch",
+                  leak: ["whoosh", "impact"], dissolve: "whoosh", morph: "whoosh" };
+const hitsOf = (kind) => [].concat(HIT_FOR[kind] || []);
 
 /** A track of the cut's length with a hit at each change; null when there is none. changes: [{t, kind}] in seconds. */
 export async function hitsTrack(dir, changes, total) {
-  const use = changes.filter((c) => HIT_FOR[c.kind]);
+  const use = changes.flatMap((c) => hitsOf(c.kind).map((k) => ({ ...c, hit: k })));
   if (!use.length) return null;
   const files = {};
-  for (const k of new Set(use.map((c) => HIT_FOR[c.kind]))) {
+  for (const k of new Set(use.map((c) => c.hit))) {
     files[k] = path.join(dir, `hit_${k}.wav`);
     await ff(["-f", "lavfi", "-i", HIT[k].src, "-af", `${HIT[k].af},aformat=sample_fmts=s16:channel_layouts=stereo`, "-c:a", "pcm_s16le", files[k]]);
   }
   const inputs = [], filters = [];
   for (const c of use) {
-    const k = HIT_FOR[c.kind], at = Math.max(0, c.t - HIT[k].lead);
+    const k = c.hit, at = Math.max(0, c.t - HIT[k].lead);
     inputs.push("-i", files[k]);
     filters.push(`[${inputs.length / 2 - 1}:a]adelay=${Math.round(at * 1000)}:all=1[h${inputs.length / 2 - 1}]`);
   }
