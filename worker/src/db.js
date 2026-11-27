@@ -40,7 +40,12 @@ export async function shotContext(gen) {
             m.resolution, m.usd_per_second, m.kind as model_kind,
             -- 2026-11-23: the shot already has its voiceover, so the clip is made for a lip sync (compile.prompt MOUTHS)
             exists (select 1 from studio.audio_jobs a where a.shot_id = sh.id and a.kind = 'voiceover' and a.status = 'done'
-                     and a.in_cut) as has_voiceover
+                     and a.in_cut) as has_voiceover,
+            -- 2026-11-27: the shots before and after it in the scene, for camera moves that carry across the cut
+            (select jsonb_build_object('camera', p.camera, 'action', p.action) from studio.shots p
+              where p.scene_id = sh.scene_id and p.ord < sh.ord order by p.ord desc limit 1) as prev_shot,
+            (select jsonb_build_object('camera', n.camera, 'action', n.action) from studio.shots n
+              where n.scene_id = sh.scene_id and n.ord > sh.ord order by n.ord limit 1) as next_shot
        from studio.shots sh join studio.scenes sc on sc.id = sh.scene_id join studio.series se on se.id = sc.series_id
        left join studio.locations l on l.id = sc.location_id join studio.models m on m.id = $2
       where sh.id = $1`, [gen.shot_id, gen.model_id]);

@@ -44,7 +44,7 @@ function heightOrder(chars) {
 
 // Bump on every prompt change; the worker prints it at start and saves it with each job (2026-11-12: a worker started
 // before a prompt change rendered 3 clips with the old prompt and nothing showed it).
-export const COMPILER_VERSION = "2026-11-24.1";   // crowd, slow motion, gaze, action camera
+export const COMPILER_VERSION = "2026-11-27.1";   // camera moving through the cut (2026-11-27)
 
 // Actions that move a character across the floor (same idea as frame_check/passthrough_check.MOVES).
 const MOVES = /\b(walk|walks|walking|step|steps|run|runs|running|cross|crosses|goes|go to|moves? to|dances?)\b/i;
@@ -134,6 +134,38 @@ const ENERGETIC = /\b(sprints?|sprinting|dribbles?|dribbling|strikes?|kicks?|kic
 export const actionCameraLine = (shot) => !shot.camera && !describesCamera(shot.action) && ENERGETIC.test(shot.action || "")
   ? "[CAMERA] A moving, cinematic camera that follows the action (tracking alongside, or a fast push-in); not a static view." : null;
 
+// 4. Moving at the cut (2026-11-27, Buzzy ad analysis: its shot changes land while the camera is moving, so one move
+//    carries into the next and the cut hides). Only when the creator named no camera for this shot and its action does
+//    not describe one: if the shot before or after it names a camera direction (its camera field or its action, in
+//    English, Spanish or French; the neighbours are not translated, so this costs nothing), this shot starts or ends
+//    moving the same way. A locked or static neighbour, or none with a direction, adds nothing.
+const DIRS = [
+  ["left", /\b(?:pans?|panning|tracks?|tracking|trucks?|moves?|moving|glides?|slides?|swings?|whips?|dollies|dolly|orbits?|circles?)\s+(?:\w+\s+)?(?:to the )?left\b|\b(?:izquierda|gauche)\b/i],
+  ["right", /\b(?:pans?|panning|tracks?|tracking|trucks?|moves?|moving|glides?|slides?|swings?|whips?|dollies|dolly|orbits?|circles?)\s+(?:\w+\s+)?(?:to the )?right\b|\b(?:derecha|droite)\b/i],
+  ["forward", /\bpush(?:es|ing)?[- ]in\b|\bdolly(?:ing)?[- ]in\b|\bzoom(?:s|ing)?[- ]in\b|\bmoves? (?:in|forward|closer)\b|\bacerc|\bavance|\bse rapproch|\bzoom avant/i],
+  ["back", /\bpull(?:s|ing)?[- ]?(?:back|out)\b|\bdolly(?:ing)?[- ]out\b|\bzoom(?:s|ing)?[- ]out\b|\bmoves? (?:back|away)\b|\baleja|\brecul|\bzoom arri[eè]re/i],
+  ["up", /\btilts? up\b|\bcranes? up\b|\brises?\b|\bpedestal up\b|\bsube\b|\bmonte\b/i],
+  ["down", /\btilts? down\b|\bcranes? down\b|\bdescends?\b|\bpedestal down\b|\bbaja\b|\bdescend\b/i],
+];
+const LOCKED = /lock|static|tripod|still camera|fija|fixe|tr[ií]pode/i;
+export function cameraDir(n) {
+  if (!n) return null;
+  const text = n.camera || (describesCamera(n.action) ? n.action : "");
+  if (!text || LOCKED.test(n.camera || "")) return null;
+  return (DIRS.find(([, re]) => re.test(text)) || [null])[0];
+}
+const DIR_WORDS = { left: "to the left", right: "to the right", forward: "forward (pushing in)", back: "backward (pulling out)",
+                    up: "upward", down: "downward" };
+export function cutMotionLine(shot) {
+  if (shot.camera || describesCamera(shot.action)) return null;
+  const from = cameraDir(shot.prev_shot), to = cameraDir(shot.next_shot);
+  if (!from && !to) return null;
+  return "[CUT] So the edit can cut on movement: " + [
+    from ? `the camera is already moving ${DIR_WORDS[from]} in the first half second, carrying on the previous shot's move, then settles into this shot` : null,
+    to ? `${from ? "and " : "the camera "}drifts ${DIR_WORDS[to]} in the last half second, leading into the next shot's move` : null,
+  ].filter(Boolean).join(" ") + ". Smooth and gentle, never a jump.";
+}
+
 export function prompt(shot, chars) {
   const moving = MOVES.test(shot.action);
   const minimax = /^minimax\//.test(shot.endpoint || "");
@@ -155,6 +187,7 @@ export function prompt(shot, chars) {
     moving && chars.filter((c) => c.kind !== "object").length > 1 ? WATCH_RULE : null,
     WALKING.test(shot.action) ? WALK_END : null,
     camera,
+    minimax && isLocked(shot) ? null : cutMotionLine(shot),
     shot.from_text
       ? `[RULES] ${oneTake(shot)}Only what the action describes appears. ${noText(shot)}No sound.`
       : `[RULES] Start exactly on the given first frame. ${oneTake(shot)}Same characters, proportions and ${lookWords(shot.look)} throughout. ` +
