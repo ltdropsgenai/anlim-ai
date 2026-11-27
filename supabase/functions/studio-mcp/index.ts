@@ -541,8 +541,11 @@ const TOOLS = [
       logo_opacity: { type: "number", minimum: 0, maximum: 1, default: 0.9 },
       // 2026-11-23: the edit style (worker editstyle.js)
       edit_style: { type: "string", enum: ["plain", "story"], default: "plain", description: "plain: the cut as before. story: the moody voiceover-edit look (see above)." },
-      transitions: { type: "string", enum: ["mixed", "flash", "whip", "zoom", "spin", "glitch", "punch", "cut"], default: "mixed",
-        description: "story only: the change between shots. mixed rotates them; flash blurs to a bright haze and back; whip smears sideways; glitch splits the colours for 3 frames; punch starts the next shot zoomed in; cut is a plain cut." },
+      transitions: { type: "string", enum: ["mixed", "flash", "whip", "zoom", "spin", "glitch", "punch", "leak", "clean", "dissolve", "morph", "cut"], default: "mixed",
+        description: "story only: the change between shots. mixed rotates them; flash blurs to a bright haze and back; whip smears sideways; glitch splits the colours for 3 frames; punch starts the next shot zoomed in; " +
+          "leak burns through a warm orange-to-white light leak; clean is hard cuts with a light leak only where the narration starts a new sentence (or every third change); " +
+          "dissolve cross-fades the two shots over half a second; morph turns one shot into the next (faces warp into each other when they are of a like size and place); cut is a plain cut." },
+      word_sync: { type: "boolean", default: true, description: "story only: with a narration whose words are timed (captions on once), each shot change moves up to a third of a second to land just before a spoken word; the cut keeps its length" },
       rain: { type: "boolean", default: false, description: "story only: falling rain streaks over every shot" },
       drops: { type: "boolean", default: false, description: "story only: water drops on the lens, bending the picture behind them" },
       look_upload_id: { type: "string", description: "story only: an uploaded picture (list_uploads) whose colours every shot takes on, in place of the teal grade" },
@@ -1394,7 +1397,7 @@ async function callTool(uid: string, name: string, a: Args) {
                      music_path: own ? own.path : score ? `${uid}/audio/music/${score.id}.mp3` : null,
                      style: a.edit_style === "story" ? { preset: "story", transitions: a.transitions ?? "mixed", rain: a.rain === true,
                        drops: a.drops === true, look_ref: lookRef,
-                       hits: a.hits !== false, beat_sync: a.beat_sync !== false, grade: a.grade !== false,
+                       hits: a.hits !== false, beat_sync: a.beat_sync !== false, word_sync: a.word_sync !== false, grade: a.grade !== false,
                        title: typeof a.title === "string" ? a.title.slice(0, 60) : null, handle: typeof a.handle === "string" ? a.handle.slice(0, 30) : null } : null };
       const [r] = await asUser(uid, (tx) => tx`select studio.request_assembly(${scene}, ${format}, ${tx.json(opts)}) as id`);
       return text(`The cut is being made (${format}${own ? `, with the creator's song${own.seconds ? ` (${own.seconds.toFixed(1)} s)` : ""}` : ""}${logo ? `, logo ${String(logo.corner).replace("_", " ")}` : ""}${opts.style ? ", story edit style" : ""}${opts.end_card ? ", with the anlim.ai end cards over the last shot" : ""}); ` +

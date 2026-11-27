@@ -1449,5 +1449,16 @@
 "Show your real view count: made-up numbers in an ad can mislead viewers and break advertising rules.": "Muestra tu número real de vistas: las cifras inventadas en un anuncio pueden engañar al público e incumplir las normas de publicidad.",
 "Language of the ad": "Idioma del anuncio",
 "Every script is written in English, Spanish and French. The language you pick here is the one shown and the one the project gets.": "Cada guion se escribe en inglés, español y francés. El idioma que elijas aquí es el que se muestra y el que recibe el proyecto.",
-"Make script {v0} a project in {v1}": "Convertir el guion {v0} en proyecto en {v1}"
+"Make script {v0} a project in {v1}": "Convertir el guion {v0} en proyecto en {v1}",
+"A mix of flash, whip, zoom, spin, glitch, punch-in and plain cuts": "Una mezcla de destello, barrido, zoom, giro, glitch, zoom de golpe y cortes simples",
+"Light leak": "Fuga de luz",
+"A warm orange light burns up to white at the change and the next shot comes out of a red glow": "Una luz naranja cálida se quema hasta el blanco en el cambio y el siguiente plano sale de un resplandor rojo",
+"Clean": "Limpio",
+"Hard cuts, with a light leak only where the narration starts a new sentence (or every third change)": "Cortes secos, con una fuga de luz solo donde la narración empieza una frase nueva (o cada tres cambios)",
+"Dissolve": "Fundido",
+"The two shots cross-fade over half a second": "Los dos planos se funden uno en otro durante medio segundo",
+"Morph": "Morph",
+"One shot melts into the next; faces warp into each other when they are a similar size and place": "Un plano se transforma en el siguiente; las caras se deforman una en otra cuando tienen un tamaño y un lugar parecidos",
+"Changes on the words": "Cambios en las palabras",
+"Changes on the words need a narration whose words are timed (make one cut with captions on): each change moves up to a third of a second to land just before a spoken word, and the cut keeps its length.": "Los cambios en las palabras necesitan una narración con las palabras sincronizadas (haz un corte con subtítulos activados): cada cambio se mueve hasta un tercio de segundo para caer justo antes de una palabra dicha, y el corte conserva su duración."
 }

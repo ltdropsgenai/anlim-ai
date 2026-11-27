@@ -26,13 +26,18 @@ const FORMATS: { id: CutFormat; title: string; sub: string }[] = trDeep([
 // over a blurred fill (never cropped). The cut starts on the project's own shape.
 // 2026-11-23: the edit style's transitions, in the words the creator sees
 const TRANSITIONS: { id: EditTransition; title: string; sub: string }[] = trDeep([
-  { id: "mixed", title: "Mixed", sub: "A mix of the ones below, mostly flashes, whips and plain cuts" },
+  { id: "mixed", title: "Mixed", sub: "A mix of flash, whip, zoom, spin, glitch, punch-in and plain cuts" },
   { id: "flash", title: "Flash", sub: "The picture blurs into a bright haze and the next shot comes out of it" },
   { id: "whip", title: "Whip", sub: "A fast sideways smear from one shot into the next" },
   { id: "zoom", title: "Zoom", sub: "The picture rushes forward in a blur and the next shot settles out of it" },
   { id: "spin", title: "Spin", sub: "The picture turns and blurs into the next shot, which turns back into place" },
   { id: "glitch", title: "Glitch", sub: "Three frames of split colours and grain" },
   { id: "punch", title: "Punch-in", sub: "The next shot starts zoomed in and snaps back" },
+  // 2026-11-27 (from the Buzzy ad analysis)
+  { id: "leak", title: "Light leak", sub: "A warm orange light burns up to white at the change and the next shot comes out of a red glow" },
+  { id: "clean", title: "Clean", sub: "Hard cuts, with a light leak only where the narration starts a new sentence (or every third change)" },
+  { id: "dissolve", title: "Dissolve", sub: "The two shots cross-fade over half a second" },
+  { id: "morph", title: "Morph", sub: "One shot melts into the next; faces warp into each other when they are a similar size and place" },
   { id: "cut", title: "Plain cut", sub: "No transition; the grade, push-in and the rest still apply" },
 ], ["title", "sub"]);
 const STATUS: Record<string, string> = trMap({ queued: "Waiting to start", running: "Cutting…", done: "Ready", failed: "Failed" });
@@ -59,6 +64,7 @@ export default function SceneCut() {
   const [lookRef, setLookRef] = useState<{ path: string; name: string; url: string } | null>(null);
   const [hits, setHits] = useState(true);
   const [beats, setBeats] = useState(true);
+  const [wordSync, setWordSync] = useState(true);   // 2026-11-27: changes just before a spoken word
   const [styleTitle, setStyleTitle] = useState("");
   const [handle, setHandle] = useState("");
   const [busy, setBusy] = useState(false);
@@ -92,7 +98,7 @@ export default function SceneCut() {
 
   async function make() {
     setBusy(true); setError(null);
-    const style = story ? { preset: "story" as const, transitions: trans, grade: true, push: true, rain, drops, hits, beat_sync: beats,
+    const style = story ? { preset: "story" as const, transitions: trans, grade: true, push: true, rain, drops, hits, beat_sync: beats, word_sync: wordSync,
                             title: styleTitle.trim() || null, handle: handle.trim() || null, look_ref: lookRef?.path ?? null } : null;
     try { await api.makeCut(scene, format, { fade, end_card: card, music_path: music?.path ?? null, voice: voiceOn, sfx: sfxOn, captions: captionsOn, caption_style: captionStyle, style }); await load(); }
     catch (e) { setError((e as Error).message); }
@@ -161,13 +167,14 @@ export default function SceneCut() {
           </View>
           <Text style={s.sub}>{TRANSITIONS.find((x) => x.id === trans)?.sub}</Text>
           <View style={s.row}>
-            {[{ v: rain, set: setRain, t: tr("Rain") }, { v: drops, set: setDrops, t: tr("Drops on the lens") }, { v: hits, set: setHits, t: tr("Hits under the changes") }, { v: beats, set: setBeats, t: tr("Changes on the beat") }].map((o) => (
+            {[{ v: rain, set: setRain, t: tr("Rain") }, { v: drops, set: setDrops, t: tr("Drops on the lens") }, { v: hits, set: setHits, t: tr("Hits under the changes") }, { v: beats, set: setBeats, t: tr("Changes on the beat") }, { v: wordSync, set: setWordSync, t: tr("Changes on the words") }].map((o) => (
               <Pressable key={o.t} onPress={() => o.set(!o.v)} style={[s.chip, o.v && s.chipOn]} accessibilityRole="checkbox" accessibilityState={{ checked: o.v }}>
                 <Text style={o.v ? { color: c.onAccent } : { color: c.ink }}>{o.t}</Text>
               </Pressable>
             ))}
           </View>
           <Text style={s.sub}>{tr("Hits need music, a voiceover or an effect in the cut. Changes on the beat need music: a shot may end up to a third of a second early, or a quarter of a second late with its last frame held.")}</Text>
+          <Text style={s.sub}>{tr("Changes on the words need a narration whose words are timed (make one cut with captions on): each change moves up to a third of a second to land just before a spoken word, and the cut keeps its length.")}</Text>
           <Text style={{ color: c.ink, fontWeight: "700", marginTop: 10 }}>{tr("Match a look")}</Text>
           <Text style={s.sub}>{tr("Pick a picture whose colours you like (a frame of a video you admire, a photo): every shot takes on its tones and colours, in place of the teal grade.")}</Text>
           {lookRef ? (

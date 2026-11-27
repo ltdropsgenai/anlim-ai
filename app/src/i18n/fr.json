@@ -1449,5 +1449,16 @@
 "Show your real view count: made-up numbers in an ad can mislead viewers and break advertising rules.": "Affichez votre vrai nombre de vues : des chiffres inventés dans une pub peuvent tromper le public et enfreindre les règles de la publicité.",
 "Language of the ad": "Langue de la pub",
 "Every script is written in English, Spanish and French. The language you pick here is the one shown and the one the project gets.": "Chaque script est écrit en anglais, en espagnol et en français. La langue choisie ici est celle affichée et celle que reçoit le projet.",
-"Make script {v0} a project in {v1}": "Faire du script {v0} un projet en {v1}"
+"Make script {v0} a project in {v1}": "Faire du script {v0} un projet en {v1}",
+"A mix of flash, whip, zoom, spin, glitch, punch-in and plain cuts": "Un mélange de flash, filé, zoom, rotation, glitch, zoom choc et coupes franches",
+"Light leak": "Fuite de lumière",
+"A warm orange light burns up to white at the change and the next shot comes out of a red glow": "Une lumière orange chaude brûle jusqu'au blanc au changement et le plan suivant sort d'une lueur rouge",
+"Clean": "Épuré",
+"Hard cuts, with a light leak only where the narration starts a new sentence (or every third change)": "Coupes franches, avec une fuite de lumière seulement là où la narration commence une nouvelle phrase (ou tous les trois changements)",
+"Dissolve": "Fondu enchaîné",
+"The two shots cross-fade over half a second": "Les deux plans se fondent l'un dans l'autre en une demi-seconde",
+"Morph": "Morphing",
+"One shot melts into the next; faces warp into each other when they are a similar size and place": "Un plan se transforme dans le suivant ; les visages se déforment l'un vers l'autre quand ils ont une taille et une place semblables",
+"Changes on the words": "Changements sur les mots",
+"Changes on the words need a narration whose words are timed (make one cut with captions on): each change moves up to a third of a second to land just before a spoken word, and the cut keeps its length.": "Les changements sur les mots demandent une narration dont les mots sont minutés (faites un montage avec les sous-titres activés) : chaque changement se déplace d'un tiers de seconde au plus pour tomber juste avant un mot prononcé, et le montage garde sa durée."
 }
