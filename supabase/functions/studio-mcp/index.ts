@@ -23,7 +23,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const RESOURCE = Deno.env.get("MCP_RESOURCE_URL") || "https://mcp.anlim.ai/mcp";
 const METADATA_URL = new URL("/.well-known/oauth-protected-resource", RESOURCE).toString();
 const ISSUER = `${SUPABASE_URL}/auth/v1`;
-const CREATE_LIMIT = 5, CREATE_WINDOW_MIN = 10, SPEND_LIMIT = 10;
+const CREATE_LIMIT = 5, CREATE_WINDOW_MIN = 10, SPEND_LIMIT = 20;   // 10 -> 20 on 2026-11-27 (Londi: 10 slowed test runs)
 // 2026-11-23 (review): sound runs on the creator's own ElevenLabs credits and cuts on anlim's worker; neither had a limit
 // from chat, so a looping agent could drain one or hold the other.
 const AUDIO_TOOLS = ["make_voiceover", "make_sound_effect", "make_score", "make_song", "write_lyrics"], AUDIO_LIMIT = 15, CUT_LIMIT = 6;
