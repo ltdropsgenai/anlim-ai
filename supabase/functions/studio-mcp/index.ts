@@ -250,6 +250,44 @@ const TOOLS = [
       }, required: ["text", "at_seconds"], additionalProperties: false } },
     }, required: ["shot_id", "words"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
+  // ---- 2026-11-27: shot effects (worker fx.js; plain ffmpeg and a CPU person cut-out, free like every cut)
+  { name: "set_effects", title: "Effects on a shot",
+    description: "Sets a shot's effects in the scene's cut (replaces any already set; send only shot_id to remove them all). Free; then make_cut. " +
+      "look: a colour preset for the shot. title: big bold words that pop in (\"HYPER SPEED EFFECT\"), timed like words (seconds after the shot starts in the cut). " +
+      "stickers: comic stickers that drop in (pow, boom, wow, zap with optional text; arrow, circle to point at something; star). " +
+      "phone: the clip plays on a phone screen over a blurred copy of itself, a dark or a warped-grid background, with an optional view count (\"754K\"); " +
+      "pop_out draws the person over the phone's edge where they reach it. layout: with another kept shot of the same scene: pip (it in a box over this one), " +
+      "split (one above the other in tall cuts, side by side in wide ones) or compare (split with a label on each); set inset_only on the other shot so it does not also play on its own. " +
+      "Cut-out effects (the person is found in every frame; best with a still camera and one person): behind (big words behind the person), " +
+      "ghost (see-through copies a moment behind), trails (after-images of a fast move), clone (a second copy beside them, optionally mirrored and a moment later). " +
+      "A shot has a phone or a layout, not both.",
+    inputSchema: { type: "object", properties: {
+      shot_id: { type: "string" },
+      look: { type: "string", enum: ["moody", "bw", "warm", "cool", "teal_orange", "vivid"] },
+      title: { type: "object", properties: { text: { type: "string", minLength: 1, maxLength: 40 }, at_seconds: { type: "number", minimum: 0, maximum: 600, default: 0 },
+        seconds: { type: "number", minimum: 0.5, maximum: 10, default: 2.2 }, color: { type: "string", enum: ["yellow", "white", "red", "green", "blue"], default: "yellow" },
+        y: { type: "number", minimum: 0.05, maximum: 0.95, default: 0.35, description: "Height in the picture, 0 top to 1 bottom" } }, required: ["text"], additionalProperties: false },
+      stickers: { type: "array", maxItems: 6, items: { type: "object", properties: {
+        kind: { type: "string", enum: ["pow", "boom", "wow", "zap", "arrow", "circle", "star"] }, text: { type: "string", maxLength: 10, description: "pow, boom, wow, zap: other words in the burst" },
+        at_seconds: { type: "number", minimum: 0, maximum: 600, default: 0 }, seconds: { type: "number", minimum: 0.3, maximum: 10, default: 1.5 },
+        x: { type: "number", minimum: 0, maximum: 1, default: 0.5 }, y: { type: "number", minimum: 0, maximum: 1, default: 0.3 },
+        size: { type: "number", minimum: 0.3, maximum: 3, default: 1 } }, required: ["kind"], additionalProperties: false } },
+      phone: { type: "object", properties: { views: { type: "string", maxLength: 10, description: "e.g. 754K or 1.5M; leave out for no count" },
+        background: { type: "string", enum: ["blur", "dark", "grid"], default: "blur" }, x: { type: "number", minimum: 0, maximum: 1, default: 0.5 },
+        size: { type: "number", minimum: 0.5, maximum: 0.95, default: 0.82, description: "The phone's height as a fraction of the video's" },
+        pop_out: { type: "boolean", default: false } }, additionalProperties: false },
+      layout: { type: "object", properties: { kind: { type: "string", enum: ["pip", "split", "compare"] }, with_shot_id: { type: "string" },
+        labels: { type: "array", maxItems: 2, items: { type: "string", maxLength: 24 } } }, required: ["kind", "with_shot_id"], additionalProperties: false },
+      inset_only: { type: "boolean", description: "This shot is only used inside another shot's layout: leave it out of the cut on its own" },
+      behind: { type: "object", properties: { text: { type: "string", minLength: 1, maxLength: 20 }, color: { type: "string", enum: ["yellow", "white", "red", "green", "blue"], default: "white" },
+        y: { type: "number", minimum: 0.05, maximum: 0.95, default: 0.3 } }, required: ["text"], additionalProperties: false },
+      ghost: { type: "object", properties: { copies: { type: "integer", minimum: 1, maximum: 3, default: 1 }, delay_seconds: { type: "number", minimum: 0.2, maximum: 2, default: 0.6 },
+        opacity: { type: "number", minimum: 0.15, maximum: 0.8, default: 0.45 } }, additionalProperties: false },
+      trails: { type: "object", properties: { copies: { type: "integer", minimum: 2, maximum: 8, default: 5 }, gap_frames: { type: "integer", minimum: 1, maximum: 6, default: 2 } }, additionalProperties: false },
+      clone: { type: "object", properties: { x: { type: "number", minimum: -0.6, maximum: 0.6, default: 0.3, description: "Sideways offset as a fraction of the width (negative = left)" },
+        delay_seconds: { type: "number", minimum: 0, maximum: 3, default: 0 }, mirror: { type: "boolean", default: false } }, additionalProperties: false },
+    }, required: ["shot_id"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
   // ---- v2.4 (2026-11-22): sound, on the creator's own ElevenLabs account (connected in anlim: Account > Connections)
   { name: "list_voices", title: "Voices",
     description: "The voices in the creator's ElevenLabs library (their cloned voices, saved and default voices): id, name, kind. " +
@@ -462,6 +500,7 @@ const TOOLS = [
       end_card: { type: "boolean", default: true }, fade: { type: "boolean", default: true },
       voiceover: { type: "boolean", default: true }, sound_effects: { type: "boolean", default: true },
       captions: { type: "boolean", default: false, description: "Draw the voiceovers' and narration's words over the picture, timed to the speech; also a .srt file (get_cut). Uses the creator's ElevenLabs account to time the words." },
+      caption_style: { type: "string", enum: ["plain", "bold"], default: "plain", description: "With captions: plain lines, or bold (two or three words at a time in bold capitals, the word being said in yellow, as in short-form edits)" },
       music: { type: "boolean", default: true, description: "The scene's score in the cut (from make_score), if there is one" },
       // 2026-11-25 (Londi: "Unable to use an outside audio file in anlim.ai"): the creator's own song, uploaded at anlim.ai/upload
       music_upload_id: { type: "string", description: "The creator's own song or music (an audio upload from list_uploads) as the cut's music, in place of the score. A song longer than the cut is cut off at the end of the video; a shorter one leaves the rest silent." },
@@ -862,6 +901,28 @@ async function callTool(uid: string, name: string, a: Args) {
       return text(words.length ? `${words.length} word${words.length > 1 ? "s" : ""} set on this shot: ` +
         words.map((w) => `"${w.text}" at ${w.at_s} s`).join(", ") + ". Run make_cut to see them." : "Words removed from this shot.");
     }
+    case "set_effects": {
+      const sid = String(a.shot_id || "");
+      if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
+      const o = a as Record<string, any>, fx: Record<string, unknown> = {};
+      if (o.look) fx.look = o.look;
+      if (o.title) fx.title = { text: String(o.title.text ?? ""), at_s: o.title.at_seconds ?? 0, dur_s: o.title.seconds ?? 2.2, color: o.title.color ?? "yellow", y: o.title.y ?? 0.35 };
+      if (Array.isArray(o.stickers) && o.stickers.length) fx.stickers = o.stickers.slice(0, 6).map((x: any) => ({ kind: x.kind, text: x.text ?? null,
+        at_s: x.at_seconds ?? 0, dur_s: x.seconds ?? 1.5, x: x.x ?? 0.5, y: x.y ?? 0.3, size: x.size ?? 1 }));
+      if (o.phone) fx.frame = { kind: "phone", views: o.phone.views ?? null, bg: o.phone.background ?? "blur", x: o.phone.x ?? 0.5, size: o.phone.size ?? 0.82, pop_out: o.phone.pop_out === true };
+      if (o.layout) {
+        if (!UUID.test(String(o.layout.with_shot_id || ""))) return text("layout.with_shot_id must be another shot's id in the same scene.", undefined, true);
+        fx.layout = { kind: o.layout.kind, with_shot: String(o.layout.with_shot_id), labels: Array.isArray(o.layout.labels) ? o.layout.labels.map(String) : [] };
+      }
+      if (o.inset_only === true) fx.inset_only = true;
+      if (o.behind) fx.behind = { text: String(o.behind.text ?? ""), color: o.behind.color ?? "white", y: o.behind.y ?? 0.3 };
+      if (o.ghost) fx.ghost = { copies: o.ghost.copies ?? 1, delay_s: o.ghost.delay_seconds ?? 0.6, opacity: o.ghost.opacity ?? 0.45 };
+      if (o.trails) fx.trails = { copies: o.trails.copies ?? 5, gap: o.trails.gap_frames ?? 2 };
+      if (o.clone) fx.clone = { x: o.clone.x ?? 0.3, delay_s: o.clone.delay_seconds ?? 0, mirror: o.clone.mirror === true };
+      await asUser(uid, (tx) => tx`select studio.set_shot_fx(${sid}, ${tx.json(fx as any)})`);
+      const names = Object.keys(fx).map((k) => k === "frame" ? "phone" : k.replace("_", " "));
+      return text(names.length ? `Effects set on this shot: ${names.join(", ")}. Run make_cut to see them.` : "Effects removed from this shot.", { fx });
+    }
     // ---- v2.4 sound
     case "list_voices": {
       const key = await xiKey(uid);
@@ -1256,7 +1317,7 @@ async function callTool(uid: string, name: string, a: Args) {
         lookRef = await copyUpload(uid, up, "stills");
       }
       const opts = { fade: a.fade !== false, end_card: a.end_card !== false, voice: a.voiceover !== false, sfx: a.sound_effects !== false,
-                     captions: a.captions === true, logo,
+                     captions: a.captions === true, caption_style: a.caption_style === "bold" ? "bold" : "plain", logo,
                      music_path: own ? own.path : score ? `${uid}/audio/music/${score.id}.mp3` : null,
                      style: a.edit_style === "story" ? { preset: "story", transitions: a.transitions ?? "mixed", rain: a.rain === true,
                        drops: a.drops === true, look_ref: lookRef,
@@ -1457,7 +1518,7 @@ async function rpc(uid: string, m: Rpc) {
           "get_upload_link so the creator uploads photos (or a song for make_cut's music_upload_id), add_character with an upload, add_location for the background, add_shot, " +
           "(update_character, update_shot, move_shot to change them), make_end_image when someone must appear or end somewhere exact, " +
           "make_start_image (new_setup places the characters), get_creation to look, animate, review_clip (keep), then make_cut and " +
-          "get_cut (trim_clip to shorten a clip, set_clip_speed to slow it, set_hold to freeze its last frame, set_words to draw words over it, in the cut; set_end_image to end a shot on an uploaded picture, such as the same moment from another camera angle; make_voiceover (a shot's line, or without a shot the scene's narration over the whole cut), " +
+          "get_cut (trim_clip to shorten a clip, set_clip_speed to slow it, set_hold to freeze its last frame, set_words to draw words over it, set_effects for titles, stickers, a phone frame, layouts, looks and cut-out effects (ghost, clone, trails, words behind the person), in the cut; set_end_image to end a shot on an uploaded picture, such as the same moment from another camera angle; make_voiceover (a shot's line, or without a shot the scene's narration over the whole cut), " +
           "make_sound_effect and make_score add sound on the creator's ElevenLabs account). Steps that spend credits need a paid account. Clips take minutes: tell the creator and check again rather than " +
           "starting the same thing twice." });
     }

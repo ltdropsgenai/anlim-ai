@@ -49,6 +49,7 @@ export default function SceneCut() {
   const [voiceOn, setVoiceOn] = useState(true);
   const [sfxOn, setSfxOn] = useState(true);
   const [captionsOn, setCaptionsOn] = useState(false);   // 2026-11-23: captions from the voiceovers and narration
+  const [captionStyle, setCaptionStyle] = useState<"plain" | "bold">("plain");   // 2026-11-27: bold word by word
   // 2026-11-23: the edit style (the look of the reference voiceover edit Londi sent)
   const [story, setStory] = useState(false);
   const [trans, setTrans] = useState<EditTransition>("mixed");
@@ -93,7 +94,7 @@ export default function SceneCut() {
     setBusy(true); setError(null);
     const style = story ? { preset: "story" as const, transitions: trans, grade: true, push: true, rain, drops, hits, beat_sync: beats,
                             title: styleTitle.trim() || null, handle: handle.trim() || null, look_ref: lookRef?.path ?? null } : null;
-    try { await api.makeCut(scene, format, { fade, end_card: card, music_path: music?.path ?? null, voice: voiceOn, sfx: sfxOn, captions: captionsOn, style }); await load(); }
+    try { await api.makeCut(scene, format, { fade, end_card: card, music_path: music?.path ?? null, voice: voiceOn, sfx: sfxOn, captions: captionsOn, caption_style: captionStyle, style }); await load(); }
     catch (e) { setError((e as Error).message); }
     setBusy(false);
   }
@@ -129,6 +130,14 @@ export default function SceneCut() {
           </Pressable>
         </View>
         {captionsOn && <Text style={s.sub}>{tr("The words of the voiceovers and the narration appear at the bottom as they are spoken, and you also get a .srt file to upload to YouTube or TikTok. ElevenLabs times the words (once per take, on your ElevenLabs account).")}</Text>}
+        {captionsOn && <View style={s.row}>
+          {([["plain", tr("Plain lines")], ["bold", tr("Bold, word by word")]] as const).map(([v, t]) => (
+            <Pressable key={v} onPress={() => setCaptionStyle(v)} style={[s.chip, captionStyle === v && s.chipOn]} accessibilityRole="radio" accessibilityState={{ checked: captionStyle === v }}>
+              <Text style={captionStyle === v ? { color: c.onAccent } : { color: c.ink }}>{t}</Text>
+            </Pressable>
+          ))}
+        </View>}
+        {captionsOn && captionStyle === "bold" && <Text style={s.sub}>{tr("Two or three words at a time in bold capitals, the word being said in yellow, as in short-form edits.")}</Text>}
 
         <Text style={[s.h, font.display]}>{tr("Edit style")}</Text>
         <View style={s.row}>
@@ -184,7 +193,7 @@ export default function SceneCut() {
         </>}
 
         <Text style={[s.h, font.display]}>{tr("Shots in the cut")}</Text>
-        <Text style={s.sub}>{tr("Speed, trims and words drawn over each kept shot. Save a shot, then make the cut.")}</Text>
+        <Text style={s.sub}>{tr("Speed, trims, words and effects for each kept shot. Save a shot, then make the cut.")}</Text>
         <CutShots sceneId={scene} aspect={aspect} onChanged={() => setShotsVersion((v) => v + 1)} />
 
         {owner && <SoundPanel refresh={shotsVersion} sceneId={scene} owner={owner} endCard={card} music={music} setMusic={setMusic}

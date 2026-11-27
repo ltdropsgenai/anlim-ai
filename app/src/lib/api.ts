@@ -32,6 +32,22 @@ export type ShotRow = {
   trim_start_s?: number | string; trim_end_s?: number | string; speed?: number | string;   // 2026-11-22: the cut's trims and speed
   clip_s?: number | string | null;   // 2026-11-23: the kept clip's real length (null for clips made before)
   words?: ShotWord[] | null;          // 2026-11-23: words drawn over the shot in the cut
+  fx?: ShotFx | null;                 // 2026-11-27: the shot's effects in the cut (worker fx.js)
+};
+// A shot's effects in the cut (studio.set_shot_fx, worker fx.js, 2026-11-27). Times are seconds into the shot as it plays
+// in the cut; x and y are fractions of the picture from the top left.
+export type FxColor = "yellow" | "white" | "red" | "green" | "blue";
+export type ShotFx = {
+  look?: "moody" | "bw" | "warm" | "cool" | "teal_orange" | "vivid";
+  title?: { text: string; at_s?: number; dur_s?: number; color?: FxColor; y?: number };
+  stickers?: { kind: "pow" | "boom" | "wow" | "zap" | "arrow" | "circle" | "star"; text?: string | null; at_s?: number; dur_s?: number; x?: number; y?: number; size?: number }[];
+  frame?: { kind: "phone"; views?: string | null; bg?: "blur" | "dark" | "grid"; x?: number; size?: number; pop_out?: boolean };
+  layout?: { kind: "pip" | "split" | "compare"; with_shot: string; labels?: string[] };
+  inset_only?: boolean;
+  behind?: { text: string; color?: FxColor; y?: number };
+  ghost?: { copies?: number; delay_s?: number; opacity?: number };
+  trails?: { copies?: number; gap?: number };
+  clone?: { x?: number; delay_s?: number; mirror?: boolean };
 };
 // A word drawn over a shot in the cut (studio.set_shot_words): it appears at at_s seconds into the shot as it plays in the
 // cut (after trims and speed), at x,y (fractions of the frame, from the top left), falls and fades over dur_s seconds.
@@ -356,7 +372,7 @@ export const api = {
     call<{ ok: boolean }>({ op: "decide", generation_id: id, decision, reasons, note, at_s: atS }),
   shots: () => call<{ items: ShotRow[] }>({ op: "shots" }).then((r) => r.items),
   // how a kept shot plays in the scene cut: only the fields given change (2026-11-23)
-  shotCutEdit: (id: string, patch: { speed?: number; trim_start_s?: number; trim_end_s?: number; words?: ShotWord[] }) =>
+  shotCutEdit: (id: string, patch: { speed?: number; trim_start_s?: number; trim_end_s?: number; words?: ShotWord[]; fx?: ShotFx }) =>
     call<{ ok: boolean }>({ op: "shot_cut_edit", shot_id: id, ...patch }),
   shot: (id: string) => call<Shot>({ op: "shot", shot_id: id }),
   requestEndFrame: (id: string, instruction: string) => call<{ job_id: string }>({ op: "end_frame", shot_id: id, instruction }),
@@ -453,7 +469,7 @@ export const api = {
   audio: (sceneId: string) => call<{ items: AudioJob[] }>({ op: "audio_list", scene_id: sceneId }).then((r) => r.items),
   useAudio: (id: string, on: boolean) => call<{ ok: true }>({ op: "audio_use", id, on }),
   makeCut: (sceneId: string, format: CutFormat, opts: { fade: boolean; end_card: boolean; music_path: string | null; voice?: boolean; sfx?: boolean; captions?: boolean;
-                                                         style?: EditStyle | null }) =>
+                                                         caption_style?: "plain" | "bold"; style?: EditStyle | null }) =>
     call<{ id: string }>({ op: "assembly_create", scene_id: sceneId, format, ...opts }),
   cuts: (sceneId: string) => call<{ items: Cut[] }>({ op: "assemblies", scene_id: sceneId }).then((r) => r.items),
   updateSeries: (seriesId: string, look?: Look, style?: string) =>

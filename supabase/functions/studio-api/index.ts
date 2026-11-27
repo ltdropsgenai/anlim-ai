@@ -269,7 +269,7 @@ async function handle(req: Request): Promise<Response> {
                  sc.id as scene_id, sc.title as scene_title, sc.ord as scene_ord, se.id as series_id, se.name as series_name,
                  g.status as gen_status, g.id as gen_id, f.status as frame_status, f.kind as frame_kind,
                  sh.start_frame_path, sh.approved_generation_id is not null as has_approved_clip,
-                 sh.trim_start_s, sh.trim_end_s, sh.speed, sh.words,
+                 sh.trim_start_s, sh.trim_end_s, sh.speed, sh.words, sh.fx,
                  (select a.clip_s from studio.generations a where a.id = sh.approved_generation_id) as clip_s,
                  coalesce((select a.model_id from studio.generations a where a.id = sh.approved_generation_id), g.model_id) as gen_model
             from studio.shots sh join studio.scenes sc on sc.id = sh.scene_id join studio.series se on se.id = sc.series_id
@@ -520,6 +520,9 @@ async function handle(req: Request): Promise<Response> {
           // JSON.stringify + ::jsonb: a stringified value arrives as one jsonb string ("words must be a list", 2026-11-23 test)
           if (body.words !== undefined)
             await tx`select studio.set_shot_words(${id}, ${tx.json(body.words as postgres.JSONValue)})`;
+          // 2026-11-27: the shot's effects (worker fx.js); studio.set_shot_fx checks them
+          if (body.fx !== undefined)
+            await tx`select studio.set_shot_fx(${id}, ${tx.json((body.fx ?? {}) as postgres.JSONValue)})`;
         });
         return json({ ok: true });
       }
@@ -623,6 +626,7 @@ async function handle(req: Request): Promise<Response> {
       case "assembly_create": {
         const opts = { fade: body.fade !== false, end_card: !!body.end_card, music_path: body.music_path ? String(body.music_path) : null,
                        voice: body.voice !== false, sfx: body.sfx !== false, captions: body.captions === true,
+                       caption_style: body.caption_style === "bold" ? "bold" : "plain",
                        // 2026-11-23: the edit style ({ preset: "story", transitions, grade, push, rain, hits, beat_sync, title,
                        // handle }); request_assembly keeps only the known fields and the worker checks them again
                        style: body.style && typeof body.style === "object" && !Array.isArray(body.style) ? body.style : null };

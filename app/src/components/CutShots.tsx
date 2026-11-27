@@ -7,6 +7,7 @@ import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View 
 import { api, cutSeconds, ShotRow, ShotWord } from "../lib/api";
 import { c } from "../lib/theme";
 import { tr, tMsg } from "../lib/i18n";
+import { ShotEffects } from "./ShotEffects";
 
 const SPEEDS = [0.5, 0.75, 1, 1.5, 2];
 const MAX_WORDS = 12;
@@ -36,12 +37,12 @@ export function CutShots({ sceneId, aspect, onChanged }: { sceneId: string; aspe
   const [aw, ah] = (aspect || "16:9").split(":").map(Number);
   return (
     <View style={{ gap: 12 }}>
-      {shots.map((r) => <ShotCard key={r.id} row={r} ratio={aw / ah} onSaved={() => { load(); onChanged(); }} />)}
+      {shots.map((r) => <ShotCard key={r.id} row={r} ratio={aw / ah} others={shots.filter((o) => o.id !== r.id)} onSaved={() => { load(); onChanged(); }} />)}
     </View>
   );
 }
 
-function ShotCard({ row, ratio, onSaved }: { row: ShotRow; ratio: number; onSaved: () => void }) {
+function ShotCard({ row, ratio, others, onSaved }: { row: ShotRow; ratio: number; others: ShotRow[]; onSaved: () => void }) {
   const [d, setD] = useState<Draft>(() => draftOf(row));
   const [sel, setSel] = useState<number | null>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
@@ -199,6 +200,8 @@ function ShotCard({ row, ratio, onSaved }: { row: ShotRow; ratio: number; onSave
           {msg && <Text style={msg.ok ? s.ok : s.err}>{msg.text}</Text>}
         </View>
       </View>
+      {/* 2026-11-27: titles, stickers, a phone frame, layouts, looks and cut-out effects (ShotEffects, saved on their own) */}
+      <ShotEffects row={row} others={others} onSaved={onSaved} />
     </View>
   );
 }

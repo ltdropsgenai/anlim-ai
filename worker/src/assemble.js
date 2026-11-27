@@ -29,6 +29,7 @@ import * as captions from "./captions.js";
 import * as style from "./editstyle.js";
 import * as glyphs from "./glyphs.js";
 import * as textpic from "./textpic.js";
+import * as fxm from "./fx.js";
 
 // A shot's voiceover starts this long after the shot does in a cut (worker.js lip-syncs to the same offset)
 export const SPEECH_LEAD = 0.15;
@@ -84,10 +85,12 @@ function conform(format) {
 // count after the speed change.
 // sty (2026-11-23): the cut's edit style and the changes into and out of this shot ({ s, kIn, kOut }), or null. Its
 // filters come after the picture is in place and before the words, so the words stay sharp through a transition.
-async function part(src, dest, format, frames, fades, skip = 0, _unused = false, speed = 1, words = [], srcSize = null, sty = null) {
+// shotFx (2026-11-27, fx.js): the shot's title and stickers, timed in the cut like the words and drawn with them.
+async function part(src, dest, format, frames, fades, skip = 0, _unused = false, speed = 1, words = [], srcSize = null, sty = null, shotFx = null) {
   const t = frames / FPS;
   const fx = [];
   if (words.length) fx.push(...await wordFilters(words, path.dirname(dest), path.basename(dest, ".mp4"), ...SIZES[format], picRect(format, srcSize)));
+  if (shotFx) fx.push(...await fxm.overlays(shotFx, path.dirname(dest), path.basename(dest, ".mp4"), ...SIZES[format], picRect(format, srcSize)));
   if (fades.in) fx.push(`fade=t=in:st=0:d=${FADE_IN}`);
   if (fades.out) fx.push(`fade=t=out:st=${(t - FADE_OUT).toFixed(3)}:d=${FADE_OUT}`);
   let fc = (sty?.s ? conform(format) + "[sty0];" + style.shotGraph("sty0", ...SIZES[format], frames, sty.s, sty.kIn, sty.kOut, "s", sty.curves || null) : conform(format)) +
@@ -482,6 +485,21 @@ async function build(a) {
     const it = a.items[i];
     let src = path.join(config.workDir, it.generation_id, "clip.mp4");    // the worker's own copy, when it has one
     try { await fs.access(src); } catch { src = path.join(dir, `src_${i}.mp4`); await storage.download(it.path, src); }
+    // 2026-11-27: the shot's clip-level effects (fx.js: cut-outs, look, phone, layouts) make a new clip first; the
+    // trims, speed and style below apply to it as to any clip. An effect that fails leaves the shot as filmed.
+    const sfx = fxm.normalize(it.fx);
+    if (sfx) {
+      await renew(a);
+      try {
+        let second = null;
+        if (sfx.layout && it.with_path) {
+          if (!String(it.with_path).startsWith(`${a.owner}/`)) throw new Error("the other shot's clip is not yours");
+          second = path.join(dir, `with_${i}.mp4`);
+          await storage.download(it.with_path, second);
+        }
+        src = await fxm.prepass({ src, dir, tag: `fx${i}`, fx: sfx, W: SIZES[a.format][0], H: SIZES[a.format][1], second, notes, label: `Shot ${it.ord}` });
+      } catch (e) { notes.push(`Shot ${it.ord}: its effects are left out (${String(e.message || e).split("\n")[0].slice(0, 160)}).`); }
+    }
     const p = await probe(src);
     if (!p.frames) throw new Error(`shot ${it.ord}: the clip has no frames`);
     // 2026-11-22: the shot's trims (seconds off the start and the end of its clip); at least 1 s is always kept
@@ -494,7 +512,7 @@ async function build(a) {
     // 2026-11-25 (Number 10 swings): the shot's hold, seconds its last frame stays on screen after the clip (0 to 5)
     const held = Math.round(Math.min(5, Math.max(0, Number(it.hold) || 0)) * FPS);
     const moved = Math.max(1, Math.round(keep / speed));
-    plan.push({ it, src, p, keep, from, speed, out: moved + held, hold: held, moved });
+    plan.push({ it, src, p, keep, from, speed, out: moved + held, hold: held, moved, sfx });
   }
   const sty = style.normalize(opts.style);
   const changes = sty ? style.kinds(plan.length, sty.transitions) : [];
@@ -528,7 +546,7 @@ async function build(a) {
     } catch (e) { notes.push(`Edit style: the music's beats could not be found (${String(e.message || e).slice(0, 120)}); the shots change where they end.`); }
   }
   for (let i = 0; i < plan.length; i++) {
-    const { it, src, p, keep, from, speed, out, hold = 0, moved } = plan[i];
+    const { it, src, p, keep, from, speed, out, hold = 0, moved, sfx } = plan[i];
     const first = i === 0, last = i === plan.length - 1;
     const fades = { in: opts.fade && first, out: opts.fade && last };
     const dest = path.join(dir, `p${String(i).padStart(3, "0")}.mp4`);
@@ -547,13 +565,13 @@ async function build(a) {
     }
     try {
       await part(src, cardsHere ? dest.replace(/\.mp4$/, "_pre.mp4") : dest, a.format, out, cardsHere ? { ...fades, out: false } : fades,
-                 from, false, speed, words, { w: p.w, h: p.h }, look);
+                 from, false, speed, words, { w: p.w, h: p.h }, look, sfx);
     } catch (e) {
       if (!look?.s) throw e;
       // the style is a finish: a shot it fails on goes in without it rather than failing the cut
       notes.push(`Edit style: shot ${it.ord} is in the cut without the style (${String(e.message || e).split("\n")[0].slice(0, 160)}).`);
       await part(src, cardsHere ? dest.replace(/\.mp4$/, "_pre.mp4") : dest, a.format, out, cardsHere ? { ...fades, out: false } : fades,
-                 from, false, speed, words, { w: p.w, h: p.h }, hold ? { s: null, hold } : null);
+                 from, false, speed, words, { w: p.w, h: p.h }, hold ? { s: null, hold } : null, sfx);
     }
     if (cardsHere) {
       const pre = dest.replace(/\.mp4$/, "_pre.mp4");
@@ -570,6 +588,8 @@ async function build(a) {
       if (got.frames !== out) throw new Error(`the last shot with its end cards has ${got.frames} frames, expected ${out}`);
     }
     if ((it.words || []).length) notes.push(`Shot ${it.ord}: ${it.words.length} word${it.words.length > 1 ? "s" : ""} drawn over it.`);
+    if (sfx?.title || sfx?.stickers) notes.push(`Shot ${it.ord}: ${[sfx.title ? `the title "${sfx.title.text}"` : null,
+      sfx.stickers ? `${sfx.stickers.length} sticker${sfx.stickers.length > 1 ? "s" : ""}` : null].filter(Boolean).join(" and ")}.`);
     // 2026-11-24: a character the font lacks is drawn as a box, silently; say so (glyphs.js)
     const noGlyph = await textpic.undrawable(WORD_FONT, (it.words || []).map((w) => String(w.text || "")).join(" "));   // emojis are drawn now (2026-11-25)
     if (noGlyph.length) notes.push(`Shot ${it.ord}: the words over it use characters the font cannot draw (${glyphs.list(noGlyph)}): they show as boxes.`);
@@ -608,8 +628,11 @@ async function build(a) {
     if (!(sound.speech || []).length) notes.push("Captions: this cut has no voiceover or narration to caption.");
     else if (!list.length) notes.push("Captions: no words could be timed, so the cut has none.");
     else {
-      const ccFont = sty ? style.SERIF(ASSETS) : WORD_FONT;
-      over.push(...await captions.filters(list, dir, ccFont, W, H, sty ? "story" : "plain"));
+      // 2026-11-27: bold captions (fx.js), two or three words at a time with the spoken word in yellow
+      const bold = opts.caption_style === "bold" ? await fxm.assCaptions(words, dir, W, H, total) : null;
+      const ccFont = bold ? WORD_FONT : sty ? style.SERIF(ASSETS) : WORD_FONT;
+      if (bold) over.push(bold.seg);
+      else over.push(...await captions.filters(list, dir, ccFont, W, H, sty ? "story" : "plain"));
       const noGlyph = await glyphs.missing(ccFont, list.map((c) => c.text).join(" "));
       if (noGlyph.length) notes.push(`Captions: they use characters the caption font cannot draw (${glyphs.list(noGlyph)}): they show as boxes. The .srt file has them right.`);
       const srtFile = path.join(dir, "captions.srt");
