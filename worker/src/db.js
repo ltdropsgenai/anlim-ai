@@ -6,7 +6,10 @@ import { config } from "./config.js";
 
 export const pool = new pg.Pool({
   connectionString: config.databaseUrl,
-  max: 5,
+  // 2026-11-27: the role studio_worker may hold at most 10 connections (pg_roles.rolconnlimit). With 3 machines at 5
+  // each the pools asked for 15, and a new connection past the 10th failed ("too many connections for role
+  // studio_worker"): an ad draft's result could not be saved and the job stayed "running". 3 a machine = 9.
+  max: Number(process.env.DB_POOL_MAX || 3),
   ssl: /localhost|127\.0\.0\.1/.test(config.databaseUrl) ? false : { rejectUnauthorized: false },
 });
 
