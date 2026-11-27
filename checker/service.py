@@ -35,6 +35,9 @@ Python standard library only (no installs beyond what frame_check already needs)
   POST /face_start {"still", "refs": {name: [local paths]}, "look"} -> frame_check/face_id.start_check: does each person in
                 a made start or end image look like their uploaded photo? {"verdict": "OK"|"FLAG"|"NOT CHECKED", "problems",
                 "notes", "people"}. Photoreal only; free, no API (2026-11-26, KAMK face test). A flag, never a block.
+  POST /ad_script {"product", "brief", "url"?, "offer"?, "cta"?, "presenter"?, "tone"?, "language"?, "length_s"?, "look"?}
+                -> frame_check/ad_script.write: three short ad scripts as shots (Claude); the page is fetched with
+                private addresses refused (2026-11-27, the ad template).
   POST /lyrics {"brief", "language"?, "styles"?, "length_s"?} -> frame_check/lyrics.write: original song lyrics with
                 [Section] tags (Claude). {"verdict": "OK", "title", "lyrics", "usd", "model"} (2026-11-26, songs).
   GET  /health  -> {"ok": true, "mode": "real"|"fake", "frame_check": "<dir>"}
@@ -243,6 +246,22 @@ def run_lyrics(body):
     r["verdict"] = "OK"; r["drift"] = []
     return r
 
+def run_ad_script(body):
+    """POST /ad_script: three short ad scripts as shots (frame_check/ad_script.py, 2026-11-27, the ad template). Fake
+    mode: one fixed script, so tests can see the round trip without the API."""
+    if len((body.get("product") or "").strip()) < 2 or len((body.get("brief") or "").strip()) < 10:
+        raise ValueError("product and brief are required")
+    if MODE == "fake":
+        return {"verdict": "OK", "variants": [{"angle": "Fake demo", "seconds": 5.0, "caption": "fake",
+                "shots": [{"seconds": 2.5, "picture": "The presenter holds up the product", "camera": "locked", "line": "Watch this.", "on_screen": "NEW"},
+                          {"seconds": 2.5, "picture": "Close-up of the product", "camera": "push-in", "line": "Link in bio.", "on_screen": "LINK IN BIO"}]}],
+                "page_title": "", "page_note": None, "usd": 0.0, "model": "fake", "drift": []}
+    if FC not in sys.path: sys.path.insert(0, FC)
+    import ad_script
+    r = ad_script.write(body)
+    r["verdict"] = "OK"; r["drift"] = []
+    return r
+
 def run_motion_check(body):
     """POST /motion_check: one vision call over the render's shots against the source clip (2026-11-20). Never FAIL:
     PASS, FLAG with the swapped shots, or NOT_REVIEWED when the model was unsure or the call could not run."""
@@ -350,18 +369,18 @@ class H(BaseHTTPRequestHandler):
         self._send(404, {"error": "not found"})
 
     def do_POST(self):
-        if self.path not in ("/check", "/motion_check", "/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate", "/lipsync", "/translate", "/face_start", "/lyrics"): return self._send(404, {"error": "not found"})
+        if self.path not in ("/check", "/motion_check", "/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate", "/lipsync", "/translate", "/face_start", "/lyrics", "/ad_script"): return self._send(404, {"error": "not found"})
         if not self._authed(): return self._send(401, {"error": "unauthorized"})
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
         except json.JSONDecodeError:
             return self._send(400, {"error": "bad json"})
-        if self.path in ("/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate", "/lipsync", "/translate", "/face_start", "/lyrics"):
+        if self.path in ("/end_frame", "/compose", "/last_frame", "/cutouts", "/height", "/reposition_fit", "/still_check", "/moderate", "/lipsync", "/translate", "/face_start", "/lyrics", "/ad_script"):
             try:
                 r = {"/end_frame": run_end_frame, "/compose": run_compose, "/last_frame": run_last_frame,
                      "/cutouts": run_cutouts, "/height": run_height, "/reposition_fit": run_reposition_fit, "/still_check": run_still_check,
                      "/moderate": run_moderate, "/lipsync": run_lipsync, "/translate": run_translate,
-                     "/face_start": run_face_start, "/lyrics": run_lyrics}[self.path](body)
+                     "/face_start": run_face_start, "/lyrics": run_lyrics, "/ad_script": run_ad_script}[self.path](body)
                 name = body.get("end") or body.get("edited") or body.get("video") or body.get("image") or body.get("still") or ""
                 print(f"[{self.path[1:]}] {os.path.basename(name)}: {r['verdict']} ({len(r.get('drift', []))} drift)", flush=True)
                 return self._send(200, r)

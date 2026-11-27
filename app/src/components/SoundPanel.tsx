@@ -168,7 +168,8 @@ function ShotSound({ r, sceneId, voice, jobs, connected, onMade, onUse, setError
   r: ShotRow; sceneId: string; voice: Voice | null; jobs: AudioJob[]; connected: boolean;
   onMade: () => void; onUse: (j: AudioJob, on: boolean) => void; setError: (e: string | null) => void }) {
   const vo = jobs.filter((j) => j.kind === "voiceover"), fx = jobs.filter((j) => j.kind === "sfx");
-  const [line, setLine] = useState(vo[0]?.input.text ?? "");
+  // 2026-11-27: a shot made from an ad script starts with its spoken line
+  const [line, setLine] = useState(vo[0]?.input.text ?? r.line ?? "");
   const [sound, setSound] = useState(fx[0]?.input.text ?? "");
   const [secs, setSecs] = useState(String(r.duration_s));
   const [busy, setBusy] = useState<AudioKind | null>(null);

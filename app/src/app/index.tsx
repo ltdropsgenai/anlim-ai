@@ -23,9 +23,10 @@ const IMAGE_MODELS = trDeep([
   { name: "GPT Image 2.6", what: "Photoreal new setups (characters placed in the room)", price: "17 credits + 3 a person" },
 ], ["what", "price"]);
 
-const TOOLS: { icon: IconName; title: string; body: string; href: "/workspace" | "/motion" | "/storage" | "/review" | "/library" | "/shots" | "/billing" }[] = trDeep([
+const TOOLS: { icon: IconName; title: string; body: string; href: "/workspace" | "/motion" | "/ad" | "/storage" | "/review" | "/library" | "/shots" | "/billing" }[] = trDeep([
   { icon: "workspace", title: "Workspace", body: "Write shots, make frames, render.", href: "/workspace" },
   { icon: "motion", title: "Motion transfer", body: "Recast your own clip as your characters.", href: "/motion" },
+  { icon: "spark", title: "Ad maker", body: "Three short ad scripts for your product, made into a project.", href: "/ad" },
   { icon: "studio", title: "Scene board", body: "Every shot of every scene at a glance.", href: "/shots" },
   { icon: "review", title: "Review", body: "Keep or reject what was made.", href: "/review" },
   { icon: "assets", title: "Assets", body: "Find and download your work.", href: "/storage" },

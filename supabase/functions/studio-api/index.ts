@@ -269,7 +269,7 @@ async function handle(req: Request): Promise<Response> {
                  sc.id as scene_id, sc.title as scene_title, sc.ord as scene_ord, se.id as series_id, se.name as series_name,
                  g.status as gen_status, g.id as gen_id, f.status as frame_status, f.kind as frame_kind,
                  sh.start_frame_path, sh.approved_generation_id is not null as has_approved_clip,
-                 sh.trim_start_s, sh.trim_end_s, sh.speed, sh.words, sh.fx,
+                 sh.trim_start_s, sh.trim_end_s, sh.speed, sh.words, sh.fx, sh.line,
                  (select a.clip_s from studio.generations a where a.id = sh.approved_generation_id) as clip_s,
                  coalesce((select a.model_id from studio.generations a where a.id = sh.approved_generation_id), g.model_id) as gen_model
             from studio.shots sh join studio.scenes sc on sc.id = sh.scene_id join studio.series se on se.id = sc.series_id
@@ -877,6 +877,29 @@ async function handle(req: Request): Promise<Response> {
         const [d] = await asUser(uid, (tx) => tx`select id, status, title, lyrics, error, brief, language, styles, length_s, created_at
                                                    from studio.lyrics_drafts where id = ${String(body.id || "")}`);
         return d ? json({ draft: d }) : json({ error: "not found" }, 404);
+      }
+      // ---- the ad template (2026-11-27): ad scripts (worker ad.js, checker /ad_script) and making one a project
+      case "ad_create": {
+        const spec = { product: body.product, brief: body.brief, url: body.url, offer: body.offer, cta: body.cta, presenter: body.presenter,
+                       tone: body.tone, language: body.language, length_s: body.length_s, look: body.look };
+        const [r] = await asUser(uid, (tx) => tx`select studio.request_ad_script(${tx.json(spec as postgres.JSONValue)}) as id`);
+        return json({ ok: true, id: r.id });
+      }
+      case "ad_get": {
+        const [d] = await asUser(uid, (tx) => tx`select id, status, product, brief, url, offer, cta, presenter, tone, language, length_s, look,
+                                                         variants, page_title, error, series_id, created_at
+                                                    from studio.ad_drafts where id = ${String(body.id || "")}`);
+        return d ? json({ draft: d }) : json({ error: "not found" }, 404);
+      }
+      case "ad_list": {
+        const rows = await asUser(uid, (tx) => tx`select id, status, product, length_s, look, series_id, created_at
+                                                    from studio.ad_drafts order by created_at desc limit 20`);
+        return json({ items: rows });
+      }
+      case "ad_apply": {
+        const [r] = await asUser(uid, (tx) => tx`select studio.apply_ad_draft(${String(body.id || "")}::uuid, ${Number(body.variant)}::int,
+          ${body.series_id ? String(body.series_id) : null}::uuid, ${String(body.aspect || "9:16")}) as j`);
+        return json(r.j);
       }
       case "scene_characters": {   // 2026-11-26: who can sing the scene's song (its project's people)
         const rows = await asUser(uid, (tx) => tx`select c.id, c.name from studio.characters c join studio.scenes sc on sc.series_id = c.series_id

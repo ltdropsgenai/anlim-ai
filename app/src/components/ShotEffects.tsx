@@ -137,6 +137,7 @@ export function ShotEffects({ row, others, onSaved }: { row: ShotRow; others: Sh
           () => set({ frame: { ...fx.frame!, bg: b } }), b))}
         {toggle(!!fx.frame.pop_out, tr("Steps out of the phone"), () => set({ frame: { ...fx.frame!, pop_out: !fx.frame!.pop_out } }))}
       </View>}
+      {fx.frame?.views ? <Text style={s.hint}>{tr("Show your real view count: made-up numbers in an ad can mislead viewers and break advertising rules.")}</Text> : null}
       {fx.layout && <View style={s.row}>
         <Text style={s.sub}>{tr("With shot")}</Text>
         {others.map((o) => chip(fx.layout!.with_shot === o.id, String(o.ord).padStart(2, "0"), () => set({ layout: { ...fx.layout!, with_shot: o.id } }), o.id))}

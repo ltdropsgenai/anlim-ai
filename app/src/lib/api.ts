@@ -33,7 +33,15 @@ export type ShotRow = {
   clip_s?: number | string | null;   // 2026-11-23: the kept clip's real length (null for clips made before)
   words?: ShotWord[] | null;          // 2026-11-23: words drawn over the shot in the cut
   fx?: ShotFx | null;                 // 2026-11-27: the shot's effects in the cut (worker fx.js)
+  line?: string | null;               // 2026-11-27: the spoken line of a shot made from an ad script
 };
+// The ad template (studio.ad_drafts, 2026-11-27): what the creator gives, and the three scripts that come back.
+export type AdSpec = { product: string; brief: string; url?: string | null; offer?: string | null; cta?: string | null; presenter?: string | null;
+                       tone?: string | null; language?: string | null; length_s: 10 | 15 | 30; look: "photoreal" | "cartoon" };
+export type AdShot = { seconds: number; picture: string; camera: string; line: string; on_screen: string };
+export type AdVariant = { angle: string; seconds: number; caption: string; shots: AdShot[] };
+export type AdDraft = AdSpec & { id: string; status: "queued" | "running" | "done" | "failed"; variants: AdVariant[] | null; page_title: string | null;
+                                 error: string | null; series_id: string | null; created_at: string };
 // A shot's effects in the cut (studio.set_shot_fx, worker fx.js, 2026-11-27). Times are seconds into the shot as it plays
 // in the cut; x and y are fractions of the picture from the top left.
 export type FxColor = "yellow" | "white" | "red" | "green" | "blue";
@@ -371,6 +379,12 @@ export const api = {
   decide: (id: string, decision: "approve" | "reject", reasons: string[], note: string, atS: number | null = null) =>
     call<{ ok: boolean }>({ op: "decide", generation_id: id, decision, reasons, note, at_s: atS }),
   shots: () => call<{ items: ShotRow[] }>({ op: "shots" }).then((r) => r.items),
+  // the ad template (2026-11-27): three ad scripts for a product, then one of them as a project
+  adCreate: (spec: AdSpec) => call<{ id: string }>({ op: "ad_create", ...spec }),
+  adGet: (id: string) => call<{ draft: AdDraft }>({ op: "ad_get", id }).then((r) => r.draft),
+  adList: () => call<{ items: Pick<AdDraft, "id" | "status" | "product" | "length_s" | "look" | "series_id" | "created_at">[] }>({ op: "ad_list" }).then((r) => r.items),
+  adApply: (id: string, variant: number, aspect: string, seriesId: string | null = null) =>
+    call<{ series_id: string; series_name: string; scene_id: string; shots: { shot_id: string; seconds: number }[] }>({ op: "ad_apply", id, variant, aspect, series_id: seriesId }),
   // how a kept shot plays in the scene cut: only the fields given change (2026-11-23)
   shotCutEdit: (id: string, patch: { speed?: number; trim_start_s?: number; trim_end_s?: number; words?: ShotWord[]; fx?: ShotFx }) =>
     call<{ ok: boolean }>({ op: "shot_cut_edit", shot_id: id, ...patch }),

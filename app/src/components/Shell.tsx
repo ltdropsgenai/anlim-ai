@@ -41,7 +41,7 @@ const CLIP_5S = 200;   // credits of a 5 s Kling 4.0 clip (40 cr/s, studio.model
 const TITLES: [RegExp, string][] = [
   [/^\/$/, "Home"], [/^\/workspace/, "Workspace"], [/^\/storage/, "Assets"], [/^\/review/, "Review"],
   [/^\/clip\//, "Review a clip"], [/^\/shots/, "Scene board"], [/^\/shot\//, "Shot"], [/^\/cut\//, "Scene cut"],
-  [/^\/library/, "Cast & places"], [/^\/billing/, "Credits & plan"], [/^\/account/, "Account"], [/^\/refunds/, "Refund requests"], [/^\/insights/, "Insights"],
+  [/^\/library/, "Cast & places"], [/^\/ad$/, "Ad maker"], [/^\/billing/, "Credits & plan"], [/^\/account/, "Account"], [/^\/refunds/, "Refund requests"], [/^\/insights/, "Insights"],
   [/^\/admin\/user\//, "Account details"], [/^\/admin/, "Admin console"],
 ];
 // 7685 -> "7.7k", 950 -> "950": the mini gauge's label

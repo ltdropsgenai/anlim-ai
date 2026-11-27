@@ -19,6 +19,7 @@ import * as db from "./db.js";
 import * as storage from "./storage.js";
 import * as compile from "./compile.js";
 import * as fal from "./providers/fal.js";
+import * as ad from "./ad.js";
 import * as mock from "./providers/mock.js";
 import * as higgsfield from "./providers/higgsfield.js";
 import * as frames from "./frames.js";
@@ -687,7 +688,8 @@ export async function tick() {
     assemble.tick().catch((e) => { console.error("assemble:", e.message); return 0; }),           // scene cuts (assemble.js)
     audio.tick().catch((e) => { console.error("audio:", e.message); return 0; }),                 // ElevenLabs audio (audio.js)
     exporter.tick().catch((e) => { console.error("export:", e.message); return 0; }),            // project downloads (export.js)
-    translate.tick().catch((e) => { console.error("translate:", e.message); return 0; })]);      // messages in es/fr (translate.js)
+    translate.tick().catch((e) => { console.error("translate:", e.message); return 0; }),       // messages in es/fr (translate.js)
+    ad.tick().catch((e) => { console.error("ad:", e.message); return 0; })]);                    // ad scripts (ad.js, 2026-11-27)
   return now.length + nFrames + nCuts + nAudio + nExports;
 }
 

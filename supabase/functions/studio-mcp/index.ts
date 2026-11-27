@@ -250,6 +250,35 @@ const TOOLS = [
       }, required: ["text", "at_seconds"], additionalProperties: false } },
     }, required: ["shot_id", "words"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
+  // ---- 2026-11-27: the ad template (worker ad.js, checker ad_script.py; free, 30 scripts a day)
+  { name: "write_ad_script", title: "Write ad scripts for a product",
+    description: "Writes three short video ad scripts for the creator's product, each a hook, a demo and a call to action laid out as shots " +
+      "(what the picture shows, the line spoken, big words on screen, seconds). Spoken by a presenter (the creator or a host), never as an " +
+      "invented customer's review, and claiming only what the creator says or the product page shows (FTC rules on fake reviews). " +
+      "Give a product page url to let it read the page. Free. It waits up to about 40 s; if still writing, call again with draft_id. " +
+      "Then use_ad_script to make one of them a project.",
+    inputSchema: { type: "object", properties: {
+      draft_id: { type: "string", description: "To check on scripts already asked for" },
+      product: { type: "string", minLength: 2, maxLength: 80 },
+      about: { type: "string", minLength: 10, maxLength: 1500, description: "What the product is, what it does and who it is for" },
+      url: { type: "string", maxLength: 500, description: "The product's web page (http or https)" },
+      offer: { type: "string", maxLength: 200, description: "A real offer to mention (e.g. 20% off this week); nothing else about price is said" },
+      call_to_action: { type: "string", maxLength: 80 }, presenter: { type: "string", maxLength: 80, description: "The presenter's name, e.g. the creator's character" },
+      tone: { type: "string", maxLength: 80 }, language: { type: "string", maxLength: 40 },
+      seconds: { type: "integer", enum: [10, 15, 30], default: 15 }, look: { type: "string", enum: ["photoreal", "cartoon"], default: "photoreal" },
+    }, additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } },
+  { name: "use_ad_script", title: "Make an ad script a project",
+    description: "Turns one of the scripts from write_ad_script into a project: a new project named \"Ad: <product>\" (or a new scene in an " +
+      "existing project), one shot per beat with its spoken line kept on the shot (make_voiceover uses it when text is left out), the " +
+      "on-screen words as the shot's title, and each shot trimmed in the cut to its beat (clips are made at least 5 s). Free. Next: add the " +
+      "presenter as a character (with their consent) and the product, make the start images, animate, voice the lines, make_cut with captions.",
+    inputSchema: { type: "object", properties: {
+      draft_id: { type: "string" }, script: { type: "integer", minimum: 1, maximum: 3, description: "Which of the three scripts" },
+      project_id: { type: "string", description: "Add it to this project instead of making a new one" },
+      shape: { type: "string", enum: ["9:16", "16:9", "1:1", "4:3", "3:4", "21:9"], default: "9:16", description: "A new project's shape" },
+    }, required: ["draft_id", "script"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
   // ---- 2026-11-27: shot effects (worker fx.js; plain ffmpeg and a CPU person cut-out, free like every cut)
   { name: "set_effects", title: "Effects on a shot",
     description: "Sets a shot's effects in the scene's cut (replaces any already set; send only shot_id to remove them all). Free; then make_cut. " +
@@ -304,9 +333,9 @@ const TOOLS = [
       shot_id: { type: "string", description: "For a shot's line" },
       project_id: { type: "string", description: "For the scene's narration (no shot_id)" },
       at_s: { type: "number", minimum: 0, maximum: 600, description: "Narration only: where it starts in the cut, seconds" },
-      text: { type: "string", minLength: 1, maxLength: 3000 },
+      text: { type: "string", maxLength: 3000, description: "The words to speak. A shot made from an ad script already has its line: leave text out to use it." },
       voice_id: { type: "string", description: "From list_voices" },
-    }, required: ["text", "voice_id"], additionalProperties: false },
+    }, required: ["voice_id"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } },
   { name: "lip_sync", title: "Lip-sync a shot to its voiceover or the song",
     description: "Makes a copy of the shot's kept clip with the mouths moved to the shot's voiceover (VEED Lipsync), or, when the " +
@@ -901,6 +930,43 @@ async function callTool(uid: string, name: string, a: Args) {
       return text(words.length ? `${words.length} word${words.length > 1 ? "s" : ""} set on this shot: ` +
         words.map((w) => `"${w.text}" at ${w.at_s} s`).join(", ") + ". Run make_cut to see them." : "Words removed from this shot.");
     }
+    case "write_ad_script": {
+      let id = String(a.draft_id || "");
+      if (id) { if (!UUID.test(id)) return text("draft_id must be an id write_ad_script gave.", undefined, true); }
+      else {
+        if (!await rateGate(uid, "write_ad_script", ["write_ad_script"], 6)) return text("Limit reached: 6 ad scripts per 10 minutes from chat. Wait a few minutes.", undefined, true);
+        const spec = { product: a.product, brief: a.about, url: a.url, offer: a.offer, cta: a.call_to_action, presenter: a.presenter,
+                       tone: a.tone, language: a.language, length_s: a.seconds ?? 15, look: a.look ?? "photoreal" };
+        const [r] = await asUser(uid, (tx) => tx`select studio.request_ad_script(${tx.json(spec as any)}) as id`);
+        id = r.id;
+      }
+      for (let i = 0; i < 20; i++) {
+        const [d] = await asUser(uid, (tx) => tx`select status, variants, error, page_title from studio.ad_drafts where id = ${id}`);
+        if (!d) return text("Ad script not found.", undefined, true);
+        if (d.status === "done") {
+          const vs = (d.variants || []) as any[];
+          const out = vs.map((v, k) => `Script ${k + 1}: ${v.angle} (${v.seconds} s)\n` + (v.shots || []).map((s: any, j: number) =>
+            `  ${j + 1}. ${s.seconds} s | picture: ${s.picture}${s.line ? ` | says: "${s.line}"` : ""}${s.on_screen ? ` | on screen: ${s.on_screen}` : ""}`).join("\n") +
+            (v.caption ? `\n  Caption: ${v.caption}` : "")).join("\n\n");
+          return text(`${out}\n\n${d.error ? d.error + "\n" : ""}(draft_id ${id}. Show these to the creator; use_ad_script with the one they pick.)`, { draft_id: id, variants: vs });
+        }
+        if (d.status === "failed") return text(`The ad scripts could not be written: ${d.error}`, { draft_id: id }, true);
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      return text(`The ad scripts are still being written. Call write_ad_script again with draft_id ${id} in a little while.`, { draft_id: id, status: "pending" });
+    }
+    case "use_ad_script": {
+      const id = String(a.draft_id || "");
+      if (!UUID.test(id)) return text("draft_id must be an id write_ad_script gave.", undefined, true);
+      const pid = a.project_id ? String(a.project_id) : null;
+      if (pid && !UUID.test(pid)) return text("project_id must be an id from list_projects.", undefined, true);
+      const [r] = await asUser(uid, (tx) => tx`select studio.apply_ad_draft(${id}, ${Number(a.script)}::int, ${pid}::uuid, ${String(a.shape || "9:16")}) as j`);
+      const j = r.j as { series_id: string; series_name: string; shots: { shot_id: string; seconds: number }[] };
+      return text(`"${j.series_name}" now has ${j.shots.length} shots from script ${a.script} (project_id ${j.series_id}). Each shot keeps its line ` +
+        "(make_voiceover with the shot_id and no text speaks it) and its on-screen words as a title. Next: add the presenter as a character " +
+        "with their consent, then make_start_image and animate each shot, voice the lines, and make_cut with captions (caption_style bold).",
+        { project_id: j.series_id, shots: j.shots });
+    }
     case "set_effects": {
       const sid = String(a.shot_id || "");
       if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
@@ -952,7 +1018,7 @@ async function callTool(uid: string, name: string, a: Args) {
       const sid = String(a.shot_id || "");
       // 2026-11-23: a voiceover without a shot is the scene's narration (one take over the whole cut, from at_s)
       const narration = name === "make_voiceover" && !sid;
-      let sh: { scene_id: string } | undefined;
+      let sh: { scene_id: string; line?: string | null } | undefined;
       // checks first, then the limit, then the scene (review 2026-11-23: a refused call used to leave an empty "Scene 1")
       const pid = String(a.project_id || "");
       if (narration) {
@@ -963,9 +1029,12 @@ async function callTool(uid: string, name: string, a: Args) {
         if (!p) return text("Project not found.", undefined, true);
       } else {
         if (!UUID.test(sid)) return text("shot_id must be a shot id.", undefined, true);
-        [sh] = await asUser(uid, (tx) => tx`select scene_id from studio.shots where id = ${sid}`);
+        [sh] = await asUser(uid, (tx) => tx`select scene_id, line from studio.shots where id = ${sid}`);
         if (!sh) return text("Shot not found.", undefined, true);
+        // 2026-11-27 (ad template): a shot made from an ad script keeps its spoken line; it is used when no text is given
+        if (name === "make_voiceover" && !String(a.text || "").trim() && (sh as any).line) a.text = (sh as any).line;
       }
+      if (name === "make_voiceover" && !String(a.text || "").trim()) return text("Give the words to speak (text).", undefined, true);
       // 2026-11-25: a sound effect's start delay, checked against the shot's length in the cut before anything is spent
       const startS = name === "make_sound_effect" && a.start_s != null ? a.start_s : 0;
       if (startS !== 0) {
@@ -1518,7 +1587,7 @@ async function rpc(uid: string, m: Rpc) {
           "get_upload_link so the creator uploads photos (or a song for make_cut's music_upload_id), add_character with an upload, add_location for the background, add_shot, " +
           "(update_character, update_shot, move_shot to change them), make_end_image when someone must appear or end somewhere exact, " +
           "make_start_image (new_setup places the characters), get_creation to look, animate, review_clip (keep), then make_cut and " +
-          "get_cut (trim_clip to shorten a clip, set_clip_speed to slow it, set_hold to freeze its last frame, set_words to draw words over it, set_effects for titles, stickers, a phone frame, layouts, looks and cut-out effects (ghost, clone, trails, words behind the person), in the cut; set_end_image to end a shot on an uploaded picture, such as the same moment from another camera angle; make_voiceover (a shot's line, or without a shot the scene's narration over the whole cut), " +
+          "get_cut (trim_clip to shorten a clip, set_clip_speed to slow it, set_hold to freeze its last frame, set_words to draw words over it, set_effects for titles, stickers, a phone frame, layouts, looks and cut-out effects (ghost, clone, trails, words behind the person), in the cut; write_ad_script and use_ad_script turn a product into a short ad project with its shots and lines; set_end_image to end a shot on an uploaded picture, such as the same moment from another camera angle; make_voiceover (a shot's line, or without a shot the scene's narration over the whole cut), " +
           "make_sound_effect and make_score add sound on the creator's ElevenLabs account). Steps that spend credits need a paid account. Clips take minutes: tell the creator and check again rather than " +
           "starting the same thing twice." });
     }
