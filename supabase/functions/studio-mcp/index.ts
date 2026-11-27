@@ -252,7 +252,7 @@ const TOOLS = [
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
   // ---- 2026-11-27: the ad template (worker ad.js, checker ad_script.py; free, 30 scripts a day)
   { name: "write_ad_script", title: "Write ad scripts for a product",
-    description: "Writes three short video ad scripts for the creator's product, each a hook, a demo and a call to action laid out as shots " +
+    description: "Writes three short video ad scripts for the creator's product, each a hook, a demo and a call to action laid out as shots, every line in English, Spanish and French " +
       "(what the picture shows, the line spoken, big words on screen, seconds). Spoken by a presenter (the creator or a host), never as an " +
       "invented customer's review, and claiming only what the creator says or the product page shows (FTC rules on fake reviews). " +
       "Give a product page url to let it read the page. Free. It waits up to about 40 s; if still writing, call again with draft_id. " +
@@ -264,7 +264,7 @@ const TOOLS = [
       url: { type: "string", maxLength: 500, description: "The product's web page (http or https)" },
       offer: { type: "string", maxLength: 200, description: "A real offer to mention (e.g. 20% off this week); nothing else about price is said" },
       call_to_action: { type: "string", maxLength: 80 }, presenter: { type: "string", maxLength: 80, description: "The presenter's name, e.g. the creator's character" },
-      tone: { type: "string", maxLength: 80 }, language: { type: "string", maxLength: 40 },
+      tone: { type: "string", maxLength: 80 },
       seconds: { type: "integer", enum: [10, 15, 30], default: 15 }, look: { type: "string", enum: ["photoreal", "cartoon"], default: "photoreal" },
     }, additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } },
@@ -277,6 +277,7 @@ const TOOLS = [
       draft_id: { type: "string" }, script: { type: "integer", minimum: 1, maximum: 3, description: "Which of the three scripts" },
       project_id: { type: "string", description: "Add it to this project instead of making a new one" },
       shape: { type: "string", enum: ["9:16", "16:9", "1:1", "4:3", "3:4", "21:9"], default: "9:16", description: "A new project's shape" },
+      language: { type: "string", enum: ["en", "es", "fr"], default: "en", description: "Which of the script's three languages the shots get (lines and on-screen words)" },
     }, required: ["draft_id", "script"], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
   // ---- 2026-11-27: shot effects (worker fx.js; plain ffmpeg and a CPU person cut-out, free like every cut)
@@ -945,9 +946,11 @@ async function callTool(uid: string, name: string, a: Args) {
         if (!d) return text("Ad script not found.", undefined, true);
         if (d.status === "done") {
           const vs = (d.variants || []) as any[];
-          const out = vs.map((v, k) => `Script ${k + 1}: ${v.angle} (${v.seconds} s)\n` + (v.shots || []).map((s: any, j: number) =>
-            `  ${j + 1}. ${s.seconds} s | picture: ${s.picture}${s.line ? ` | says: "${s.line}"` : ""}${s.on_screen ? ` | on screen: ${s.on_screen}` : ""}`).join("\n") +
-            (v.caption ? `\n  Caption: ${v.caption}` : "")).join("\n\n");
+          // 2026-11-27: lines, on-screen words, angle and caption in en, es and fr (older drafts: plain strings)
+          const t3 = (x: any) => typeof x === "string" ? x : x ? `EN "${x.en}" / ES "${x.es}" / FR "${x.fr}"` : "";
+          const out = vs.map((v, k) => `Script ${k + 1}: ${typeof v.angle === "string" ? v.angle : v.angle?.en} (${v.seconds} s)\n` + (v.shots || []).map((s: any, j: number) =>
+            `  ${j + 1}. ${s.seconds} s | picture: ${s.picture}${t3(s.line) ? ` | says: ${t3(s.line)}` : ""}${t3(s.on_screen) ? ` | on screen: ${t3(s.on_screen)}` : ""}`).join("\n") +
+            (v.caption ? `\n  Caption: ${t3(v.caption)}` : "")).join("\n\n");
           return text(`${out}\n\n${d.error ? d.error + "\n" : ""}(draft_id ${id}. Show these to the creator; use_ad_script with the one they pick.)`, { draft_id: id, variants: vs });
         }
         if (d.status === "failed") return text(`The ad scripts could not be written: ${d.error}`, { draft_id: id }, true);
@@ -960,7 +963,8 @@ async function callTool(uid: string, name: string, a: Args) {
       if (!UUID.test(id)) return text("draft_id must be an id write_ad_script gave.", undefined, true);
       const pid = a.project_id ? String(a.project_id) : null;
       if (pid && !UUID.test(pid)) return text("project_id must be an id from list_projects.", undefined, true);
-      const [r] = await asUser(uid, (tx) => tx`select studio.apply_ad_draft(${id}, ${Number(a.script)}::int, ${pid}::uuid, ${String(a.shape || "9:16")}) as j`);
+      const lang = ["en", "es", "fr"].includes(String(a.language)) ? String(a.language) : "en";
+      const [r] = await asUser(uid, (tx) => tx`select studio.apply_ad_draft(${id}, ${Number(a.script)}::int, ${pid}::uuid, ${String(a.shape || "9:16")}, ${lang}) as j`);
       const j = r.j as { series_id: string; series_name: string; shots: { shot_id: string; seconds: number }[] };
       return text(`"${j.series_name}" now has ${j.shots.length} shots from script ${a.script} (project_id ${j.series_id}). Each shot keeps its line ` +
         "(make_voiceover with the shot_id and no text speaks it) and its on-screen words as a title. Next: add the presenter as a character " +

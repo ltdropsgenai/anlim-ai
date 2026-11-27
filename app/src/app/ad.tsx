@@ -6,19 +6,23 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { router } from "expo-router";
-import { api, AdDraft, AdSpec } from "../lib/api";
+import { api, AdDraft, AdLang, AdSpec, adText } from "../lib/api";
 import { c, font } from "../lib/theme";
-import { tr, tMsg } from "../lib/i18n";
+import { tr, tMsg, locale } from "../lib/i18n";
 
 const SHAPES = ["9:16", "1:1", "16:9"] as const;
+// the scripts come in anlim's three languages; the one shown first is the app's own
+const LANGS: [AdLang, string][] = [["en", "English"], ["es", "Español"], ["fr", "Français"]];
+const appLang = (): AdLang => (locale().startsWith("es") ? "es" : locale().startsWith("fr") ? "fr" : "en");
 
 export default function AdMaker() {
   const { width } = useWindowDimensions();
   const narrow = width < 900;
-  const [spec, setSpec] = useState<AdSpec>({ product: "", brief: "", url: "", offer: "", cta: "", presenter: "", tone: "", language: "", length_s: 15, look: "photoreal" });
+  const [spec, setSpec] = useState<AdSpec>({ product: "", brief: "", url: "", offer: "", cta: "", presenter: "", tone: "", length_s: 15, look: "photoreal" });
   const [draft, setDraft] = useState<AdDraft | null>(null);
   const [pick, setPick] = useState(1);
   const [shape, setShape] = useState<(typeof SHAPES)[number]>("9:16");
+  const [lang, setLang] = useState<AdLang>(appLang);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -50,7 +54,7 @@ export default function AdMaker() {
     if (!draft) return;
     setErr(null); setBusy(true);
     try {
-      const r = await api.adApply(draft.id, pick, shape);
+      const r = await api.adApply(draft.id, pick, shape, lang);
       router.push({ pathname: "/workspace", params: { series: r.series_id, scene: r.scene_id } });
     } catch (e) { setErr((e as Error).message); }
     setBusy(false);
@@ -93,7 +97,6 @@ export default function AdMaker() {
           <View style={s.row}>
             {field("presenter", tr("Presenter (optional)"), tr("Your character's name, or leave empty"), 80)}
             {field("tone", tr("Tone (optional)"), tr("e.g. upbeat, calm, funny"), 80)}
-            {field("language", tr("Language (optional)"), tr("e.g. Spanish"), 40)}
           </View>
           <Text style={s.label}>{tr("Length")}</Text>
           <View style={s.row}>{([10, 15, 30] as const).map((n) => chip(spec.length_s === n, tr("{v0} s", { v0: n }), () => set({ length_s: n })))}</View>
@@ -113,21 +116,26 @@ export default function AdMaker() {
         {draft?.status === "failed" && <Text style={s.err}>{tMsg(draft.error || tr("The ad scripts could not be written; try again."))}</Text>}
         {draft?.status === "done" && draft.variants && <View style={{ gap: 14 }}>
           {draft.error && <Text style={s.hint}>{tMsg(draft.error)}</Text>}
+          <View style={[s.row, { alignItems: "center" }]} accessibilityRole="radiogroup" accessibilityLabel={tr("Language of the ad")}>
+            <Text style={s.label}>{tr("Language of the ad")}</Text>
+            {LANGS.map(([k, label]) => chip(lang === k, label, () => setLang(k)))}
+          </View>
+          <Text style={s.hint}>{tr("Every script is written in English, Spanish and French. The language you pick here is the one shown and the one the project gets.")}</Text>
           {draft.variants.map((v, k) => (
             <Pressable key={k} onPress={() => setPick(k + 1)} accessibilityRole="radio" accessibilityState={{ checked: pick === k + 1 }}
               style={[s.card, pick === k + 1 && { borderColor: c.accent, borderWidth: 2 }]}>
-              <Text style={s.title}>{tr("Script {v0}: {v1}", { v0: k + 1, v1: v.angle })} · {tr("{v0} s", { v0: v.seconds })}</Text>
+              <Text style={s.title}>{tr("Script {v0}: {v1}", { v0: k + 1, v1: adText(v.angle, lang) })} · {tr("{v0} s", { v0: v.seconds })}</Text>
               {v.shots.map((sh, j) => (
                 <View key={j} style={s.shot}>
                   <Text style={[s.num, font.mono]}>{String(j + 1).padStart(2, "0")} · {sh.seconds}s</Text>
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text style={{ color: c.ink }}>{sh.picture}</Text>
-                    {sh.line ? <Text style={s.line}>“{sh.line}”</Text> : null}
-                    {sh.on_screen ? <Text style={s.screen}>{sh.on_screen.toUpperCase()}</Text> : null}
+                    {adText(sh.line, lang) ? <Text style={s.line}>“{adText(sh.line, lang)}”</Text> : null}
+                    {adText(sh.on_screen, lang) ? <Text style={s.screen}>{adText(sh.on_screen, lang).toUpperCase()}</Text> : null}
                   </View>
                 </View>
               ))}
-              {v.caption ? <Text style={s.hint}>{tr("Post caption")}: {v.caption}</Text> : null}
+              {adText(v.caption, lang) ? <Text style={s.hint}>{tr("Post caption")}: {adText(v.caption, lang)}</Text> : null}
             </Pressable>
           ))}
           <View style={s.card}>
@@ -135,7 +143,7 @@ export default function AdMaker() {
             <View style={s.row}>{SHAPES.map((x) => chip(shape === x, x, () => setShape(x)))}</View>
             <Text style={s.hint}>{tr("Next, add the presenter as a character (with their consent) and the product, make the start images, animate the shots, voice each shot's line, and make the cut with bold captions.")}</Text>
             <Pressable style={[s.btn, busy && { opacity: 0.5 }]} disabled={busy} onPress={useIt} accessibilityRole="button">
-              <Text style={s.btnText}>{tr("Make script {v0} a project", { v0: pick })}</Text>
+              <Text style={s.btnText}>{tr("Make script {v0} a project in {v1}", { v0: pick, v1: LANGS.find((x) => x[0] === lang)![1] })}</Text>
             </Pressable>
           </View>
         </View>}

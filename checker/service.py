@@ -252,9 +252,12 @@ def run_ad_script(body):
     if len((body.get("product") or "").strip()) < 2 or len((body.get("brief") or "").strip()) < 10:
         raise ValueError("product and brief are required")
     if MODE == "fake":
-        return {"verdict": "OK", "variants": [{"angle": "Fake demo", "seconds": 5.0, "caption": "fake",
-                "shots": [{"seconds": 2.5, "picture": "The presenter holds up the product", "camera": "locked", "line": "Watch this.", "on_screen": "NEW"},
-                          {"seconds": 2.5, "picture": "Close-up of the product", "camera": "push-in", "line": "Link in bio.", "on_screen": "LINK IN BIO"}]}],
+        t = lambda en, es, fr: {"en": en, "es": es, "fr": fr}
+        return {"verdict": "OK", "variants": [{"angle": t("Fake demo", "Demo falsa", "Fausse démo"), "seconds": 5.0, "caption": t("fake", "falso", "faux"),
+                "shots": [{"seconds": 2.5, "picture": "The presenter holds up the product", "camera": "locked",
+                           "line": t("Watch this.", "Mira esto.", "Regardez ça."), "on_screen": t("NEW", "NUEVO", "NOUVEAU")},
+                          {"seconds": 2.5, "picture": "Close-up of the product", "camera": "push-in",
+                           "line": t("Link in bio.", "Enlace en la bio.", "Lien en bio."), "on_screen": t("LINK IN BIO", "ENLACE EN LA BIO", "LIEN EN BIO")}]}],
                 "page_title": "", "page_note": None, "usd": 0.0, "model": "fake", "drift": []}
     if FC not in sys.path: sys.path.insert(0, FC)
     import ad_script

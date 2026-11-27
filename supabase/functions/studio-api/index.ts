@@ -897,8 +897,9 @@ async function handle(req: Request): Promise<Response> {
         return json({ items: rows });
       }
       case "ad_apply": {
+        // 2026-11-27: the scripts come in en, es and fr; the creator picks which one the project gets
         const [r] = await asUser(uid, (tx) => tx`select studio.apply_ad_draft(${String(body.id || "")}::uuid, ${Number(body.variant)}::int,
-          ${body.series_id ? String(body.series_id) : null}::uuid, ${String(body.aspect || "9:16")}) as j`);
+          ${body.series_id ? String(body.series_id) : null}::uuid, ${String(body.aspect || "9:16")}, ${String(body.language || "en")}) as j`);
         return json(r.j);
       }
       case "scene_characters": {   // 2026-11-26: who can sing the scene's song (its project's people)

@@ -1446,5 +1446,8 @@
 "e.g. Spanish": "p. ej., español",
 "e.g. upbeat, calm, funny": "p. ej., animado, tranquilo, divertido",
 "{v0} s": "{v0} s",
-"Show your real view count: made-up numbers in an ad can mislead viewers and break advertising rules.": "Muestra tu número real de vistas: las cifras inventadas en un anuncio pueden engañar al público e incumplir las normas de publicidad."
+"Show your real view count: made-up numbers in an ad can mislead viewers and break advertising rules.": "Muestra tu número real de vistas: las cifras inventadas en un anuncio pueden engañar al público e incumplir las normas de publicidad.",
+"Language of the ad": "Idioma del anuncio",
+"Every script is written in English, Spanish and French. The language you pick here is the one shown and the one the project gets.": "Cada guion se escribe en inglés, español y francés. El idioma que elijas aquí es el que se muestra y el que recibe el proyecto.",
+"Make script {v0} a project in {v1}": "Convertir el guion {v0} en proyecto en {v1}"
 }
