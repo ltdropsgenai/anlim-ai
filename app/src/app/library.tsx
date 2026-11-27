@@ -293,6 +293,10 @@ export default function LibraryScreen() {
                 </View>
               </>)}
               {l.job_status === "failed" && <Text style={s.err}>{tr("The last plate could not be made: {v0}. No credits were charged.", { v0: tMsg(l.job_error ?? "unknown error") })}</Text>}
+              {!jobMaking && !ready && cur.look === "cartoon" && (
+                // 2026-11-27 (KAMK test): a photo plate in a cartoon project gave photographic start images with no warning
+                <Text style={s.sub}>{tr("Cartoon project: the plate is used exactly as uploaded. Upload a drawn background; a photo makes the start images look like photos. To turn a photo into a drawing, use “Recreate a picture in this project's look” on a shot with it, then “Make the plate from a shot”.")}</Text>
+              )}
               {!jobMaking && !ready && (
                 <View style={s.row}>
                   <StillPicker label={l.plate_url ? tr("Upload a different plate") : tr("Upload plate")} disabled={busy} style={{}} textStyle={s.link} onError={setError}

@@ -687,9 +687,19 @@ async function callTool(uid: string, name: string, a: Args) {
         }
         return r.id as string;
       });
+      // 2026-11-27 (KAMK test): a photo used as a cartoon project's background is used as it is, so new-setup start images
+      // came out photographic with no warning. Say so, and how to get a drawn background.
+      let lookNote = "";
+      if (a.upload_id && plate) {
+        const [se] = await asUser(uid, (tx) => tx`select look from studio.series where id = ${pid}`);
+        if (se?.look === "cartoon") lookNote = " Note: this is a cartoon project and the background is used exactly as uploaded. " +
+          "If it is a photo, start images placed in it will look like photos, not cartoons. To get a drawn background: on any shot, " +
+          "make_start_image with mode 'restyle' and this upload_id (the empty setting), check it, then add_location with from_shot_id " +
+          "set to that shot.";
+      }
       return text(`Location "${a.name}" added and set for the project's latest scene. ` +
         (plate ? "Its background is set." : plateShot ? "Its background is being made with the people removed (about a minute)."
-          : "It has no background yet: add one with add_location again, or in the app."), { location_id: locId });
+          : "It has no background yet: add one with add_location again, or in the app.") + lookNote, { location_id: locId });
     }
     case "add_shot": {
       const pid = String(a.project_id || "");
@@ -1092,9 +1102,12 @@ async function callTool(uid: string, name: string, a: Args) {
       if (gate) return gate;
       const model = a.model ? String(a.model) : null;
       const r = await asUser(uid, async (tx) => {
-        const [j] = await tx`select f.id, f.check_result ->> 'verdict' as verdict from studio.frame_jobs f join studio.shots sh on sh.id = f.shot_id
-                               where f.shot_id = ${sid} and f.kind = 'start' and f.status = 'ready'
+        // 2026-11-27 (KAMK test): only the NEWEST start image counts. Picking the newest 'ready' one let an older flagged
+        // image, never decided, block animate on a shot whose newer start image was already approved.
+        const [j0] = await tx`select f.id, f.status, f.check_result ->> 'verdict' as verdict from studio.frame_jobs f
+                               where f.shot_id = ${sid} and f.kind = 'start' and f.status in ('ready', 'approved')
                                order by f.created_at desc limit 1`;
+        const j = j0?.status === "ready" ? j0 : null;
         // 2026-11-23 (redo of the lip sync shot): this used to require that the shot had no approved start image, so on a
         // shot that already had one a newer image was left waiting and the OLD image was rendered. A waiting image is now
         // always the one animated. A flagged one is approved only by the creator's explicit decision (approve_start_image).

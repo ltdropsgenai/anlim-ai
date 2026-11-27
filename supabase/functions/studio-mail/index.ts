@@ -77,6 +77,44 @@ async function localDetails(items: Item[], lang: Lang) {
   }));
 }
 
+// 2026-11-27 queue alert (Londi: know when to add a Fly machine; Atud Clinton's end image sat 30+ min on 2026-11-26
+// and nobody was told). Every 5 minutes the flush also counts work that is waiting or slow; if any is over its limit,
+// the owner gets one email per hour (Resend Idempotency-Key per UTC hour: repeats in the same hour are not sent).
+//   waiting: queued and not yet picked up by a machine for over 3 min (all machines busy: add one)
+//   slow: still in progress past the limit for its kind (a stuck or very slow job)
+const ALERT_TO = ["sysadmin@codeascent.online", "tlondi@gmail.com"];
+const ALERT_FROM = "anlim.ai alerts <alerts@mail.anlim.ai>";
+const SLOW = { pictures: 10, clips: 25, cuts: 15, audio: 10 };   // minutes (the same numbers are in the SQL below)
+async function queueAlert(key: string) {
+  const [q] = await sql`
+    select
+      (select count(*) from studio.frame_jobs  where status = 'queued' and locked_by is null and created_at < now() - interval '3 minutes')::int as w_pictures,
+      (select count(*) from studio.generations where status = 'queued' and locked_by is null and created_at < now() - interval '3 minutes')::int as w_clips,
+      (select count(*) from studio.assemblies  where status = 'queued' and created_at < now() - interval '3 minutes')::int as w_cuts,
+      (select count(*) from studio.audio_jobs  where status = 'queued' and created_at < now() - interval '3 minutes')::int as w_audio,
+      (select count(*) from studio.frame_jobs  where status in ('queued','running','composing') and created_at < now() - interval '10 minutes')::int as s_pictures,
+      (select count(*) from studio.generations where status in ('queued','running','checking') and created_at < now() - interval '25 minutes')::int as s_clips,
+      (select count(*) from studio.assemblies  where status in ('queued','running') and created_at < now() - interval '15 minutes')::int as s_cuts,
+      (select count(*) from studio.audio_jobs  where status in ('queued','running') and created_at < now() - interval '10 minutes')::int as s_audio,
+      (select coalesce(round(extract(epoch from now() - min(created_at)) / 60), 0) from studio.frame_jobs  where status in ('queued','running','composing'))::int as o_pictures,
+      (select coalesce(round(extract(epoch from now() - min(created_at)) / 60), 0) from studio.generations where status in ('queued','running','checking'))::int as o_clips`;
+  const kinds = ["pictures", "clips", "cuts", "audio"] as const;
+  const waiting = kinds.filter((k) => q[`w_${k}`] > 0).map((k) => `${q[`w_${k}`]} ${k}`);
+  const slow = kinds.filter((k) => q[`s_${k}`] > 0).map((k) => `${q[`s_${k}`]} ${k} (over ${SLOW[k]} min)`);
+  if (!waiting.length && !slow.length) return { alert: false };
+  const hour = new Date().toISOString().slice(0, 13);
+  const lines = [
+    waiting.length ? `Waiting for a free machine for over 3 min: ${waiting.join(", ")}. If this keeps happening, add a machine: flyctl scale count <n> -a anlim-worker` : "",
+    slow.length ? `Still in progress past the usual time: ${slow.join(", ")}. Oldest picture ${q.o_pictures} min, oldest clip ${q.o_clips} min. Check studio.app_errors and the Fly machines.` : "",
+  ].filter(Boolean);
+  const r = await fetch("https://api.resend.com/emails", {
+    method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "Idempotency-Key": `queue-alert-${hour}` },
+    body: JSON.stringify({ from: ALERT_FROM, to: ALERT_TO, subject: `anlim.ai queue: ${[...waiting, ...slow.map((x) => x.replace(/ \(.*/, " slow"))].join(", ")}`,
+      text: lines.join("\n\n") + `\n\n(${hour}:00 UTC; at most one of these an hour.)` }),
+  });
+  return { alert: true, sent: r.ok, status: r.status };
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   const tok = req.headers.get("x-worker-token") || "";
@@ -113,7 +151,11 @@ Deno.serve(async (req) => {
         if (r.status >= 400 && r.status < 500 && r.status !== 429) await sql`select studio.mail_done(${ids}::bigint[], ${`failed: ${r.status} ${msg}`})`;
       }
     }
-    return json({ accounts: due.length, sent, failed });
+    let queue: unknown = null;
+    if (new Date().getUTCMinutes() % 5 === 0) {
+      try { queue = await queueAlert(key); } catch (e) { console.error("queue alert:", (e as Error).message); }
+    }
+    return json({ accounts: due.length, sent, failed, queue });
   } catch (e) {
     console.error("flush:", (e as Error).message);
     return json({ error: "flush failed" }, 500);
