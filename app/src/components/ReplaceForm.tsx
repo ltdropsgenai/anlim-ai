@@ -180,7 +180,7 @@ export function ReplaceForm({ narrow }: { narrow: boolean }) {
           ? <Text style={s.link} onPress={() => router.navigate("/billing")}>{tr("See plans and credits")}</Text> : null}</Text> : null}
         {err ? <Text style={{ color: c.fail, fontSize: 13 }}>{tMsg(err)}</Text> : null}
         <Text style={s.small}>{tr("The result shows an “AI-edited” label for its whole length. Charged per second of your clip, rounded up, when it is made.")}</Text>
-        <Text style={s.small} onPress={() => router.navigate("/terms")}>{tr("Rules for edited footage are in the Terms.")}</Text>
+        {/* 2026-11-27: a link to the Terms' edited-footage rules goes here once Londi's lawyer has written them */}
       </View>
     </View>
   );
